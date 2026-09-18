@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: dui-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   validate:
     name: Validate source
@@ -148,30 +152,23 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Publish release atomically
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify release assets
+        shell: bash
         run: |
           set -euo pipefail
-          gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -y >/dev/null 2>&1 || true
+          count=$(find release-assets -maxdepth 1 -type f | wc -l)
+          echo "release asset count: $count"
+          test "$count" -eq 14
+          ls -lh release-assets
 
-          created=0
-          for attempt in 1 2 3 4 5; do
-            if gh release create "$GITHUB_REF_NAME" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "$GITHUB_REF_NAME" \
-              --notes "Dui $GITHUB_REF_NAME"; then
-              created=1
-              break
-            fi
-            echo "Release create attempt $attempt failed; retrying..."
-            sleep 5
-          done
-          test "$created" = 1
-
-          gh release upload "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber release-assets/*
-
-          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
+      - name: Publish Dui release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.sha256
