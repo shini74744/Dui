@@ -61,7 +61,7 @@ echo ""
 echo -e "${yellow}---------->>>>>当前系统的架构为: $(arch)${plain}"
 echo ""
 
-# 获取 GitHub 最新 Release 版本（直接跟随 releases/latest 跳转，不依赖 API 配额）
+# 获取 GitHub 最新 Release 版本（读取公开 Releases Atom Feed，不依赖 API 配额）
 last_version=$(dui_latest_version || true)
 
 # 获取 x-ui 版本
@@ -294,11 +294,7 @@ install_x-ui() {
     local platform asset package_url tmpdir staged backup_dir="" etc_backup=""
     platform=$(arch)
     asset="x-ui-linux-${platform}.tar.gz"
-    if [[ $# == 0 ]]; then
-        package_url="${XUI_RELEASE_BASE}/latest/download/${asset}"
-    else
-        package_url="${XUI_RELEASE_BASE}/download/${last_version}/${asset}"
-    fi
+    package_url="${XUI_RELEASE_BASE}/download/${last_version}/${asset}"
 
     echo ""
     echo -e "${green}正在从 Dui GitHub 最新 Release 安装：${plain}"

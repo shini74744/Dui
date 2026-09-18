@@ -208,7 +208,7 @@ update() {
         return 1
     fi
     local asset="x-ui-linux-${platform}.tar.gz"
-    local package_url="${XUI_RELEASE_BASE}/latest/download/${asset}"
+    local package_url="${XUI_RELEASE_BASE}/download/${latest_version}/${asset}"
     local tmpdir
     tmpdir=$(mktemp -d) || return 1
 
