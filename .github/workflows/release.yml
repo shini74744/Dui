@@ -1,0 +1,160 @@
+name: Build and Release Dui
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Shell syntax
+        run: |
+          bash -n install.sh
+          bash -n x-ui.sh
+          bash -n web/service/fb5.sh
+          bash -n web/service/ntp.sh
+          sh -n web/service/ddns.sh
+      - name: Go tests
+        run: go test ./...
+
+  build-linux:
+    name: Linux ${{ matrix.platform }}
+    needs: validate
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [amd64, arm64, armv7, armv6, armv5, 386, s390x]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y curl xz-utils file unzip wget
+      - name: Configure cross compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.platform }}' in
+            amd64) BOOTLIN_ARCH='x86-64'; GOARCH_VALUE='amd64'; GOARM_VALUE='' ;;
+            arm64) BOOTLIN_ARCH='aarch64'; GOARCH_VALUE='arm64'; GOARM_VALUE='' ;;
+            armv7) BOOTLIN_ARCH='armv7-eabihf'; GOARCH_VALUE='arm'; GOARM_VALUE='7' ;;
+            armv6) BOOTLIN_ARCH='armv6-eabihf'; GOARCH_VALUE='arm'; GOARM_VALUE='6' ;;
+            armv5) BOOTLIN_ARCH='armv5-eabi'; GOARCH_VALUE='arm'; GOARM_VALUE='5' ;;
+            386) BOOTLIN_ARCH='x86-i686'; GOARCH_VALUE='386'; GOARM_VALUE='' ;;
+            s390x) BOOTLIN_ARCH='s390x-z13'; GOARCH_VALUE='s390x'; GOARM_VALUE='' ;;
+          esac
+
+          BASE="https://toolchains.bootlin.com/downloads/releases/toolchains/${BOOTLIN_ARCH}/tarballs/"
+          FILE=$(curl -fsSL "$BASE" | grep -oE "${BOOTLIN_ARCH}--musl--stable-[^\"]+\.tar\.xz" | sort -Vr | head -n1)
+          test -n "$FILE"
+          curl -fL --retry 3 -o "/tmp/$FILE" "$BASE$FILE"
+          tar -xJf "/tmp/$FILE" -C /tmp
+          TOOLCHAIN_DIR=$(find /tmp -maxdepth 1 -type d -name "${BOOTLIN_ARCH}--musl--stable-*" | head -n1)
+          test -n "$TOOLCHAIN_DIR"
+          CC_BIN=$(find "$TOOLCHAIN_DIR/bin" -type f -name '*-gcc.br_real' -perm -111 | head -n1)
+          test -n "$CC_BIN"
+          echo "GOOS=linux" >> "$GITHUB_ENV"
+          echo "GOARCH=$GOARCH_VALUE" >> "$GITHUB_ENV"
+          echo "GOARM=$GOARM_VALUE" >> "$GITHUB_ENV"
+          echo "CGO_ENABLED=1" >> "$GITHUB_ENV"
+          echo "CC=$CC_BIN" >> "$GITHUB_ENV"
+          echo "$TOOLCHAIN_DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Build static x-ui
+        run: |
+          set -euo pipefail
+          go build -trimpath -ldflags="-s -w -linkmode external -extldflags '-static'" -o x-ui-bin .
+          file x-ui-bin
+
+      - name: Assemble package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p x-ui/bin
+          install -m 0755 x-ui-bin x-ui/x-ui
+          install -m 0755 x-ui.sh x-ui/x-ui.sh
+          install -m 0644 x-ui.service x-ui/x-ui.service
+          install -m 0755 web/service/fb5.sh x-ui/fb5.sh
+
+          XRAY_BASE='https://github.com/XTLS/Xray-core/releases/download/v25.10.15'
+          case '${{ matrix.platform }}' in
+            amd64) XRAY_ZIP='Xray-linux-64.zip' ;;
+            arm64) XRAY_ZIP='Xray-linux-arm64-v8a.zip' ;;
+            armv7) XRAY_ZIP='Xray-linux-arm32-v7a.zip' ;;
+            armv6) XRAY_ZIP='Xray-linux-arm32-v6.zip' ;;
+            armv5) XRAY_ZIP='Xray-linux-arm32-v5.zip' ;;
+            386) XRAY_ZIP='Xray-linux-32.zip' ;;
+            s390x) XRAY_ZIP='Xray-linux-s390x.zip' ;;
+          esac
+
+          curl -fL --retry 3 "$XRAY_BASE/$XRAY_ZIP" -o /tmp/xray.zip
+          unzip -q /tmp/xray.zip -d /tmp/xray
+          install -m 0755 /tmp/xray/xray "x-ui/bin/xray-linux-${{ matrix.platform }}"
+
+          curl -fL --retry 3 https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o x-ui/bin/geoip.dat
+          curl -fL --retry 3 https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat -o x-ui/bin/geosite.dat
+          curl -fL --retry 3 https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geoip.dat -o x-ui/bin/geoip_IR.dat
+          curl -fL --retry 3 https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geosite.dat -o x-ui/bin/geosite_IR.dat
+          curl -fL --retry 3 https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat -o x-ui/bin/geoip_RU.dat
+          curl -fL --retry 3 https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat -o x-ui/bin/geosite_RU.dat
+
+          tar -czf "x-ui-linux-${{ matrix.platform }}.tar.gz" x-ui
+          sha256sum "x-ui-linux-${{ matrix.platform }}.tar.gz" > "x-ui-linux-${{ matrix.platform }}.tar.gz.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: x-ui-linux-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            x-ui-linux-${{ matrix.platform }}.tar.gz
+            x-ui-linux-${{ matrix.platform }}.tar.gz.sha256
+
+  publish:
+    name: Publish GitHub Release
+    needs: build-linux
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber release-assets/*
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort

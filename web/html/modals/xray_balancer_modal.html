@@ -1,0 +1,140 @@
+{{define "modals/balancerModal"}}
+<a-modal 
+    id="balancer-modal"
+    v-model="balancerModal.visible"
+    :title="balancerModal.title"
+    @ok="balancerModal.ok"
+    :confirm-loading="balancerModal.confirmLoading"
+    :ok-button-props="{ props: { disabled: !balancerModal.isValid } }"
+    :closable="true"
+    :mask-closable="false"
+    :ok-text="balancerModal.okText"
+    cancel-text='{{ i18n "close" }}'
+    :class="themeSwitcher.currentTheme">
+    <a-form :colon="false" :label-col="{ md: {span:8} }" :wrapper-col="{ md: {span:14} }">
+        <a-form-item label='{{ i18n "pages.xray.balancer.tag" }}' has-feedback
+            :validate-status="balancerModal.duplicateTag? 'warning' : 'success'">
+            <a-input v-model.trim="balancerModal.balancer.tag" @change="balancerModal.check()"
+                placeholder='{{ i18n "pages.xray.balancer.tagDesc" }}'></a-input>
+        </a-form-item>
+        <a-form-item label='{{ i18n "pages.xray.balancer.balancerStrategy" }}'>
+            <a-select v-model="balancerModal.balancer.strategy" :dropdown-class-name="themeSwitcher.currentTheme">
+                <a-select-option v-for="option in balancerModal.strategyOptions()" :key="option.value" :value="option.value">[[ option.label ]]</a-select-option>
+            </a-select>
+        </a-form-item>
+        <a-form-item label='{{ i18n "pages.xray.balancer.balancerSelectors" }}' has-feedback
+            :validate-status="balancerModal.emptySelector? 'warning' : 'success'">
+            <a-select v-model="balancerModal.balancer.selector" mode="tags" @change="balancerModal.checkSelector()"
+                :dropdown-class-name="themeSwitcher.currentTheme">
+                <a-select-option v-for="tag in balancerModal.outboundTags" :value="tag">[[ tag ]]</a-select-option>
+            </a-select>
+        </a-form-item>
+        <a-form-item label="Fallback">
+            <a-select v-model="balancerModal.balancer.fallbackTag" clearable
+                :dropdown-class-name="themeSwitcher.currentTheme">
+                <a-select-option v-for="tag in [ '', ...balancerModal.outboundTags]" :value="tag">[[ tag ]]</a-select-option>
+            </a-select>
+        </a-form-item>
+        </table>
+    </a-form>
+</a-modal>
+<script>
+    const balancerModal = {
+        title: '',
+        visible: false,
+        confirmLoading: false,
+        okText: '{{ i18n "sure" }}',
+        isEdit: false,
+        confirm: null,
+        duplicateTag: false,
+        emptySelector: false,
+        balancer: {
+            tag: '',
+            strategy: 'random',
+            selector: [],
+            fallbackTag: ''
+        },
+        outboundTags: [],
+        balancerTags:[],
+        ok() {
+            if (balancerModal.balancer.selector.length == 0) {
+                balancerModal.emptySelector = true;
+                return;
+            }
+            balancerModal.emptySelector = false;
+            ObjectUtil.execute(balancerModal.confirm, balancerModal.balancer);
+        },
+        show({ title = '', okText = '{{ i18n "sure" }}', balancerTags = [], balancer, confirm = (balancer) => { }, isEdit = false }) {
+            this.title = title;
+            this.okText = okText;
+            this.confirm = confirm;
+            this.visible = true;
+            if (isEdit) {
+                balancerModal.balancer = balancer;
+            } else {
+                balancerModal.balancer = {
+                    tag: '',
+                    strategy: 'random',
+                    selector: [],
+                    fallbackTag: ''
+                };
+            }
+            this.balancerTags = balancerTags.filter((tag) => tag != balancer.tag);
+            this.outboundTags = app.templateSettings.outbounds.filter((o) => !ObjectUtil.isEmpty(o.tag) && !String(o.tag).startsWith('__dui_blacklist_')).map(obj => obj.tag);
+            this.isEdit = isEdit;
+            this.check();
+            this.checkSelector();
+        },
+        close() {
+            this.visible = false;
+            this.loading(false);
+        },
+        loading(loading=true) {
+            this.confirmLoading = loading;
+        },
+        check() {
+            if (this.balancer.tag == '' || this.balancerTags.includes(this.balancer.tag)) {
+                this.duplicateTag = true;
+                this.isValid = false;
+            } else {
+                this.duplicateTag = false;
+                this.isValid = true;
+            }
+        },
+        checkSelector() {
+            this.emptySelector = this.balancer.selector.length == 0;
+        },
+        strategyOptions() {
+            const lang = (() => { try { return LanguageManager.getLanguage() || 'en-US'; } catch (e) { return 'en-US'; } })();
+            const maps = {
+                'zh-CN': { random:'随机', roundRobin:'轮询', leastLoad:'最低负载', leastPing:'最低延迟' },
+                'zh-TW': { random:'隨機', roundRobin:'輪詢', leastLoad:'最低負載', leastPing:'最低延遲' },
+                'en-US': { random:'Random', roundRobin:'Round Robin', leastLoad:'Least Load', leastPing:'Least Ping' },
+                'ja-JP': { random:'ランダム', roundRobin:'ラウンドロビン', leastLoad:'最小負荷', leastPing:'最低遅延' },
+                'ru-RU': { random:'Случайно', roundRobin:'По кругу', leastLoad:'Мин. нагрузка', leastPing:'Мин. задержка' },
+                'vi-VN': { random:'Ngẫu nhiên', roundRobin:'Luân phiên', leastLoad:'Tải thấp nhất', leastPing:'Độ trễ thấp nhất' },
+                'es-ES': { random:'Aleatorio', roundRobin:'Round Robin', leastLoad:'Menor carga', leastPing:'Menor latencia' },
+                'id-ID': { random:'Acak', roundRobin:'Round Robin', leastLoad:'Beban terendah', leastPing:'Latensi terendah' },
+                'uk-UA': { random:'Випадково', roundRobin:'По колу', leastLoad:'Мін. навантаження', leastPing:'Мін. затримка' },
+                'tr-TR': { random:'Rastgele', roundRobin:'Sıralı', leastLoad:'En düşük yük', leastPing:'En düşük gecikme' },
+                'pt-BR': { random:'Aleatório', roundRobin:'Round Robin', leastLoad:'Menor carga', leastPing:'Menor latência' },
+                'ar-EG': { random:'عشوائي', roundRobin:'دوري', leastLoad:'أقل حمل', leastPing:'أقل زمن انتقال' },
+                'fa-IR': { random:'تصادفی', roundRobin:'چرخشی', leastLoad:'کمترین بار', leastPing:'کمترین تأخیر' }
+            };
+            const map = maps[lang] || maps['en-US'];
+            return ['random','roundRobin','leastLoad','leastPing'].map(value => ({ value, label: map[value] || value }));
+        }
+    };
+
+    new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#balancer-modal',
+        data: {
+            balancerModal: balancerModal
+        },
+        methods: {
+        }
+    });
+
+</script>
+{{end}}

@@ -1,0 +1,110 @@
+{{define "settings/panel/fail2ban"}}
+<a-space direction="vertical" :size="16" :style="{ width: '100%' }">
+  <a-alert type="info" show-icon
+    message="Fail2ban / X-UI 防爆破"
+    description="兼容原 fb5.sh：直接读取并管理相同的 jail.local、3xui-tls、3xui-login、自定义 action、封禁列表和 Fail2ban 日志。已有配置会自动识别。">
+  </a-alert>
+
+  <a-card title="运行状态" :bordered="true">
+    <a-row :gutter="[12,12]">
+      <a-col :xs="24" :md="6"><a-statistic title="Fail2ban" :value="fail2banStatus.installed ? (fail2banStatus.running ? '运行中' : '已安装/未运行') : '未安装'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="防火墙" :value="fail2banStatus.firewall || 'unknown'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="fb5 快捷命令" :value="fail2banStatus.shortcut ? '已同步' : '未同步'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="面板端口" :value="fail2banStatus.panelPort || 0"></a-statistic></a-col>
+    </a-row>
+    <a-space :style="{ marginTop: '12px' }">
+      <a-button icon="reload" @click="getFail2banStatus" :loading="fail2banBusy">刷新状态/日志</a-button>
+      <a-button v-if="fail2banStatus.shortcut" type="primary" icon="download" @click="syncFail2banScript" :loading="fail2banBusy">同步内置 fb5 命令</a-button>
+    </a-space>
+  </a-card>
+
+  <a-collapse>
+    <a-collapse-panel key="sshd" header="SSH 防爆破">
+      <a-alert type="warning" show-icon :style="{ marginBottom: '12px' }"
+        message="已有 fb5 [sshd] 配置会直接读取并原位更新；不会清空其他 jail。"></a-alert>
+      <a-setting-list-item paddings="small"><template #title>SSH 端口</template><template #control><a-input-number v-model="fail2banForms.sshd.port" :min="1" :max="65535" :style="{width:'100%'}"></a-input-number></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>失败次数 maxretry</template><template #control><a-input-number v-model="fail2banForms.sshd.maxretry" :min="1" :style="{width:'100%'}"></a-input-number></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>检测周期 findtime</template><template #description>例：600 / 30m / 1h / 1d</template><template #control><a-input v-model="fail2banForms.sshd.findtime"></a-input></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>封禁时长 bantime</template><template #description>例：600 / 12h / 1d / -1（永久）</template><template #control><a-input v-model="fail2banForms.sshd.bantime"></a-input></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>白名单 ignoreip</template><template #control><a-input v-model="fail2banForms.sshd.ignoreip"></a-input></template></a-setting-list-item>
+      <a-space :style="{ marginTop: '12px' }">
+        <a-button type="primary" @click="applyFail2ban('sshd')" :loading="fail2banBusy">保存并启用 SSH 防爆破</a-button>
+        <a-button type="danger" @click="removeFail2ban('sshd','SSH 防爆破')" :loading="fail2banBusy">删除 SSH 规则</a-button>
+      </a-space>
+      <a-divider>当前拉黑记录（[[ fail2banStatus.sshd ? fail2banStatus.sshd.bannedCount || 0 : 0 ]]）</a-divider>
+      <a-input-search v-model="fail2banSearch.sshd" placeholder="搜索已拉黑 IP" allow-clear :style="{ marginBottom:'10px', maxWidth:'360px' }"></a-input-search>
+      <a-table size="small" row-key="ip" :columns="fail2banBanColumns"
+        :data-source="fail2banBanRows('sshd')" :pagination="{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['20','50','100'] }">
+        <template slot="action" slot-scope="text, record">
+          <a-button size="small" type="danger" ghost @click="confirmUnbanFail2ban('sshd', record.ip)">取消拉黑</a-button>
+        </template>
+      </a-table>
+      <a-divider>最近爆破日志</a-divider>
+      <a-table size="small" row-key="key" :columns="fail2banLogColumns"
+        :data-source="fail2banLogRows('sshd')" :pagination="{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['20','50','100'] }">
+        <template slot="event" slot-scope="text, record"><a-tag :color="fail2banEventColor(record.event)">[[ record.event ]]</a-tag></template>
+      </a-table>
+    </a-collapse-panel>
+
+    <a-collapse-panel key="tls" header="X-UI TLS 异常扫描封禁（整机拦）">
+      <a-setting-list-item paddings="small"><template #title>面板记录端口</template><template #control><a-input-number v-model="fail2banForms.xuiTls.port" :min="1" :max="65535" :style="{width:'100%'}"></a-input-number></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>失败次数 maxretry</template><template #control><a-input-number v-model="fail2banForms.xuiTls.maxretry" :min="1" :style="{width:'100%'}"></a-input-number></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>检测周期 findtime</template><template #control><a-input v-model="fail2banForms.xuiTls.findtime"></a-input></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>封禁时长 bantime</template><template #control><a-input v-model="fail2banForms.xuiTls.bantime"></a-input></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>白名单 ignoreip</template><template #control><a-input v-model="fail2banForms.xuiTls.ignoreip"></a-input></template></a-setting-list-item>
+      <a-space :style="{ marginTop: '12px' }">
+        <a-button type="primary" @click="applyFail2ban('3xui-tls')" :loading="fail2banBusy">保存并启用 TLS 扫描封禁</a-button>
+        <a-button type="danger" @click="removeFail2ban('3xui-tls','TLS 扫描封禁')" :loading="fail2banBusy">删除 TLS 规则</a-button>
+      </a-space>
+      <a-divider>当前拉黑记录（[[ fail2banStatus.xuiTls ? fail2banStatus.xuiTls.bannedCount || 0 : 0 ]]）</a-divider>
+      <a-input-search v-model="fail2banSearch.xuiTls" placeholder="搜索已拉黑 IP" allow-clear :style="{ marginBottom:'10px', maxWidth:'360px' }"></a-input-search>
+      <a-table size="small" row-key="ip" :columns="fail2banBanColumns"
+        :data-source="fail2banBanRows('xuiTls')" :pagination="{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['20','50','100'] }">
+        <template slot="action" slot-scope="text, record">
+          <a-button size="small" type="danger" ghost @click="confirmUnbanFail2ban('3xui-tls', record.ip)">取消拉黑</a-button>
+        </template>
+      </a-table>
+      <a-divider>最近爆破日志</a-divider>
+      <a-table size="small" row-key="key" :columns="fail2banLogColumns"
+        :data-source="fail2banLogRows('xuiTls')" :pagination="{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['20','50','100'] }">
+        <template slot="event" slot-scope="text, record"><a-tag :color="fail2banEventColor(record.event)">[[ record.event ]]</a-tag></template>
+      </a-table>
+    </a-collapse-panel>
+
+    <a-collapse-panel key="login" header="X-UI 登录失败封禁（整机拦）">
+      <a-setting-list-item paddings="small"><template #title>面板记录端口</template><template #control><a-input-number v-model="fail2banForms.xuiLogin.port" :min="1" :max="65535" :style="{width:'100%'}"></a-input-number></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>失败次数 maxretry</template><template #control><a-input-number v-model="fail2banForms.xuiLogin.maxretry" :min="1" :style="{width:'100%'}"></a-input-number></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>检测周期 findtime</template><template #control><a-input v-model="fail2banForms.xuiLogin.findtime"></a-input></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>封禁时长 bantime</template><template #control><a-input v-model="fail2banForms.xuiLogin.bantime"></a-input></template></a-setting-list-item>
+      <a-setting-list-item paddings="small"><template #title>白名单 ignoreip</template><template #control><a-input v-model="fail2banForms.xuiLogin.ignoreip"></a-input></template></a-setting-list-item>
+      <a-space :style="{ marginTop: '12px' }">
+        <a-button type="primary" @click="applyFail2ban('3xui-login')" :loading="fail2banBusy">保存并启用登录防爆破</a-button>
+        <a-button type="danger" @click="removeFail2ban('3xui-login','登录失败封禁')" :loading="fail2banBusy">删除登录规则</a-button>
+      </a-space>
+      <a-divider>当前拉黑记录（[[ fail2banStatus.xuiLogin ? fail2banStatus.xuiLogin.bannedCount || 0 : 0 ]]）</a-divider>
+      <a-input-search v-model="fail2banSearch.xuiLogin" placeholder="搜索已拉黑 IP" allow-clear :style="{ marginBottom:'10px', maxWidth:'360px' }"></a-input-search>
+      <a-table size="small" row-key="ip" :columns="fail2banBanColumns"
+        :data-source="fail2banBanRows('xuiLogin')" :pagination="{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['20','50','100'] }">
+        <template slot="action" slot-scope="text, record">
+          <a-button size="small" type="danger" ghost @click="confirmUnbanFail2ban('3xui-login', record.ip)">取消拉黑</a-button>
+        </template>
+      </a-table>
+      <a-divider>最近爆破日志</a-divider>
+      <a-table size="small" row-key="key" :columns="fail2banLogColumns"
+        :data-source="fail2banLogRows('xuiLogin')" :pagination="{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['20','50','100'] }">
+        <template slot="event" slot-scope="text, record"><a-tag :color="fail2banEventColor(record.event)">[[ record.event ]]</a-tag></template>
+      </a-table>
+    </a-collapse-panel>
+
+    <a-collapse-panel key="maintenance" header="维护 / 卸载">
+      <a-alert type="error" show-icon :style="{ marginBottom: '12px' }" message="下面是破坏性操作，执行前会再次确认。"></a-alert>
+      <a-space wrap>
+        <a-button @click="removeFail2ban('actions','X-UI 自定义防火墙 action')" :loading="fail2banBusy">删除自定义 action</a-button>
+        <a-button @click="removeFail2ban('shortcut','fb5 快捷命令')" :loading="fail2banBusy">删除 fb5 快捷命令</a-button>
+        <a-button type="danger" @click="removeFail2ban('all','全部 fb5 规则')" :loading="fail2banBusy">删除全部 fb5 规则</a-button>
+        <a-button type="danger" @click="removeFail2ban('package','Fail2ban 软件包')" :loading="fail2banBusy">卸载 Fail2ban 软件</a-button>
+      </a-space>
+    </a-collapse-panel>
+  </a-collapse>
+</a-space>
+{{end}}
