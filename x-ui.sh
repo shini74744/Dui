@@ -2423,7 +2423,7 @@ show_usage() {
 show_menu() {
     echo -e "
 ——————————————————————
-  ${green}大大怪 面板管理脚本${plain}
+  ${green}DUI 面板管理脚本${plain}
   ${yellow}  一个更好的面板${plain}
   ${yellow} 基于Xray Core构建${plain}
 ——————————————————————
@@ -2475,8 +2475,8 @@ show_menu() {
   ${yellow}https://github.com/shini74744/Dui${plain}
 ——————————————————————
 
-  ${green}探针监控面板地址${plain}
-  ${red}https://nmsl.ma${plain}
+  ${green}赞助商地址${plain}
+  ${red}shlii.io${plain}
 ----------------------------------------------
 "
     show_status
