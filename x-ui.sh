@@ -15,6 +15,19 @@ XUI_RAW_BASE="https://raw.githubusercontent.com/${XUI_REPO}/${XUI_BRANCH}"
 XUI_RELEASE_BASE="https://github.com/${XUI_REPO}/releases"
 XUI_API_BASE="https://api.github.com/repos/${XUI_REPO}"
 
+dui_arch() {
+    case "$(uname -m)" in
+        x86_64 | x64 | amd64) echo 'amd64' ;;
+        i*86 | x86) echo '386' ;;
+        armv8* | armv8 | arm64 | aarch64) echo 'arm64' ;;
+        armv7* | armv7 | arm) echo 'armv7' ;;
+        armv6* | armv6) echo 'armv6' ;;
+        armv5* | armv5) echo 'armv5' ;;
+        s390x) echo 's390x' ;;
+        *) return 1 ;;
+    esac
+}
+
 #Add some basic function here
 function LOGD() {
     echo -e "${yellow}[DEG] $* ${plain}"
@@ -171,14 +184,24 @@ update() {
     fi
 
     local xui_bin="/usr/local/x-ui/x-ui"
-    local platform
-    platform=$(arch)
+    local platform latest_version
+    platform=$(dui_arch) || {
+        LOGE "不支持的 CPU 架构：$(uname -m)"
+        [[ $# == 0 ]] && before_show_menu
+        return 1
+    }
+    latest_version=$(curl -fsSL "${XUI_API_BASE}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    if [[ -z "$latest_version" ]]; then
+        LOGE "获取 GitHub 最新 Release 版本失败，旧版本未改动"
+        [[ $# == 0 ]] && before_show_menu
+        return 1
+    fi
     local asset="x-ui-linux-${platform}.tar.gz"
     local package_url="${XUI_RELEASE_BASE}/latest/download/${asset}"
     local tmpdir
     tmpdir=$(mktemp -d) || return 1
 
-    LOGI "下载最新统一 Release 包: ${asset}"
+    LOGI "下载最新统一 Release 包: ${latest_version}"
     if ! curl -fL --retry 3 --connect-timeout 15 -o "${tmpdir}/${asset}" "$package_url"; then
         LOGE "Release 包下载失败，旧版本未改动"
         rm -rf "$tmpdir"
