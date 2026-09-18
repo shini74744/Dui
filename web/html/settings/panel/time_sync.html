@@ -1,0 +1,75 @@
+{{define "settings/panel/time_sync"}}
+<a-space direction="vertical" :size="16" :style="{ width:'100%' }">
+  <a-alert type="info" show-icon
+    message="时区 / 时间同步"
+    description="基于 time-sync-manager：Ubuntu/Debian + systemd，优先 NTP(UDP 123)，失败时使用 HTTPS 时间源；开机执行并每 4 小时同步。兼容原脚本安装路径和配置。">
+  </a-alert>
+
+  <a-alert v-if="timeSyncStatus.conflict" type="error" show-icon
+    :message="'检测到其他时间服务：' + timeSyncStatus.conflict"
+    description="原脚本为避免覆盖 chrony/ntp/ntpsec/openntpd 会停止安装，请先人工决定保留哪个时间服务。">
+  </a-alert>
+
+  <a-card title="当前状态">
+    <a-row :gutter="[12,12]">
+      <a-col :xs="24" :md="6"><a-statistic title="管理器" :value="timeSyncStatus.installed ? ('已安装' + (timeSyncStatus.version ? ' v'+timeSyncStatus.version : '')) : '未安装'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="当前时区" :value="timeSyncStatus.systemTimezone || '-'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="NTP 同步" :value="timeSyncStatus.ntpSynchronized ? '已同步' : '未同步'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="4小时定时器" :value="timeSyncStatus.timerActive ? '运行中' : '未运行'"></a-statistic></a-col>
+    </a-row>
+    <a-descriptions size="small" bordered :column="isMobile ? 1 : 2" :style="{ marginTop:'16px' }">
+      <a-descriptions-item label="本机当前时间">[[ timeSyncStatus.localTime || '-' ]]</a-descriptions-item>
+      <a-descriptions-item label="脚本配置时区">[[ timeSyncStatus.configuredTimezone || '-' ]]</a-descriptions-item>
+      <a-descriptions-item label="systemd-timesyncd">[[ timeSyncStatus.timesyncdActive ? 'active' : 'inactive' ]] / [[ timeSyncStatus.timesyncdEnabled ? 'enabled' : 'disabled' ]]</a-descriptions-item>
+      <a-descriptions-item label="下次同步">[[ timeSyncStatus.nextSync || '-' ]]</a-descriptions-item>
+    </a-descriptions>
+  </a-card>
+
+  <a-card title="时区设置与同步">
+    <a-row :gutter="[12,12]">
+      <a-col :xs="24" :md="14">
+        <a-select v-model="timeSyncForm.timezone" show-search :filter-option="false"
+          :default-active-first-option="false" @search="resolveTimezones" @focus="showAllTimezones"
+          placeholder="输入 HK / hk / 香港 / 日本 / London / America/New_York" :style="{ width:'100%' }">
+          <a-select-option v-for="zone in timeSyncSearchOptions" :key="zone" :value="zone">[[ zone ]]</a-select-option>
+        </a-select>
+        <div class="panel-tool-hint">支持国家/地区简称、中文名称、城市或标准 IANA 时区；单一匹配会自动选中。</div>
+      </a-col>
+      <a-col :xs="24" :md="10">
+        <a-space wrap>
+          <a-button class="panel-tool-install-button" :class="{ 'is-installed': timeSyncStatus.installed }" :type="timeSyncStatus.installed ? 'default' : 'primary'" icon="tool" @click="installTimeSync" :loading="timeSyncBusy">
+            [[ timeSyncStatus.installed ? '更新管理器' : '安装时间同步' ]]
+          </a-button>
+          <a-button icon="clock-circle" @click="setTimeSyncTimezone" :disabled="!timeSyncStatus.installed" :loading="timeSyncBusy">修改时区</a-button>
+          <a-button icon="sync" @click="syncTimeNow" :disabled="!timeSyncStatus.installed" :loading="timeSyncBusy">立即同步</a-button>
+        </a-space>
+      </a-col>
+    </a-row>
+    <a-alert v-if="timeSyncLastOutput" type="success" show-icon :style="{ marginTop:'12px' }">
+      <template #message>最近操作输出</template>
+      <template #description><pre class="panel-tool-log">[[ timeSyncLastOutput ]]</pre></template>
+    </a-alert>
+  </a-card>
+
+  <a-card title="同步日志">
+    <a-space :style="{ marginBottom:'12px' }">
+      <a-button icon="reload" @click="getTimeSyncStatus" :loading="timeSyncBusy">刷新状态</a-button>
+      <a-button icon="file-text" @click="getTimeSyncLogs" :loading="timeSyncBusy">刷新日志</a-button>
+    </a-space>
+    <a-tabs>
+      <a-tab-pane key="manager" tab="time-sync-manager">
+        <pre class="panel-tool-log">[[ timeSyncLogs.manager || '暂无日志' ]]</pre>
+      </a-tab-pane>
+      <a-tab-pane key="timesyncd" tab="systemd-timesyncd">
+        <pre class="panel-tool-log">[[ timeSyncLogs.timesyncd || '暂无日志' ]]</pre>
+      </a-tab-pane>
+    </a-tabs>
+  </a-card>
+
+  <a-card title="维护">
+    <a-alert type="warning" show-icon :style="{ marginBottom:'12px' }"
+      message="卸载只删除 time-sync-manager 及其 4 小时定时任务；systemd-timesyncd 会保留。"></a-alert>
+    <a-button type="danger" :disabled="!timeSyncStatus.installed" @click="uninstallTimeSync" :loading="timeSyncBusy">卸载时间同步管理器</a-button>
+  </a-card>
+</a-space>
+{{end}}

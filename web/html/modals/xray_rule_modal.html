@@ -1,0 +1,1201 @@
+{{define "modals/ruleModal"}}
+<a-modal id="rule-modal" v-model="ruleModal.visible" :title="ruleModal.title" @ok="ruleModal.ok" :confirm-loading="ruleModal.confirmLoading" :closable="true" :mask-closable="false" :ok-text="ruleModal.okText" cancel-text='{{ i18n "close" }}' :class="themeSwitcher.currentTheme">
+  <a-form :colon="false" :label-col="{ md: {span:8} }" :wrapper-col="{ md: {span:14} }">
+    <a-form-item>
+      <template slot="label">
+        <a-tooltip>
+          <template slot="title">
+            <span>{{ i18n "pages.xray.rules.useComma" }}</span>
+          </template> {{ i18n "pages.xray.rules.SourceIPs" }} <a-icon type="question-circle"></a-icon>
+        </a-tooltip>
+      </template>
+      <a-input v-model.trim="ruleModal.rule.sourceIP"></a-input>
+    </a-form-item>
+    <a-form-item>
+      <template slot="label">
+        <a-tooltip>
+          <template slot="title">
+            <span>{{ i18n "pages.xray.rules.useComma" }}</span>
+          </template> {{ i18n "pages.xray.rules.SourcePort" }} <a-icon type="question-circle"></a-icon>
+        </a-tooltip>
+      </template>
+      <a-input v-model.trim="ruleModal.rule.sourcePort"></a-input>
+    </a-form-item>
+    <a-form-item label='{{ i18n "pages.xray.rules.Network" }}'>
+      <a-select v-model="ruleModal.rule.network" :dropdown-class-name="themeSwitcher.currentTheme">
+        <a-select-option v-for="x in ['','TCP','UDP','TCP,UDP']" :value="x">[[ x ]]</a-select-option>
+      </a-select>
+    </a-form-item>
+    <a-form-item label='{{ i18n "pages.xray.rules.Protocol" }}'>
+      <a-select v-model="ruleModal.rule.protocol" mode="multiple" :dropdown-class-name="themeSwitcher.currentTheme">
+        <a-select-option v-for="x in ['http','tls','bittorrent','quic']" :value="x">[[ x ]]</a-select-option>
+      </a-select>
+    </a-form-item>
+    <a-form-item label='{{ i18n "pages.xray.rules.Attributes" }}'>
+      <a-button icon="plus" size="small" :style="{ marginLeft: '10px' }" @click="ruleModal.rule.attrs.push(['', ''])"></a-button>
+    </a-form-item>
+    <a-form-item :wrapper-col="{span: 24}">
+      <a-input-group compact v-for="(attr,index) in ruleModal.rule.attrs">
+        <a-input :style="{ width: '50%' }" v-model="attr[0]" placeholder='{{ i18n "pages.inbounds.stream.general.name" }}'>
+          <template slot="addonBefore" :style="{ margin: '0' }">[[ index+1 ]]</template>
+        </a-input>
+        <a-input :style="{ width: '50%' }" v-model="attr[1]" placeholder='{{ i18n "pages.inbounds.stream.general.value" }}'>
+          <a-button icon="minus" slot="addonAfter" size="small" @click="ruleModal.rule.attrs.splice(index,1)"></a-button>
+        </a-input>
+      </a-input-group>
+    </a-form-item>
+    <a-form-item>
+      <template slot="label">
+        <a-tooltip>
+          <template slot="title">
+            <span>{{ i18n "pages.xray.rules.useComma" }}</span>
+          </template> IP <a-icon type="question-circle"></a-icon>
+        </a-tooltip>
+      </template>
+      <a-input v-model.trim="ruleModal.rule.ip"></a-input>
+    </a-form-item>
+    <a-form-item label="IP / 域名关系">
+      <a-radio-group v-model="ruleModal.rule.ipDomainRelation" button-style="solid">
+        <a-radio-button value="or">OR</a-radio-button>
+        <a-radio-button value="and">AND</a-radio-button>
+      </a-radio-group>
+      <span :style="{ marginLeft:'10px', opacity:.65, fontSize:'12px' }">
+        [[ ruleModal.rule.ipDomainRelation === 'and' ? '域名和 IP 必须同时命中' : '域名或 IP 任意命中即可' ]]
+      </span>
+    </a-form-item>
+    <a-form-item>
+      <template slot="label">
+        <a-tooltip>
+          <template slot="title">
+            <span>{{ i18n "pages.xray.rules.useComma" }}</span>
+          </template> {{ i18n "pages.xray.rules.Domain" }} <a-icon type="question-circle"></a-icon>
+        </a-tooltip>
+      </template>
+      <a-input-group compact>
+        <a-input :style="{ width: 'calc(100% - 78px)' }" v-model.trim="ruleModal.rule.domain"></a-input>
+        <a-button :style="{ width: '78px' }" icon="setting" @click="ruleDomainAdvanced.open()">高级</a-button>
+      </a-input-group>
+    </a-form-item>
+
+    <a-form-item label="黑名单地址">
+      <a-input-group compact>
+        <a-input :style="{ width: 'calc(100% - 78px)' }" :value="ruleModal.blacklistSummary()" readonly></a-input>
+        <a-button :style="{ width: '78px' }" icon="setting" @click="ruleModal.openBlacklist()">高级</a-button>
+      </a-input-group>
+    </a-form-item>
+
+    <a-form-item>
+      <template slot="label">
+        <a-tooltip>
+          <template slot="title">
+            <span>{{ i18n "pages.xray.rules.useComma" }}</span>
+          </template> {{ i18n "pages.xray.rules.User" }} <a-icon type="question-circle"></a-icon>
+        </a-tooltip>
+      </template>
+      <a-input v-model.trim="ruleModal.rule.user"></a-input>
+    </a-form-item>
+    <a-form-item>
+      <template slot="label">
+        <a-tooltip>
+          <template slot="title">
+            <span>{{ i18n "pages.xray.rules.useComma" }}</span>
+          </template> {{ i18n "pages.xray.rules.Port" }} <a-icon type="question-circle"></a-icon>
+        </a-tooltip>
+      </template>
+      <a-input v-model.trim="ruleModal.rule.port"></a-input>
+    </a-form-item>
+    <a-form-item label='{{ i18n "pages.xray.rules.InboundTag" }}'>
+      <a-select v-model="ruleModal.rule.inboundTag" mode="multiple" :dropdown-class-name="themeSwitcher.currentTheme">
+        <a-select-option v-for="tag in ruleModal.inboundTags" :value="tag">[[ tag ]]</a-select-option>
+      </a-select>
+    </a-form-item>
+    <a-form-item label='{{ i18n "pages.xray.rules.OutboundTag" }}'>
+      <a-select v-model="ruleModal.rule.outboundTag" :dropdown-class-name="themeSwitcher.currentTheme">
+        <a-select-option v-for="tag in ruleModal.outboundTags" :value="tag">[[ tag ]]</a-select-option>
+      </a-select>
+    </a-form-item>
+    <a-form-item>
+      <template slot="label">
+        <a-tooltip>
+          <template slot="title">
+            <span>{{ i18n "pages.xray.balancer.balancerDesc" }}</span>
+          </template> {{ i18n "pages.xray.rules.BalancerTag" }} <a-icon type="question-circle"></a-icon>
+        </a-tooltip>
+      </template>
+      <a-select v-model="ruleModal.rule.balancerTag" :dropdown-class-name="themeSwitcher.currentTheme">
+        <a-select-option v-for="tag in ruleModal.balancerTags" :value="tag">[[ tag ]]</a-select-option>
+      </a-select>
+    </a-form-item>
+  </a-form>
+
+  <a-modal id="rule-blacklist-advanced-modal"
+    :visible="ruleModal.blacklistVisible"
+    title="黑名单地址高级设置"
+    :closable="true"
+    :mask-closable="false"
+    width="720px"
+    footer=""
+    @cancel="ruleModal.finishBlacklist()"
+    :class="themeSwitcher.currentTheme">
+    <a-alert type="info" show-icon :style="{ marginBottom:'12px' }"
+      message="黑名单优先于当前分流规则匹配"
+      description="黑名单属于当前这条规则，面板仍只显示一条；底层自动生成隐藏规则并优先执行。"></a-alert>
+    <a-form layout="vertical">
+      <a-row :gutter="[12,0]">
+        <a-col :span="12">
+          <a-form-item label="黑名单 IP / CIDR / GeoIP">
+            <a-textarea v-model="ruleModal.rule.blacklistIP" :rows="4" placeholder="例如：1.2.3.0/24&#10;geoip:cn"></a-textarea>
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="黑名单域名">
+            <a-textarea v-model="ruleModal.rule.blacklistDomain" :rows="4" placeholder="例如：domain:example.com&#10;keyword:example"></a-textarea>
+          </a-form-item>
+        </a-col>
+      </a-row>
+      <a-form-item label="黑名单 IP / 域名关系">
+        <a-radio-group v-model="ruleModal.rule.blacklistRelation" button-style="solid">
+          <a-radio-button value="or">OR</a-radio-button>
+          <a-radio-button value="and">AND</a-radio-button>
+        </a-radio-group>
+        <span :style="{ marginLeft:'10px', opacity:.65, fontSize:'12px' }">
+          [[ ruleModal.rule.blacklistRelation === 'and' ? '域名和 IP 必须同时命中' : '域名或 IP 任意命中即可' ]]
+        </span>
+      </a-form-item>
+      <a-form-item label="黑名单动作">
+        <a-select v-model="ruleModal.rule.blacklistAction" :dropdown-class-name="themeSwitcher.currentTheme">
+          <a-select-option value="deny">禁止</a-select-option>
+          <a-select-option value="drop">无返回</a-select-option>
+          <a-select-option value="redirect">重定向</a-select-option>
+        </a-select>
+      </a-form-item>
+      <a-form-item v-if="ruleModal.rule.blacklistAction === 'redirect'" label="重定向目标">
+        <a-input v-model.trim="ruleModal.rule.blacklistRedirect" placeholder="例如：ipleak.net 或 1.2.3.4:8443；未填端口自动补 :443"></a-input>
+      </a-form-item>
+    </a-form>
+    <div :style="{ textAlign:'right' }">
+      <a-button @click="ruleModal.clearBlacklist()">清空黑名单</a-button>
+      <a-button type="primary" :style="{ marginLeft:'8px' }" @click="ruleModal.finishBlacklist()">完成</a-button>
+    </div>
+  </a-modal>
+
+  <a-modal id="rule-domain-advanced-modal"
+    :visible="ruleDomainAdvanced.visible"
+    title="域地址高级规则"
+    :closable="true"
+    :mask-closable="false"
+    width="720px"
+    footer=""
+    @cancel="ruleDomainAdvanced.visible=false"
+    :class="themeSwitcher.currentTheme">
+    <a-tabs v-model="ruleDomainAdvanced.tab">
+      <a-tab-pane key="manual" tab="手动高级匹配">
+        <a-alert type="info" show-icon :style="{ marginBottom: '12px' }"
+          message="域名匹配格式"
+          description="域名后缀会自动转换为 domain:，域名关键字会自动转换为 keyword:；多个值可用逗号或换行分隔。"></a-alert>
+        <a-form layout="vertical">
+          <a-row :gutter="[12,0]">
+            <a-col :span="12"><a-form-item label="完整域名"><a-textarea v-model="ruleDomainAdvanced.fullDomains" :rows="3" placeholder="例如：www.youtube.com"></a-textarea></a-form-item></a-col>
+            <a-col :span="12"><a-form-item label="域名后缀"><a-textarea v-model="ruleDomainAdvanced.suffixes" :rows="3" placeholder="例如：youtube.com&#10;googlevideo.com"></a-textarea></a-form-item></a-col>
+          </a-row>
+          <a-row :gutter="[12,0]">
+            <a-col :span="12"><a-form-item label="域名关键字"><a-textarea v-model="ruleDomainAdvanced.keywords" :rows="3" placeholder="例如：youtube"></a-textarea></a-form-item></a-col>
+            <a-col :span="12"><a-form-item label="域名正则"><a-textarea v-model="ruleDomainAdvanced.regexes" :rows="3" placeholder="例如：^.+\.example\.com$"></a-textarea></a-form-item></a-col>
+          </a-row>
+          <a-row :gutter="[12,0]">
+            <a-col :span="12"><a-form-item label="GeoSite"><a-textarea v-model="ruleDomainAdvanced.geosites" :rows="3" placeholder="例如：google&#10;category-ai"></a-textarea></a-form-item></a-col>
+            <a-col :span="12"><a-form-item label="IP / CIDR"><a-textarea v-model="ruleDomainAdvanced.ips" :rows="3" placeholder="例如：1.1.1.0/24&#10;2001:db8::/32"></a-textarea></a-form-item></a-col>
+          </a-row>
+          <a-form-item label="GeoIP"><a-textarea v-model="ruleDomainAdvanced.geoips" :rows="2" placeholder="例如：cn&#10;private"></a-textarea></a-form-item>
+        </a-form>
+        <a-divider v-if="ruleDomainAdvanced.addedImports.length" orientation="left">第三方实时已添加</a-divider>
+        <a-row v-if="ruleDomainAdvanced.addedImports.length" :gutter="[12,0]">
+          <a-col :span="12">
+            <a-form-item label="第三方域名条件（实时）">
+              <a-textarea :value="ruleDomainAdvanced.importedDomainText()" :rows="4" readonly></a-textarea>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="第三方 IP / CIDR / GeoIP（实时）">
+              <a-textarea :value="ruleDomainAdvanced.importedIPText()" :rows="4" readonly></a-textarea>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <div v-if="ruleDomainAdvanced.addedImports.length" :style="{ marginBottom:'12px' }">
+          <a-tag v-for="item in ruleDomainAdvanced.addedImports" :key="'manual-' + item.id" :color="item.kind === 'category' ? 'purple' : 'blue'">
+            [[ item.label ]]：域名 [[ item.domains.length ]] / IP [[ item.ips.length ]]
+          </a-tag>
+        </div>
+        <div :style="{ textAlign:'right' }">
+          <a-button @click="ruleDomainAdvanced.visible=false">关闭</a-button>
+          <a-button type="primary" :style="{ marginLeft:'8px' }" @click="ruleDomainAdvanced.applyManual()">加入当前规则</a-button>
+        </div>
+      </a-tab-pane>
+
+      <a-tab-pane key="blackmatrix" tab="第三方应用分流">
+        <a-alert type="info" show-icon :style="{ marginBottom:'12px' }"
+          message="blackmatrix7 / ios_rule_script / rule / Clash"
+          description="只需要选择应用。面板自动识别 DOMAIN、DOMAIN-SUFFIX、DOMAIN-KEYWORD、DOMAIN-REGEX、IP-CIDR、IP-CIDR6、GEOIP、GEOSITE；域名写入“域地址”，IP/CIDR/GeoIP 自动写入当前规则上方的“IP”字段。"></a-alert>
+        <div :style="{ marginBottom:'12px' }">
+          <span :style="{ marginRight:'8px' }">[[ ruleDomainAdvanced.uiText('featured') ]]：</span>
+          <a-tag v-for="category in ruleDomainAdvanced.categories" :key="category.key" :color="category.color"
+            :style="{ cursor:'pointer', marginBottom:'6px' }" @click="ruleDomainAdvanced.selectCategory(category.key)">
+            [[ ruleDomainAdvanced.categoryLabel(category.key) ]] ([[ ruleDomainAdvanced.categoryCount(category.key) ]])
+          </a-tag>
+        </div>
+        <a-card v-if="ruleDomainAdvanced.selectedCategory" size="small" :style="{ marginBottom:'12px' }">
+          <div :style="{ marginBottom:'8px', fontWeight:600 }">
+            [[ ruleDomainAdvanced.categoryLabel(ruleDomainAdvanced.selectedCategory) ]] 将添加以下应用规则：
+          </div>
+          <a-alert type="info" show-icon :style="{ marginBottom:'10px' }"
+            message="可选择具体应用；如果一个都不勾选，默认添加该分类全部应用。"></a-alert>
+          <a-checkbox-group v-model="ruleDomainAdvanced.selectedCategoryPaths" :style="{ width:'100%', marginBottom:'10px' }">
+            <a-row :gutter="[8,8]">
+              <a-col v-for="item in ruleDomainAdvanced.categoryApps(ruleDomainAdvanced.selectedCategory)" :key="item.path" :xs="24" :sm="12" :md="8">
+                <a-checkbox :value="item.path">[[ item.name ]]</a-checkbox>
+              </a-col>
+            </a-row>
+          </a-checkbox-group>
+          <a-space wrap>
+            <a-button size="small" @click="ruleDomainAdvanced.selectAllCategoryApps()">全选</a-button>
+            <a-button size="small" @click="ruleDomainAdvanced.selectedCategoryPaths = []">清空选择（默认全部）</a-button>
+            <a-button type="primary" size="small" :loading="ruleDomainAdvanced.ruleLoading" @click="ruleDomainAdvanced.importCategory(ruleDomainAdvanced.selectedCategory)">
+              添加 [[ ruleDomainAdvanced.categoryLabel(ruleDomainAdvanced.selectedCategory) ]] 分类
+            </a-button>
+          </a-space>
+        </a-card>
+        <a-space direction="vertical" :size="10" :style="{ width:'100%' }">
+          <a-select v-model="ruleDomainAdvanced.selectedPath"
+            show-search
+            allow-clear
+            option-filter-prop="children"
+            placeholder="选择应用，例如 YouTube"
+            :loading="ruleDomainAdvanced.catalogLoading"
+            :dropdown-class-name="themeSwitcher.currentTheme"
+            :style="{ width:'100%' }"
+            @change="value => ruleDomainAdvanced.onSelectedApp(value)">
+            <a-select-option v-for="appItem in ruleDomainAdvanced.apps" :key="appItem.path" :value="appItem.path">
+              [[ ruleDomainAdvanced.appOptionLabel(appItem) ]]
+            </a-select-option>
+          </a-select>
+          <a-space>
+            <a-button icon="reload" :loading="ruleDomainAdvanced.catalogLoading" @click="ruleDomainAdvanced.loadApps(true)">更新项目规则列表</a-button>
+            <a-button type="primary" icon="plus"
+              :loading="ruleDomainAdvanced.ruleLoading" @click="ruleDomainAdvanced.identifyAddSelected(ruleDomainAdvanced.selectedPath)">识别添加</a-button>
+          </a-space>
+        </a-space>
+
+        <a-divider orientation="left">自定义 List 地址</a-divider>
+        <a-alert type="info" show-icon :style="{ marginBottom:'10px' }"
+          message="支持公开的 http/https Clash List 地址"
+          description="自动识别 DOMAIN、DOMAIN-SUFFIX、DOMAIN-KEYWORD、DOMAIN-REGEX、IP-CIDR、IP-CIDR6、GEOIP、GEOSITE；localhost 和内网地址会被拒绝。"></a-alert>
+        <a-input-group compact>
+          <a-input :style="{ width:'calc(100% - 110px)' }" v-model.trim="ruleDomainAdvanced.customListURL"
+            placeholder="例如：https://example.com/rules/YouTube.list" @pressEnter="ruleDomainAdvanced.identifyAddCustomURL()"></a-input>
+          <a-button type="primary" icon="plus" :style="{ width:'110px' }"
+            :loading="ruleDomainAdvanced.ruleLoading" @click="ruleDomainAdvanced.identifyAddCustomURL()">识别添加</a-button>
+        </a-input-group>
+
+        <a-card v-if="ruleDomainAdvanced.preview" size="small" :style="{ marginTop:'14px' }">
+          <a-descriptions size="small" bordered :column="2">
+            <a-descriptions-item label="应用">[[ ruleDomainAdvanced.preview.name ]]</a-descriptions-item>
+            <a-descriptions-item label="项目更新时间">[[ ruleDomainAdvanced.preview.updated || '-' ]]</a-descriptions-item>
+            <a-descriptions-item label="可导入">[[ ruleDomainAdvanced.preview.imported ]] 条</a-descriptions-item>
+            <a-descriptions-item label="跳过">[[ ruleDomainAdvanced.preview.skipped ]] 条</a-descriptions-item>
+            <a-descriptions-item label="域名规则">[[ (ruleDomainAdvanced.preview.domains || []).length ]] 条</a-descriptions-item>
+            <a-descriptions-item label="IP/CIDR 规则">[[ (ruleDomainAdvanced.preview.ips || []).length ]] 条</a-descriptions-item>
+          </a-descriptions>
+          <div v-if="ruleDomainAdvanced.preview.typeCounts" :style="{ marginTop:'10px' }">
+            <a-tag v-for="(count, kind) in ruleDomainAdvanced.preview.typeCounts" :key="kind" color="blue">[[ kind ]]: [[ count ]]</a-tag>
+          </div>
+        </a-card>
+        <a-alert v-if="ruleDomainAdvanced.lastMessage" type="success" show-icon :style="{ marginTop:'12px' }" :message="ruleDomainAdvanced.lastMessage"></a-alert>
+        <a-alert v-if="ruleDomainAdvanced.lastError" type="error" show-icon :style="{ marginTop:'12px' }" :message="ruleDomainAdvanced.lastError"></a-alert>
+        <a-divider orientation="left">已添加</a-divider>
+        <a-empty v-if="ruleDomainAdvanced.addedImports.length === 0" description="当前尚未通过第三方应用分流添加规则"></a-empty>
+        <div v-else>
+          <a-card v-for="item in ruleDomainAdvanced.addedImports" :key="item.id" size="small" :style="{ marginBottom:'8px' }">
+            <div :style="{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'10px' }">
+              <div :style="{ minWidth:0 }">
+                <div :style="{ marginBottom:'4px' }">
+                  <a-tag :color="item.kind === 'category' ? 'purple' : 'blue'">[[ item.label ]]</a-tag>
+                  <span>域名 [[ item.domains.length ]] · IP/CIDR [[ item.ips.length ]]</span>
+                </div>
+                <div :style="{ opacity:.65, fontSize:'12px', wordBreak:'break-all' }">[[ item.description || item.path || '-' ]]</div>
+              </div>
+              <a-button size="small" type="danger" ghost @click="ruleDomainAdvanced.removeImport(item.id)">取消添加</a-button>
+            </div>
+          </a-card>
+        </div>
+      </a-tab-pane>
+    </a-tabs>
+  </a-modal>
+
+  <a-modal
+    :visible="ruleDomainAdvanced.importModeVisible"
+    title="选择识别添加内容"
+    :closable="true"
+    :mask-closable="false"
+    ok-text="确认添加"
+    cancel-text="取消"
+    @ok="ruleDomainAdvanced.confirmImportMode()"
+    @cancel="ruleDomainAdvanced.cancelImportMode()"
+    :class="themeSwitcher.currentTheme">
+    <a-alert type="info" show-icon :style="{ marginBottom:'14px' }"
+      message="请选择本次要加入当前分流规则的内容"
+      description="选择“域名 + IP”后，最终按照主规则里的 OR / AND 关系保存；默认 OR 会在底层拆成两条规则，但面板仍显示为一条。"></a-alert>
+    <a-radio-group v-model="ruleDomainAdvanced.importMode" :style="{ width:'100%' }">
+      <a-space direction="vertical" :size="12" :style="{ width:'100%' }">
+        <a-radio value="domain">
+          只添加域名
+          <span :style="{ opacity:.65, marginLeft:'8px' }">([[ ruleDomainAdvanced.pendingDomainCount() ]] 条)</span>
+        </a-radio>
+        <a-radio value="ip">
+          只添加 IP / CIDR / GeoIP
+          <span :style="{ opacity:.65, marginLeft:'8px' }">([[ ruleDomainAdvanced.pendingIPCount() ]] 条)</span>
+        </a-radio>
+        <a-radio value="both">
+          域名 + IP 都添加（推荐）
+          <span :style="{ opacity:.65, marginLeft:'8px' }">(域名 [[ ruleDomainAdvanced.pendingDomainCount() ]] / IP [[ ruleDomainAdvanced.pendingIPCount() ]])</span>
+        </a-radio>
+      </a-space>
+    </a-radio-group>
+  </a-modal>
+</a-modal>
+<script>
+  function ruleAdvancedSplit(value) {
+    return String(value || '').split(/[\n,]+/).map(x => x.trim()).filter(Boolean);
+  }
+
+  function ruleAdvancedMergeCSV(current, additions) {
+    const values = ruleAdvancedSplit(current);
+    const seen = new Set(values);
+    (additions || []).forEach(value => {
+      value = String(value || '').trim();
+      if (value && !seen.has(value)) {
+        seen.add(value);
+        values.push(value);
+      }
+    });
+    return values.join(',');
+  }
+
+  function duiLooksLikeIPRule(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    const lower = raw.toLowerCase();
+    if (lower.startsWith('full:') || lower.startsWith('domain:') || lower.startsWith('keyword:') || lower.startsWith('regexp:') || lower.startsWith('geosite:')) return false;
+    if (lower.startsWith('geoip:')) return true;
+    if (lower.startsWith('ext:')) return lower.includes('geoip');
+    const ipv4 = raw.match(/^([0-9]{1,3}\.){3}[0-9]{1,3}(?:\/[0-9]{1,2})?$/);
+    if (ipv4) {
+      const address = raw.split('/')[0];
+      const parts = address.split('.').map(Number);
+      const prefix = raw.includes('/') ? Number(raw.split('/')[1]) : null;
+      return parts.every(n => n >= 0 && n <= 255) && (prefix === null || (prefix >= 0 && prefix <= 32));
+    }
+    // IPv6 / IPv6 CIDR。域名匹配前缀已经在上方排除。
+    if (raw.includes(':')) {
+      const body = raw.split('/')[0];
+      const prefix = raw.includes('/') ? Number(raw.split('/')[1]) : null;
+      return /^[0-9a-fA-F:]+$/.test(body) && (prefix === null || (prefix >= 0 && prefix <= 128));
+    }
+    return false;
+  }
+
+  function duiNormalizeBlacklistValues(domainValue, ipValue) {
+    const domains = [];
+    const ips = [];
+    const pushUnique = (arr, value) => { if (value && !arr.includes(value)) arr.push(value); };
+    ruleAdvancedSplit(domainValue).forEach(value => {
+      if (duiLooksLikeIPRule(value)) pushUnique(ips, value);
+      else pushUnique(domains, value);
+    });
+    ruleAdvancedSplit(ipValue).forEach(value => {
+      if (duiLooksLikeIPRule(value)) pushUnique(ips, value);
+      else pushUnique(domains, value);
+    });
+    return { domains, ips };
+  }
+
+  function duiNormalizeRedirectTarget(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('[')) {
+      if (/^\[[^\]]+\]:\d+$/.test(raw)) return raw;
+      if (/^\[[^\]]+\]$/.test(raw)) return raw + ':443';
+      return raw;
+    }
+    const firstColon = raw.indexOf(':');
+    const lastColon = raw.lastIndexOf(':');
+    if (firstColon >= 0 && firstColon !== lastColon) {
+      if (/^[0-9a-fA-F:]+$/.test(raw)) return '[' + raw + ']:443';
+      return raw;
+    }
+    if (lastColon > 0) {
+      const port = raw.substring(lastColon + 1);
+      if (/^\d+$/.test(port)) return raw;
+      return raw;
+    }
+    return raw + ':443';
+  }
+
+  function duiValidRedirectTarget(value) {
+    const raw = String(value || '').trim();
+    let match;
+    if (raw.startsWith('[')) match = raw.match(/^\[[^\]]+\]:(\d+)$/);
+    else match = raw.match(/^[^:\s]+:(\d+)$/);
+    if (!match) return false;
+    const port = Number(match[1]);
+    return Number.isInteger(port) && port >= 1 && port <= 65535;
+  }
+
+  const DUI_BLACKLIST_PREFIX = '__dui_blacklist_';
+
+  function duiBlacklistHash(value) {
+    let h = 2166136261;
+    const text = String(value || '');
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  }
+
+  function duiEnsureBlacklistOutbound(action, redirectTarget) {
+    let tag;
+    let outbound;
+    if (action === 'redirect') {
+      const target = duiNormalizeRedirectTarget(redirectTarget);
+      tag = DUI_BLACKLIST_PREFIX + 'redirect_' + duiBlacklistHash(target);
+      outbound = { tag, protocol: 'freedom', settings: { domainStrategy: 'AsIs', redirect: target } };
+    } else if (action === 'drop') {
+      tag = DUI_BLACKLIST_PREFIX + 'drop';
+      outbound = { tag, protocol: 'blackhole', settings: {} };
+    } else {
+      tag = DUI_BLACKLIST_PREFIX + 'deny';
+      outbound = { tag, protocol: 'blackhole', settings: { response: { type: 'http' } } };
+    }
+    const outbounds = app.templateSettings.outbounds || (app.templateSettings.outbounds = []);
+    const idx = outbounds.findIndex(o => o && o.tag === tag);
+    if (idx >= 0) outbounds.splice(idx, 1, outbound);
+    else outbounds.push(outbound);
+    return tag;
+  }
+
+  const ruleDomainAdvanced = {
+    visible: false,
+    tab: 'manual',
+    fullDomains: '',
+    suffixes: '',
+    keywords: '',
+    regexes: '',
+    geosites: '',
+    ips: '',
+    geoips: '',
+    apps: [],
+    selectedPath: undefined,
+    customListURL: '',
+    catalogLoading: false,
+    ruleLoading: false,
+    preview: null,
+    lastMessage: '',
+    lastError: '',
+    importModeVisible: false,
+    importMode: 'both',
+    pendingImport: null,
+    selectedCategory: '',
+    selectedCategoryPaths: [],
+    baselineDomains: [],
+    baselineIPs: [],
+    addedImports: [],
+    nextImportId: 1,
+    categories: [
+      { key: 'ai', color: 'purple' },
+      { key: 'video', color: 'blue' },
+      { key: 'social', color: 'cyan' },
+      { key: 'adult', color: 'red' },
+      { key: 'music', color: 'magenta' },
+      { key: 'game', color: 'green' },
+    ],
+    categoryTranslations: {
+      'zh-CN': { ai:'AI', video:'视频', social:'社媒', adult:'成人', music:'音乐', game:'游戏', other:'其他' },
+      'zh-TW': { ai:'AI', video:'影片', social:'社群', adult:'成人', music:'音樂', game:'遊戲', other:'其他' },
+      'en-US': { ai:'AI', video:'Video', social:'Social', adult:'Adult', music:'Music', game:'Games', other:'Other' },
+      'ja-JP': { ai:'AI', video:'動画', social:'SNS', adult:'成人向け', music:'音楽', game:'ゲーム', other:'その他' },
+      'ru-RU': { ai:'ИИ', video:'Видео', social:'Соцсети', adult:'18+', music:'Музыка', game:'Игры', other:'Другое' },
+      'vi-VN': { ai:'AI', video:'Video', social:'Mạng xã hội', adult:'Người lớn', music:'Âm nhạc', game:'Trò chơi', other:'Khác' },
+      'es-ES': { ai:'IA', video:'Vídeo', social:'Redes sociales', adult:'Adulto', music:'Música', game:'Juegos', other:'Otros' },
+      'id-ID': { ai:'AI', video:'Video', social:'Sosial', adult:'Dewasa', music:'Musik', game:'Game', other:'Lainnya' },
+      'uk-UA': { ai:'ШІ', video:'Відео', social:'Соцмережі', adult:'18+', music:'Музика', game:'Ігри', other:'Інше' },
+      'tr-TR': { ai:'Yapay Zekâ', video:'Video', social:'Sosyal', adult:'Yetişkin', music:'Müzik', game:'Oyun', other:'Diğer' },
+      'pt-BR': { ai:'IA', video:'Vídeo', social:'Redes sociais', adult:'Adulto', music:'Música', game:'Jogos', other:'Outros' },
+      'ar-EG': { ai:'الذكاء الاصطناعي', video:'فيديو', social:'تواصل اجتماعي', adult:'للبالغين', music:'موسيقى', game:'ألعاب', other:'أخرى' },
+      'fa-IR': { ai:'هوش مصنوعی', video:'ویدئو', social:'شبکه اجتماعی', adult:'بزرگسال', music:'موسیقی', game:'بازی', other:'سایر' },
+    },
+    uiTranslations: {
+      'zh-CN': {
+        featured:'精选分类', chooseApp:'选择应用，例如 YouTube', refreshList:'更新项目规则列表',
+        identifyAdd:'识别添加', application:'应用', updated:'项目更新时间', imported:'已识别',
+        skipped:'跳过', domainRules:'域名规则', ipRules:'IP/CIDR 规则',
+      },
+      'zh-TW': {
+        featured:'精選分類', chooseApp:'選擇應用，例如 YouTube', refreshList:'更新項目規則列表',
+        identifyAdd:'識別添加', application:'應用', updated:'項目更新時間', imported:'已識別',
+        skipped:'略過', domainRules:'網域規則', ipRules:'IP/CIDR 規則',
+      },
+      'en-US': {
+        featured:'Featured', chooseApp:'Choose an app, e.g. YouTube', refreshList:'Refresh project rules',
+        identifyAdd:'Identify & Add', application:'Application', updated:'Project updated', imported:'Recognized',
+        skipped:'Skipped', domainRules:'Domain rules', ipRules:'IP/CIDR rules',
+      }
+    },
+    appDescriptions: {
+      'zh-CN': {
+        '115':'115网盘', '12306':'中国铁路12306', 'YouTube':'在线视频', 'YouTubeMusic':'YouTube音乐',
+        'OpenAI':'人工智能', 'Claude':'人工智能', 'Gemini':'人工智能', 'Copilot':'AI助手',
+        'Anthropic':'人工智能', 'Civitai':'AI模型社区', 'Netflix':'流媒体视频', 'TikTok':'短视频',
+        'Telegram':'即时通讯', 'Discord':'社交通讯', 'Facebook':'社交平台', 'Instagram':'社交平台',
+        'Twitter':'社交平台', 'Reddit':'社区论坛', 'Spotify':'音乐流媒体', 'Steam':'游戏平台',
+        'EHGallery':'成人内容', 'Japonx':'成人内容', 'Xunlei':'迅雷', 'BiliBili':'哔哩哔哩', 'BiliBiliIntl':'哔哩哔哩国际版', 'iQIYI':'爱奇艺', 'iQIYIIntl':'爱奇艺国际版', 'WeChat':'微信', 'Whatsapp':'WhatsApp', 'Line':'LINE', 'Disney':'Disney+', 'Twitch':'游戏直播', 'Vimeo':'在线视频'
+      },
+      'zh-TW': {
+        '115':'115網盤', '12306':'中國鐵路12306', 'YouTube':'線上影片', 'YouTubeMusic':'YouTube音樂',
+        'OpenAI':'人工智慧', 'Claude':'人工智慧', 'Gemini':'人工智慧', 'Copilot':'AI助手',
+        'Netflix':'串流影片', 'TikTok':'短影片', 'Telegram':'即時通訊', 'Spotify':'音樂串流', 'Steam':'遊戲平台'
+      },
+      'en-US': {
+        '115':'115 Cloud Drive', '12306':'China Railway 12306', 'YouTube':'Online Video', 'YouTubeMusic':'Music',
+        'OpenAI':'Artificial Intelligence', 'Claude':'Artificial Intelligence', 'Gemini':'Artificial Intelligence',
+        'Copilot':'AI Assistant', 'Anthropic':'Artificial Intelligence', 'Civitai':'AI Model Community',
+        'Netflix':'Streaming Video', 'TikTok':'Short Video', 'Telegram':'Messaging', 'Discord':'Social Messaging',
+        'Facebook':'Social Network', 'Instagram':'Social Network', 'Twitter':'Social Network', 'Reddit':'Community',
+        'Spotify':'Music Streaming', 'Steam':'Gaming Platform', 'EHGallery':'Adult Content', 'Japonx':'Adult Content'
+      }
+    },
+    language() {
+      try { return LanguageManager.getLanguage() || 'zh-CN'; } catch (e) { return 'zh-CN'; }
+    },
+    uiText(key) {
+      const lang = this.language();
+      const table = this.uiTranslations[lang] || this.uiTranslations['en-US'];
+      return table[key] || this.uiTranslations['en-US'][key] || key;
+    },
+    categoryLabel(category) {
+      const lang = this.language();
+      const table = this.categoryTranslations[lang] || this.categoryTranslations['en-US'];
+      return table[category] || table.other || category;
+    },
+    categoryCount(category) {
+      return this.apps.filter(item => item.category === category).length;
+    },
+    categoryApps(category) {
+      return this.apps.filter(item => item.category === category);
+    },
+    selectCategory(category) {
+      const next = this.selectedCategory === category ? '' : category;
+      this.selectedCategory = next;
+      this.selectedCategoryPaths = [];
+      this.lastMessage = '';
+      this.lastError = '';
+    },
+    selectAllCategoryApps() {
+      if (!this.selectedCategory) return;
+      this.selectedCategoryPaths = this.categoryApps(this.selectedCategory).map(item => item.path);
+    },
+    appOptionLabel(item) {
+      const lang = this.language();
+      const descriptions = this.appDescriptions[lang] || {};
+      const description = descriptions[item.name] || this.categoryLabel(item.category || 'other');
+      return item.name + '（' + description + '） · ' + item.path;
+    },
+    importedDomainSet() {
+      const result = new Set();
+      this.addedImports.forEach(item => (item.domains || []).forEach(value => result.add(value)));
+      return result;
+    },
+    importedIPSet() {
+      const result = new Set();
+      this.addedImports.forEach(item => (item.ips || []).forEach(value => result.add(value)));
+      return result;
+    },
+    importedDomainText() {
+      return Array.from(this.importedDomainSet()).join('\n');
+    },
+    importedIPText() {
+      return Array.from(this.importedIPSet()).join('\n');
+    },
+    populateManualFields() {
+      const full = [], suffix = [], keyword = [], regex = [], geosite = [];
+      const ip = [], geoip = [];
+      this.baselineDomains.forEach(value => {
+        if (value.startsWith('full:')) full.push(value.substring(5));
+        else if (value.startsWith('domain:')) suffix.push(value.substring(7));
+        else if (value.startsWith('keyword:')) keyword.push(value.substring(8));
+        else if (value.startsWith('regexp:')) regex.push(value.substring(7));
+        else if (value.startsWith('geosite:')) geosite.push(value.substring(8));
+        else full.push(value);
+      });
+      this.baselineIPs.forEach(value => {
+        if (value.startsWith('geoip:')) geoip.push(value.substring(6));
+        else ip.push(value);
+      });
+      this.fullDomains = full.join('\n');
+      this.suffixes = suffix.join('\n');
+      this.keywords = keyword.join('\n');
+      this.regexes = regex.join('\n');
+      this.geosites = geosite.join('\n');
+      this.ips = ip.join('\n');
+      this.geoips = geoip.join('\n');
+    },
+    syncFromRule() {
+      const importedDomains = this.importedDomainSet();
+      const importedIPs = this.importedIPSet();
+      const currentDomains = ruleAdvancedSplit(ruleModal.rule.domain);
+      const currentIPs = ruleAdvancedSplit(ruleModal.rule.ip);
+      this.baselineDomains = currentDomains.filter(value => !importedDomains.has(value));
+      this.baselineIPs = currentIPs.filter(value => !importedIPs.has(value));
+      this.populateManualFields();
+    },
+    rebuildCurrentRule() {
+      let domains = [...this.baselineDomains];
+      let ips = [...this.baselineIPs];
+      this.addedImports.forEach(item => {
+        domains = ruleAdvancedSplit(ruleAdvancedMergeCSV(domains.join(','), item.domains || []));
+        ips = ruleAdvancedSplit(ruleAdvancedMergeCSV(ips.join(','), item.ips || []));
+      });
+      ruleModal.rule.domain = domains.join(',');
+      ruleModal.rule.ip = ips.join(',');
+    },
+    resetForRule() {
+      this.addedImports = [];
+      this.nextImportId = 1;
+      this.selectedPath = undefined;
+      this.customListURL = '';
+      this.selectedCategory = '';
+      this.selectedCategoryPaths = [];
+      this.preview = null;
+      this.importModeVisible = false;
+      this.importMode = 'both';
+      this.pendingImport = null;
+      this.lastMessage = '';
+      this.lastError = '';
+      this.syncFromRule();
+    },
+    async open() {
+      this.syncFromRule();
+      this.visible = true;
+      this.lastMessage = '';
+      this.lastError = '';
+      if (this.apps.length === 0) await this.loadApps(false);
+    },
+    async loadApps(force = false) {
+      this.catalogLoading = true;
+      this.lastError = '';
+      try {
+        const msg = await HttpUtil.get('/panel/xray/ruleSet/apps' + (force ? '?refresh=1' : ''));
+        if (msg.success && Array.isArray(msg.obj)) {
+          this.apps = msg.obj;
+          if (force) app.$message.success(this.uiText('refreshList') + ' ✓');
+        } else {
+          this.lastError = (msg && msg.msg) ? msg.msg : 'Failed to load rule catalog';
+        }
+      } catch (e) {
+        this.lastError = e && e.message ? e.message : 'Failed to load rule catalog';
+      } finally {
+        this.catalogLoading = false;
+      }
+    },
+    onSelectedApp(value) {
+      this.selectedPath = value || undefined;
+      this.preview = null;
+      this.lastMessage = '';
+      this.lastError = '';
+    },
+    registerImport(meta, result) {
+      this.syncFromRule();
+      const id = meta.id;
+      const nextItem = {
+        id,
+        kind: meta.kind || 'app',
+        label: meta.label || result.name || id,
+        path: meta.path || result.path || '',
+        description: meta.description || '',
+        domains: [...((result && result.domains) || [])],
+        ips: [...((result && result.ips) || [])],
+      };
+      this.addedImports = [...this.addedImports.filter(item => item.id !== id), nextItem];
+      this.rebuildCurrentRule();
+    },
+    mergeIntoCurrentRule(result, prefix, meta) {
+      const domains = (result && result.domains) || [];
+      const ips = (result && result.ips) || [];
+      this.registerImport(meta, result);
+      const failed = (result && result.failed) || [];
+      const fileText = result && result.files ? ('；应用文件 ' + result.files + ' 个') : '';
+      this.lastMessage = prefix + '：共加入 ' + (domains.length + ips.length) + ' 条；域名 ' + domains.length + ' 条，IP/CIDR ' + ips.length + ' 条' + fileText + (failed.length ? '；失败 ' + failed.length + ' 个' : '');
+      this.lastError = failed.length ? ('未能读取：' + failed.join(', ')) : '';
+      app.$message.success(this.lastMessage);
+    },
+    removeImport(id) {
+      const item = this.addedImports.find(entry => entry.id === id);
+      if (!item) return;
+      app.$confirm({
+        title: '取消添加',
+        content: '确定从当前规则中取消“' + item.label + '”添加的域名/IP吗？手动规则和其它来源仍会保留。',
+        class: themeSwitcher.currentTheme,
+        okText: '取消添加',
+        okType: 'danger',
+        cancelText: '返回',
+        onOk: () => {
+          this.addedImports = this.addedImports.filter(entry => entry.id !== id);
+          this.rebuildCurrentRule();
+          this.syncFromRule();
+          this.lastMessage = '已取消添加：' + item.label;
+          this.lastError = '';
+          app.$message.success(this.lastMessage);
+        }
+      });
+    },
+    pendingDomainCount() {
+      return this.pendingImport && this.pendingImport.result ? ((this.pendingImport.result.domains || []).length) : 0;
+    },
+    pendingIPCount() {
+      return this.pendingImport && this.pendingImport.result ? ((this.pendingImport.result.ips || []).length) : 0;
+    },
+    cancelImportMode() {
+      this.importModeVisible = false;
+      this.pendingImport = null;
+      this.preview = null;
+    },
+    confirmImportMode() {
+      if (!this.pendingImport || !this.pendingImport.result) {
+        this.importModeVisible = false;
+        return;
+      }
+      const original = this.pendingImport.result;
+      const mode = this.importMode || 'both';
+      const filtered = { ...original };
+      if (mode === 'domain') filtered.ips = [];
+      if (mode === 'ip') filtered.domains = [];
+
+      const domainCount = (filtered.domains || []).length;
+      const ipCount = (filtered.ips || []).length;
+      if (domainCount === 0 && ipCount === 0) {
+        this.lastError = mode === 'domain' ? '该应用没有可添加的域名规则' : '该应用没有可添加的 IP/CIDR/GeoIP 规则';
+        app.$message.warning(this.lastError);
+        return;
+      }
+
+      const modeText = mode === 'domain' ? '仅域名' : (mode === 'ip' ? '仅 IP/CIDR' : '域名 + IP');
+      const meta = { ...this.pendingImport.meta };
+      meta.description = (meta.description || '') + ' · ' + modeText;
+      this.mergeIntoCurrentRule(filtered, this.pendingImport.label + '（' + modeText + '）', meta);
+      this.importModeVisible = false;
+      this.pendingImport = null;
+      this.selectedPath = undefined;
+      if (meta.kind === 'custom') this.customListURL = '';
+      this.preview = null;
+    },
+    async identifyAddSelected(path) {
+      const selectedPath = path || this.selectedPath;
+      if (!selectedPath) {
+        this.lastError = '请先选择一个应用规则';
+        app.$message.warning(this.lastError);
+        return;
+      }
+      this.selectedPath = selectedPath;
+      this.ruleLoading = true;
+      this.lastMessage = '';
+      this.lastError = '';
+      try {
+        const msg = await HttpUtil.post('/panel/xray/ruleSet/resolve', { path: selectedPath });
+        if (!msg.success || !msg.obj) {
+          this.lastError = (msg && msg.msg) ? msg.msg : '规则识别失败';
+          app.$message.error(this.lastError);
+          return;
+        }
+        this.preview = msg.obj;
+        const selectedApp = this.apps.find(item => item.path === selectedPath);
+        const label = selectedApp ? selectedApp.name : (msg.obj.name || selectedPath);
+        this.pendingImport = {
+          result: msg.obj,
+          label,
+          meta: {
+            id: 'app:' + selectedPath, kind: 'app', label, path: selectedPath,
+            description: selectedApp ? this.appOptionLabel(selectedApp) : selectedPath
+          }
+        };
+        this.importMode = 'both';
+        this.importModeVisible = true;
+      } catch (e) {
+        this.lastError = e && e.message ? e.message : '规则识别失败';
+        app.$message.error(this.lastError);
+      } finally {
+        this.ruleLoading = false;
+      }
+    },
+    async identifyAddCustomURL() {
+      const rawURL = String(this.customListURL || '').trim();
+      if (!rawURL) {
+        this.lastError = '请先填写自定义 List 地址';
+        app.$message.warning(this.lastError);
+        return;
+      }
+      if (!/^https?:\/\//i.test(rawURL)) {
+        this.lastError = '自定义 List 仅支持 http/https 地址';
+        app.$message.warning(this.lastError);
+        return;
+      }
+      this.ruleLoading = true;
+      this.lastMessage = '';
+      this.lastError = '';
+      try {
+        const msg = await HttpUtil.post('/panel/xray/ruleSet/resolveURL', { url: rawURL });
+        if (!msg.success || !msg.obj) {
+          this.lastError = (msg && msg.msg) ? msg.msg : '自定义 List 识别失败';
+          app.$message.error(this.lastError);
+          return;
+        }
+        this.preview = msg.obj;
+        const label = msg.obj.name || 'CustomList';
+        this.pendingImport = {
+          result: msg.obj,
+          label,
+          meta: {
+            id: 'custom:' + duiBlacklistHash(rawURL),
+            kind: 'custom',
+            label,
+            path: rawURL,
+            description: '自定义 List · ' + rawURL
+          }
+        };
+        this.importMode = 'both';
+        this.importModeVisible = true;
+      } catch (e) {
+        this.lastError = e && e.message ? e.message : '自定义 List 识别失败';
+        app.$message.error(this.lastError);
+      } finally {
+        this.ruleLoading = false;
+      }
+    },
+    async importCategory(category) {
+
+      if (this.apps.length === 0) await this.loadApps(false);
+      const allCategoryItems = this.categoryApps(category);
+      const selectedSet = new Set(this.selectedCategoryPaths || []);
+      const categoryItems = selectedSet.size > 0 ? allCategoryItems.filter(item => selectedSet.has(item.path)) : allCategoryItems;
+      const paths = categoryItems.map(item => item.path);
+      if (paths.length === 0) {
+        this.lastError = this.categoryLabel(category) + '：暂无可用应用规则';
+        app.$message.warning(this.lastError);
+        return;
+      }
+      this.ruleLoading = true;
+      this.lastMessage = '';
+      this.lastError = '';
+      try {
+        const msg = await HttpUtil.post('/panel/xray/ruleSet/resolveMany', { paths });
+        if (!msg.success || !msg.obj) {
+          this.lastError = (msg && msg.msg) ? msg.msg : '分类规则识别失败';
+          app.$message.error(this.lastError);
+          return;
+        }
+        this.preview = null;
+        const label = this.categoryLabel(category);
+        this.mergeIntoCurrentRule(msg.obj, label, {
+          id: 'category:' + category, kind: 'category', label,
+          description: categoryItems.map(item => item.name).join('、')
+        });
+        this.selectedCategoryPaths = [];
+      } catch (e) {
+        this.lastError = e && e.message ? e.message : '分类规则识别失败';
+        app.$message.error(this.lastError);
+      } finally {
+        this.ruleLoading = false;
+      }
+    },
+    applyManual() {
+      const domainAdditions = [];
+      const ipAdditions = [];
+      ruleAdvancedSplit(this.fullDomains).forEach(x => domainAdditions.push(x.startsWith('full:') ? x : 'full:' + x));
+      ruleAdvancedSplit(this.suffixes).forEach(x => domainAdditions.push(x.startsWith('domain:') ? x : 'domain:' + x));
+      ruleAdvancedSplit(this.keywords).forEach(x => domainAdditions.push(x.startsWith('keyword:') ? x : 'keyword:' + x));
+      ruleAdvancedSplit(this.regexes).forEach(x => domainAdditions.push(x.startsWith('regexp:') ? x : 'regexp:' + x));
+      ruleAdvancedSplit(this.geosites).forEach(x => domainAdditions.push(x.startsWith('geosite:') ? x : 'geosite:' + x));
+      ruleAdvancedSplit(this.ips).forEach(x => ipAdditions.push(x));
+      ruleAdvancedSplit(this.geoips).forEach(x => ipAdditions.push(x.startsWith('geoip:') ? x : 'geoip:' + x));
+
+      if (domainAdditions.length === 0 && ipAdditions.length === 0) {
+        app.$message.warning('请先填写至少一种高级匹配条件');
+        return;
+      }
+      this.baselineDomains = ruleAdvancedSplit(ruleAdvancedMergeCSV(this.baselineDomains.join(','), domainAdditions));
+      this.baselineIPs = ruleAdvancedSplit(ruleAdvancedMergeCSV(this.baselineIPs.join(','), ipAdditions));
+      this.rebuildCurrentRule();
+      this.populateManualFields();
+      this.lastMessage = '已加入当前规则：域名 ' + domainAdditions.length + ' 条，IP/CIDR ' + ipAdditions.length + ' 条';
+      this.lastError = '';
+      app.$message.success(this.lastMessage);
+    }
+  };
+
+  const ruleModal = {
+    title: '',
+    visible: false,
+    confirmLoading: false,
+    okText: '{{ i18n "sure" }}',
+    isEdit: false,
+    confirm: null,
+    blacklistVisible: false,
+    rule: {
+      type: "field",
+      domain: "",
+      ip: "",
+      ipDomainRelation: "or",
+      blacklistIP: "",
+      blacklistDomain: "",
+      blacklistRelation: "or",
+      blacklistAction: "deny",
+      blacklistRedirect: "",
+      port: "",
+      sourcePort: "",
+      network: "",
+      sourceIP: "",
+      user: "",
+      inboundTag: [],
+      protocol: [],
+      attrs: [],
+      outboundTag: "",
+      balancerTag: "",
+    },
+    inboundTags: [],
+    outboundTags: [],
+    users: [],
+    balancerTags: [],
+    blacklistSummary() {
+      const domainCount = ruleAdvancedSplit(this.rule.blacklistDomain).length;
+      const ipCount = ruleAdvancedSplit(this.rule.blacklistIP).length;
+      if (domainCount === 0 && ipCount === 0) return '未配置';
+      const action = this.rule.blacklistAction === 'drop' ? '无返回' : (this.rule.blacklistAction === 'redirect' ? '重定向' : '禁止');
+      const parts = [action];
+      if (domainCount > 0) parts.push('域名 ' + domainCount);
+      if (ipCount > 0) parts.push('IP ' + ipCount);
+      if (domainCount > 0 && ipCount > 0) parts.push(String(this.rule.blacklistRelation || 'or').toUpperCase());
+      if (this.rule.blacklistAction === 'redirect' && String(this.rule.blacklistRedirect || '').trim()) parts.push('→ ' + String(this.rule.blacklistRedirect).trim());
+      return parts.join(' · ');
+    },
+    openBlacklist() {
+      this.blacklistVisible = true;
+    },
+    normalizeBlacklist() {
+      const normalized = duiNormalizeBlacklistValues(this.rule.blacklistDomain, this.rule.blacklistIP);
+      this.rule.blacklistDomain = normalized.domains.join('\n');
+      this.rule.blacklistIP = normalized.ips.join('\n');
+      return normalized;
+    },
+    finishBlacklist() {
+      const beforeDomain = ruleAdvancedSplit(this.rule.blacklistDomain).length;
+      const beforeIP = ruleAdvancedSplit(this.rule.blacklistIP).length;
+      const normalized = this.normalizeBlacklist();
+      if (this.rule.blacklistAction === 'redirect' && String(this.rule.blacklistRedirect || '').trim()) {
+        this.rule.blacklistRedirect = duiNormalizeRedirectTarget(this.rule.blacklistRedirect);
+        if (!duiValidRedirectTarget(this.rule.blacklistRedirect)) {
+          app.$message.warning('重定向目标格式无效，请填写 域名或IP:端口，例如 ipleak.net:443');
+          return;
+        }
+      }
+      this.blacklistVisible = false;
+      if (beforeDomain !== normalized.domains.length || beforeIP !== normalized.ips.length) {
+        app.$message.info('已自动识别并整理黑名单中的域名/IP');
+      }
+    },
+    clearBlacklist() {
+      this.rule.blacklistIP = '';
+      this.rule.blacklistDomain = '';
+      this.rule.blacklistRelation = 'or';
+      this.rule.blacklistAction = 'deny';
+      this.rule.blacklistRedirect = '';
+      app.$message.success('已清空当前规则黑名单');
+    },
+    ok() {
+      if (!String(ruleModal.rule.outboundTag || '').trim() && !String(ruleModal.rule.balancerTag || '').trim()) {
+        app.$message.warning('请先选择出站 Tag 或负载均衡 Tag');
+        return;
+      }
+      if (String(ruleModal.rule.outboundTag || '').trim() && String(ruleModal.rule.balancerTag || '').trim()) {
+        app.$message.warning('出站 Tag 和负载均衡 Tag 只能选择一个');
+        return;
+      }
+      ruleModal.normalizeBlacklist();
+      const hasBlacklist = ruleAdvancedSplit(ruleModal.rule.blacklistIP).length > 0 || ruleAdvancedSplit(ruleModal.rule.blacklistDomain).length > 0;
+      if (hasBlacklist && ruleModal.rule.blacklistAction === 'redirect') {
+        if (!String(ruleModal.rule.blacklistRedirect || '').trim()) {
+          app.$message.warning('请填写黑名单重定向目标');
+          return;
+        }
+        ruleModal.rule.blacklistRedirect = duiNormalizeRedirectTarget(ruleModal.rule.blacklistRedirect);
+        if (!duiValidRedirectTarget(ruleModal.rule.blacklistRedirect)) {
+          app.$message.warning('重定向目标格式无效，请填写 域名或IP:端口，例如 ipleak.net:443');
+          return;
+        }
+      }
+      const newRules = ruleModal.getResults();
+      ObjectUtil.execute(ruleModal.confirm, newRules);
+    },
+    show({
+      title = '',
+      okText = '{{ i18n "sure" }}',
+      rule,
+      confirm = (rule) => {},
+      isEdit = false
+    }) {
+      this.title = title;
+      this.okText = okText;
+      this.confirm = confirm;
+      this.visible = true;
+      this.blacklistVisible = false;
+      if (isEdit) {
+        this.rule.domain = rule.domain ? rule.domain.join(',') : [];
+        this.rule.ip = rule.ip ? rule.ip.join(',') : [];
+        this.rule.ipDomainRelation = rule._ipDomainRelation || ((rule.domain && rule.domain.length && rule.ip && rule.ip.length) ? "and" : "or");
+        this.rule.blacklistIP = rule._blacklistIP ? rule._blacklistIP.join(',') : '';
+        this.rule.blacklistDomain = rule._blacklistDomain ? rule._blacklistDomain.join(',') : '';
+        this.rule.blacklistRelation = rule._blacklistRelation || 'or';
+        this.rule.blacklistAction = rule._blacklistAction || 'deny';
+        this.rule.blacklistRedirect = rule._blacklistRedirect || '';
+        this.rule.port = rule.port;
+        this.rule.sourcePort = rule.sourcePort;
+        this.rule.network = rule.network;
+        this.rule.sourceIP = rule.sourceIP ? rule.sourceIP.join(',') : [];
+        this.rule.user = rule.user ? rule.user.join(',') : [];
+        this.rule.inboundTag = rule.inboundTag;
+        this.rule.protocol = rule.protocol;
+        this.rule.attrs = rule.attrs ? Object.entries(rule.attrs) : [];
+        this.rule.outboundTag = rule.outboundTag;
+        this.rule.balancerTag = rule.balancerTag ? rule.balancerTag : "";
+      } else {
+        this.rule = {
+          domain: "",
+          ip: "",
+          ipDomainRelation: "or",
+          blacklistIP: "",
+          blacklistDomain: "",
+          blacklistRelation: "or",
+          blacklistAction: "deny",
+          blacklistRedirect: "",
+          port: "",
+          sourcePort: "",
+          network: "",
+          sourceIP: "",
+          user: "",
+          inboundTag: [],
+          protocol: [],
+          attrs: [],
+          outboundTag: "",
+          balancerTag: "",
+        }
+      }
+      this.isEdit = isEdit;
+      ruleDomainAdvanced.resetForRule();
+      this.inboundTags = app.templateSettings.inbounds.filter((i) => !ObjectUtil.isEmpty(i.tag)).map(obj => obj.tag);
+      this.inboundTags.push(...app.inboundTags);
+      if (app.enableDNS && !ObjectUtil.isEmpty(app.dnsTag)) this.inboundTags.push(app.dnsTag)
+      this.outboundTags = ["", ...app.templateSettings.outbounds.filter((o) => !ObjectUtil.isEmpty(o.tag) && !String(o.tag).startsWith('__dui_blacklist_')).map(obj => obj.tag)];
+      if (app.templateSettings.reverse) {
+        if (app.templateSettings.reverse.bridges) {
+          this.inboundTags.push(...app.templateSettings.reverse.bridges.map(b => b.tag));
+        }
+        if (app.templateSettings.reverse.portals) this.outboundTags.push(...app.templateSettings.reverse.portals.map(b => b.tag));
+      }
+      if (app.templateSettings.routing && app.templateSettings.routing.balancers) {
+        this.balancerTags = ["", ...app.templateSettings.routing.balancers.filter((o) => !ObjectUtil.isEmpty(o.tag)).map(obj => obj.tag)];
+      }
+    },
+    close() {
+      ruleModal.visible = false;
+      ruleModal.loading(false);
+    },
+    loading(loading = true) {
+      ruleModal.confirmLoading = loading;
+    },
+    getResults() {
+      const baseRule = ruleModal.getResult();
+      const hasDomain = Array.isArray(baseRule.domain) && baseRule.domain.length > 0;
+      const hasIP = Array.isArray(baseRule.ip) && baseRule.ip.length > 0;
+      const relation = ruleModal.rule.ipDomainRelation || 'or';
+      const mainRules = [];
+
+      if (!hasDomain || !hasIP || relation === 'and') {
+        mainRules.push(baseRule);
+      } else {
+        const common = { ...baseRule };
+        delete common.domain;
+        delete common.ip;
+        mainRules.push({ ...common, domain: [...baseRule.domain] });
+        mainRules.push({ ...common, ip: [...baseRule.ip] });
+      }
+
+      const normalizedBlacklist = duiNormalizeBlacklistValues(ruleModal.rule.blacklistDomain, ruleModal.rule.blacklistIP);
+      const blacklistDomains = normalizedBlacklist.domains;
+      const blacklistIPs = normalizedBlacklist.ips;
+      if (blacklistDomains.length === 0 && blacklistIPs.length === 0) {
+        return mainRules;
+      }
+
+      const blacklistTag = duiEnsureBlacklistOutbound(ruleModal.rule.blacklistAction || 'deny', ruleModal.rule.blacklistRedirect || '');
+      const blacklistCommon = { ...baseRule };
+      delete blacklistCommon.domain;
+      delete blacklistCommon.ip;
+      delete blacklistCommon.outboundTag;
+      delete blacklistCommon.balancerTag;
+      blacklistCommon.outboundTag = blacklistTag;
+
+      const blacklistRules = [];
+      const both = blacklistDomains.length > 0 && blacklistIPs.length > 0;
+      if (both && (ruleModal.rule.blacklistRelation || 'or') === 'and') {
+        blacklistRules.push({ ...blacklistCommon, domain: blacklistDomains, ip: blacklistIPs });
+      } else {
+        if (blacklistDomains.length > 0) blacklistRules.push({ ...blacklistCommon, domain: blacklistDomains });
+        if (blacklistIPs.length > 0) blacklistRules.push({ ...blacklistCommon, ip: blacklistIPs });
+      }
+
+      // 黑名单必须排在主分流之前，确保优先命中。
+      return [...blacklistRules, ...mainRules];
+    },
+    getResult() {
+      value = ruleModal.rule;
+      rule = {};
+      newRule = {};
+      rule.type = "field";
+      rule.domain = value.domain.length > 0 ? value.domain.split(',') : [];
+      rule.ip = value.ip.length > 0 ? value.ip.split(',') : [];
+      rule.port = value.port;
+      rule.sourcePort = value.sourcePort;
+      rule.network = value.network;
+      rule.sourceIP = value.sourceIP.length > 0 ? value.sourceIP.split(',') : [];
+      rule.user = value.user.length > 0 ? value.user.split(',') : [];
+      rule.inboundTag = value.inboundTag;
+      rule.protocol = value.protocol;
+      rule.attrs = Object.fromEntries(value.attrs);
+      rule.outboundTag = value.outboundTag == "" ? undefined : value.outboundTag;
+      rule.balancerTag = value.balancerTag == "" ? undefined : value.balancerTag;
+      for (const [key, value] of Object.entries(rule)) {
+        if (value !== null && value !== undefined && !(Array.isArray(value) && value.length === 0) && !(typeof value === 'object' && Object.keys(value).length === 0) && value !== '') {
+          newRule[key] = value;
+        }
+      }
+      return newRule;
+    }
+  };
+  new Vue({
+    delimiters: ['[[', ']]'],
+    el: '#rule-modal',
+    data: {
+      ruleModal: ruleModal,
+      ruleDomainAdvanced: ruleDomainAdvanced,
+      themeSwitcher: themeSwitcher,
+    }
+  });
+</script>
+{{end}}

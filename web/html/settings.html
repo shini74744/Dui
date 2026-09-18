@@ -1,0 +1,1135 @@
+{{ template "page/head_start" .}}
+<style>
+  @media (min-width: 769px) {
+    .ant-layout-content {
+      margin: 24px 16px;
+    }
+  }
+  @media (max-width: 768px) {
+    .ant-tabs-nav .ant-tabs-tab {
+      margin: 0;
+      padding: 12px .5rem;
+    }
+  }
+  .ant-tabs-bar {
+    margin: 0;
+  }
+  .ant-list-item {
+    display: block;
+  }
+  .alert-msg {
+    color: rgb(194, 117, 18);
+    font-weight: normal;
+    font-size: 16px;
+    padding: .5rem 1rem;
+    text-align: center;
+    background: rgb(255 145 0 / 15%);
+    margin: 1.5rem 2.5rem 0rem;
+    border-radius: .5rem;
+    transition: all 0.5s;
+    animation: signal 3s cubic-bezier(0.18, 0.89, 0.32, 1.28) infinite;
+  }
+  .alert-msg:hover {
+    cursor: default;
+    transition-duration: .3s;
+    animation: signal 0.9s ease infinite;
+  }
+  @keyframes signal {
+    0% {
+      box-shadow: 0 0 0 0 rgba(194, 118, 18, 0.5);
+    }
+
+    50% {
+      box-shadow: 0 0 0 6px rgba(0, 0, 0, 0);
+    }
+
+    100% {
+      box-shadow: 0 0 0 6px rgba(0, 0, 0, 0);
+    }
+  }
+  .alert-msg>i {
+    color: inherit;
+    font-size: 24px;
+  }
+  .dark .ant-input-password-icon {
+    color: var(--dark-color-text-primary);
+  }
+  .ant-collapse-content-box .ant-alert {
+    margin-block-end: 12px;
+  }
+</style>
+{{ template "page/head_end" .}}
+
+{{ template "page/body_start" .}}
+<a-layout id="app" v-cloak :class="themeSwitcher.currentTheme">
+  <a-sidebar></a-sidebar>
+  <a-layout id="content-layout">
+    <a-layout-content>
+      <a-spin :spinning="loadingStates.spinning" :delay="500" tip='{{ i18n "loading"}}'>
+        <transition name="list">
+          <a-alert type="error" v-if="confAlerts.length>0 && loadingStates.fetched" :style="{ marginBottom: '10px' }"
+              message='{{ i18n "secAlertTitle" }}'
+              color="red"
+              show-icon closable>
+            <template slot="description">
+              <b>{{ i18n "secAlertConf" }}</b>
+              <ul><li v-for="a in confAlerts">[[ a ]]</li></ul>
+            </template>
+          </a-alert>
+        </transition>
+        <transition name="list">
+          <template>
+            <a-row v-if="!loadingStates.fetched">
+              <a-card :style="{ textAlign: 'center', padding: '30px 0', marginTop: '10px', background: 'transparent', border: 'none' }">
+                <a-spin tip='{{ i18n "loading" }}'></a-spin>
+              </a-card>
+            </a-row>
+            <a-row :gutter="[isMobile ? 8 : 16, isMobile ? 0 : 12]" v-else>
+              <a-col>
+                <a-card hoverable>
+                  <a-row :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }">
+                    <a-col :xs="24" :sm="10" :style="{ padding: '4px' }">
+                      <a-space direction="horizontal">
+                        <a-button type="primary" :disabled="saveBtnDisable" @click="updateAllSetting">{{ i18n "pages.settings.save" }}</a-button>
+                        <a-button type="danger" :disabled="!saveBtnDisable" @click="restartPanel">{{ i18n "pages.settings.restartPanel" }}</a-button>
+                      </a-space>
+                    </a-col>
+                    <a-col :xs="24" :sm="14">
+                      <template>
+                        <div>
+                          <a-back-top :target="() => document.getElementById('content-layout')" visibility-height="200"></a-back-top>
+                          <a-alert type="warning" :style="{ float: 'right', width: 'fit-content' }"
+                            message='{{ i18n "pages.settings.infoDesc" }}'
+                            show-icon>
+                          </a-alert>
+                        </div>
+                      </template>
+                    </a-col>
+                  </a-row>
+                </a-card>
+              </a-col>
+              <a-col>
+                <a-tabs :active-key="activeSettingsTab" @change="onSettingsTabChange">
+                  <a-tab-pane key="1" :style="{ paddingTop: '20px' }">
+                    <template #tab>
+                      <a-icon type="setting"></a-icon>
+                      <span>{{ i18n "pages.settings.panelSettings" }}</span>
+                    </template>
+                    {{ template "settings/panel/general" . }}
+                  </a-tab-pane>
+                  <a-tab-pane key="2" :style="{ paddingTop: '20px' }">
+                    <template #tab>
+                      <a-icon type="safety"></a-icon>
+                      <span>{{ i18n "pages.settings.securitySettings" }}</span>
+                    </template>
+                    {{ template "settings/panel/security" . }}
+                  </a-tab-pane>
+                  <a-tab-pane key="3" :style="{ paddingTop: '20px' }">
+                    <template #tab>
+                      <a-icon type="message"></a-icon>
+                      <span>{{ i18n "pages.settings.TGBotSettings" }}</span>
+                    </template>
+                    {{ template "settings/panel/telegram" . }}
+                  </a-tab-pane>
+                  <a-tab-pane key="4" :style="{ paddingTop: '20px' }">
+                    <template #tab>
+                      <a-icon type="cloud-server"></a-icon>
+                      <span>{{ i18n "pages.settings.subSettings" }}</span>
+                    </template>
+                    {{ template "settings/panel/subscription/general" . }}
+                  </a-tab-pane>
+                  <a-tab-pane key="5" :style="{ paddingTop: '20px' }">
+                    <template #tab>
+                      <a-icon type="safety-certificate"></a-icon>
+                      <span>防爆破</span>
+                    </template>
+                    {{ template "settings/panel/fail2ban" . }}
+                  </a-tab-pane>
+                  <a-tab-pane key="6" :style="{ paddingTop: '20px' }">
+                    <template #tab>
+                      <a-icon type="clock-circle"></a-icon>
+                      <span>时区同步</span>
+                    </template>
+                    {{ template "settings/panel/time_sync" . }}
+                  </a-tab-pane>
+                  <a-tab-pane key="7" :style="{ paddingTop: '20px' }">
+                    <template #tab>
+                      <a-icon type="global"></a-icon>
+                      <span>DDNS</span>
+                    </template>
+                    {{ template "settings/panel/ddns" . }}
+                  </a-tab-pane>
+                  <a-tab-pane key="8" v-if="allSetting.subEnable" :style="{ paddingTop: '20px' }">
+                    <template #tab>
+                      <a-icon type="code"></a-icon>
+                      <span>{{ i18n "pages.settings.subSettings" }} (JSON)</span>
+                    </template>
+                    {{ template "settings/panel/subscription/json" . }}
+                  </a-tab-pane>
+                </a-tabs>
+              </a-col>
+            </a-row>
+          </template>
+        </transition>
+      </a-spin>
+    </a-layout-content>
+  </a-layout>
+</a-layout>
+{{template "page/body_scripts" .}}
+<script src="{{ .base_path }}assets/qrcode/qrious2.min.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/otpauth/otpauth.umd.min.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/model/setting.js?{{ .cur_ver }}"></script>
+{{template "component/aSidebar" .}}
+{{template "component/aThemeSwitch" .}}
+{{template "component/aSettingListItem" .}}
+{{template "modals/twoFactorModal"}}
+<script>
+  const app = new Vue({
+    delimiters: ['[[', ']]'],
+    mixins: [MediaQueryMixin],
+    el: '#app',
+    data: {
+      themeSwitcher,
+      loadingStates: {
+        fetched: false,
+        spinning: false
+      },
+      oldAllSetting: new AllSetting(),
+      allSetting: new AllSetting(),
+      saveBtnDisable: true,
+      user: {},
+      lang: LanguageManager.getLanguage(),
+      remarkModels: { i: 'Inbound', e: 'Email', o: 'Other' },
+      remarkSeparators: [' ', '-', '_', '@', ':', '~', '|', ',', '.', '/'],
+      datepickerList: [{ name: 'Gregorian (Standard)', value: 'gregorian' }, { name: 'Jalalian (شمسی)', value: 'jalalian' }],
+      remarkSample: '',
+      activeSettingsTab: '1',
+      settingsTabLoaded: { fail2ban: false, timeSync: false, ddns: false },
+      certManagerLoaded: false,
+      certManagerBusy: false,
+      certManagerStatus: { managed: false, sourceLabel: '', currentCertFile: '', currentKeyFile: '', notBefore: 0, notAfter: 0, daysRemaining: 0, nextForcedRenewAt: 0, timerActive: false, timerEnabled: false, credentialNote: '', metadata: null },
+      certManagerForm: { enabled: true, months: 6 },
+      certManagerLastOutput: '',
+      fail2banBusy: false,
+      fail2banStatus: {
+        installed: false,
+        running: false,
+        firewall: 'unknown',
+        shortcut: false,
+        panelPort: 0,
+        sshd: { bannedIps: [] },
+        xuiTls: { bannedIps: [] },
+        xuiLogin: { bannedIps: [] },
+      },
+      fail2banForms: {
+        sshd: { target: 'sshd', port: 22, maxretry: 3, findtime: '1d', bantime: '-1', ignoreip: '127.0.0.1/8 ::1' },
+        xuiTls: { target: '3xui-tls', port: 2053, maxretry: 5, findtime: '1d', bantime: '1h', ignoreip: '127.0.0.1/8 ::1' },
+        xuiLogin: { target: '3xui-login', port: 2053, maxretry: 3, findtime: '1d', bantime: '-1', ignoreip: '127.0.0.1/8 ::1' },
+      },
+      fail2banSearch: { sshd: '', xuiTls: '', xuiLogin: '' },
+      fail2banBanColumns: [
+        { title: 'IP 地址', dataIndex: 'ip', key: 'ip' },
+        { title: '操作', key: 'action', width: 120, align: 'center', scopedSlots: { customRender: 'action' } },
+      ],
+      fail2banLogColumns: [
+        { title: '时间', dataIndex: 'time', key: 'time', width: 170 },
+        { title: '事件', dataIndex: 'event', key: 'event', width: 110, scopedSlots: { customRender: 'event' } },
+        { title: 'IP 地址', dataIndex: 'ip', key: 'ip', width: 170 },
+        { title: '原始日志', dataIndex: 'raw', key: 'raw', ellipsis: true },
+      ],
+      timeSyncBusy: false,
+      timeSyncStatus: { supported: false, installed: false, version: '', configuredTimezone: '', systemTimezone: '', localTime: '', ntpSynchronized: false, timesyncdActive: false, timesyncdEnabled: false, timerActive: false, timerEnabled: false, nextSync: '', conflict: '' },
+      timeSyncCommonZones: [
+        'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore',
+        'Asia/Kuala_Lumpur', 'Asia/Bangkok', 'Asia/Ho_Chi_Minh', 'Asia/Manila',
+        'Australia/Sydney', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Etc/UTC'
+      ],
+      timeSyncSearchOptions: [],
+      timeSyncSearchSeq: 0,
+      timeSyncSearchTimer: null,
+      timeSyncForm: { timezone: 'Asia/Hong_Kong' },
+      timeSyncLogs: { manager: '', timesyncd: '' },
+      timeSyncLastOutput: '',
+      ddnsBusy: false,
+      ddnsStatus: { installed: false, configured: false, legacyDetected: false, version: '', interval: 30, init: '', scheduleActive: false, scheduleEnabled: false, records: [], lastRun: null },
+      ddnsAddForm: { zone: '', name: '', token: '', createMissing: false },
+      ddnsInterval: 30,
+      ddnsLogs: '',
+      ddnsLastOutput: '',
+      ddnsTokenModal: { visible: false, name: '', token: '' },
+      ddnsColumns: [
+        { title: '启用', dataIndex: 'enabled', key: 'enabled', width: 80, align: 'center', scopedSlots: { customRender: 'enabled' } },
+        { title: '完整域名', dataIndex: 'name', key: 'name', width: 220 },
+        { title: 'Zone', dataIndex: 'zone', key: 'zone', width: 180 },
+        { title: '状态 / 说明', dataIndex: 'status', key: 'status', scopedSlots: { customRender: 'status' } },
+        { title: 'Cloudflare IP', dataIndex: 'cloudflareIp', key: 'cloudflareIp', width: 150 },
+        { title: '最近检查', dataIndex: 'checkedAt', key: 'checkedAt', width: 190 },
+        { title: '最近更新', dataIndex: 'updatedAt', key: 'updatedAt', width: 190 },
+        { title: '操作', key: 'action', width: 200, align: 'center', scopedSlots: { customRender: 'action' } },
+      ],
+      defaultFragment: {
+        tag: "fragment",
+        protocol: "freedom",
+        settings: {
+          domainStrategy: "AsIs",
+          fragment: {
+            packets: "tlshello",
+            length: "100-200",
+            interval: "10-20"
+          }
+        },
+        streamSettings: {
+          sockopt: {
+            tcpKeepAliveIdle: 100,
+            tcpMptcp: true,
+            penetrate: true
+          }
+        }
+      },
+      defaultNoises: {
+        tag: "noises",
+        protocol: "freedom",
+        settings: {
+          domainStrategy: "AsIs",
+          noises: [
+            { type: "rand", packet: "10-20", delay: "10-16", applyTo: "ip" },
+          ],
+        },
+      },
+      defaultMux: {
+        enabled: true,
+        concurrency: 8,
+        xudpConcurrency: 16,
+        xudpProxyUDP443: "reject"
+      },
+      defaultRules: [
+        {
+          type: "field",
+          outboundTag: "direct",
+          domain: [
+            "geosite:category-ir"
+          ]
+        },
+        {
+          type: "field",
+          outboundTag: "direct",
+          ip: [
+            "geoip:private",
+            "geoip:ir"
+          ]
+        },
+      ],
+      directIPsOptions: [
+        { label: 'Private IP', value: 'geoip:private' },
+        { label: '🇮🇷 Iran', value: 'geoip:ir' },
+        { label: '🇨🇳 China', value: 'geoip:cn' },
+        { label: '🇷🇺 Russia', value: 'geoip:ru' },
+        { label: '🇻🇳 Vietnam', value: 'geoip:vn' },
+        { label: '🇪🇸 Spain', value: 'geoip:es' },
+        { label: '🇮🇩 Indonesia', value: 'geoip:id' },
+        { label: '🇺🇦 Ukraine', value: 'geoip:ua' },
+        { label: '🇹🇷 Türkiye', value: 'geoip:tr' },
+        { label: '🇧🇷 Brazil', value: 'geoip:br' },
+      ],
+      diretDomainsOptions: [
+        { label: 'Private DNS', value: 'geosite:private' },
+        { label: '🇮🇷 Iran', value: 'geosite:category-ir' },
+        { label: '🇨🇳 China', value: 'geosite:cn' },
+        { label: '🇷🇺 Russia', value: 'geosite:category-ru' },
+        { label: 'Apple', value: 'geosite:apple' },
+        { label: 'Meta', value: 'geosite:meta' },
+        { label: 'Google', value: 'geosite:google' },
+      ],
+      get remarkModel() {
+        rm = this.allSetting.remarkModel;
+        return rm.length > 1 ? rm.substring(1).split('') : [];
+      },
+      set remarkModel(value) {
+        rs = this.allSetting.remarkModel[0];
+        this.allSetting.remarkModel = rs + value.join('');
+        this.changeRemarkSample();
+      },
+      get remarkSeparator() {
+        return this.allSetting.remarkModel.length > 1 ? this.allSetting.remarkModel.charAt(0) : '-';
+      },
+      set remarkSeparator(value) {
+        this.allSetting.remarkModel = value + this.allSetting.remarkModel.substring(1);
+        this.changeRemarkSample();
+      },
+      get datepicker() {
+        return this.allSetting.datepicker ? this.allSetting.datepicker : 'gregorian';
+      },
+      set datepicker(value) {
+        this.allSetting.datepicker = value;
+      },
+      changeRemarkSample() {
+        sample = []
+        this.remarkModel.forEach(r => sample.push(this.remarkModels[r]));
+        this.remarkSample = sample.length == 0 ? '' : sample.join(this.remarkSeparator);
+      }
+    },
+    methods: {
+      async onGeneralCollapseChange(keys) {
+        const active = Array.isArray(keys) ? keys.map(String) : [String(keys || '')];
+        if (active.includes('3') && !this.certManagerLoaded) {
+          this.certManagerLoaded = true;
+          try {
+            await this.getCertManagerStatus();
+          } catch (e) {
+            this.certManagerLoaded = false;
+            throw e;
+          }
+        }
+      },
+      formatCertManagerTime(ts) {
+        if (!ts) return '-';
+        return moment.unix(Number(ts)).format('YYYY-MM-DD HH:mm:ss');
+      },
+      async getCertManagerStatus() {
+        this.certManagerBusy = true;
+        try {
+          const msg = await HttpUtil.post('/panel/setting/certManager/status');
+          if (msg.success && msg.obj) {
+            this.certManagerStatus = msg.obj;
+            const meta = msg.obj.metadata || {};
+            this.certManagerForm = {
+              enabled: meta.forceRenewEnabled !== false,
+              months: (meta.forceRenewMonths >= 1 && meta.forceRenewMonths <= 24) ? meta.forceRenewMonths : 6,
+            };
+          }
+        } finally {
+          this.certManagerBusy = false;
+        }
+      },
+      async saveCertManager() {
+        this.certManagerBusy = true;
+        try {
+          const msg = await HttpUtil.post('/panel/setting/certManager/update', this.certManagerForm);
+          if (msg.success) {
+            this.$message.success(msg.msg || '证书强制更新设置已保存');
+            await this.getCertManagerStatus();
+          }
+        } finally {
+          this.certManagerBusy = false;
+        }
+      },
+      renewCertManagerNow() {
+        this.$confirm({
+          title: '立即强制更新当前证书',
+          content: '将调用当前菜单 18/19 对应的 acme.sh 证书执行 --renew --force，并继续安装到当前面板证书路径。确定继续？',
+          class: themeSwitcher.currentTheme,
+          okText: '强制更新',
+          cancelText: '取消',
+          onOk: async () => {
+            this.certManagerBusy = true;
+            try {
+              const msg = await HttpUtil.post('/panel/setting/certManager/renew');
+              if (msg.success) {
+                this.certManagerLastOutput = msg.obj || '';
+                this.$message.success(msg.msg || '证书强制更新完成');
+                await this.getCertManagerStatus();
+              }
+            } finally {
+              this.certManagerBusy = false;
+            }
+          }
+        });
+      },
+      async onSettingsTabChange(key) {
+        key = String(key);
+        this.activeSettingsTab = key;
+        if (key === '5' && !this.settingsTabLoaded.fail2ban) {
+          this.settingsTabLoaded.fail2ban = true;
+          try {
+            await this.getFail2banStatus();
+          } catch (e) {
+            this.settingsTabLoaded.fail2ban = false;
+            throw e;
+          }
+        } else if (key === '6' && !this.settingsTabLoaded.timeSync) {
+          this.settingsTabLoaded.timeSync = true;
+          try {
+            await this.getTimeSyncStatus();
+            this.showAllTimezones();
+          } catch (e) {
+            this.settingsTabLoaded.timeSync = false;
+            throw e;
+          }
+        } else if (key === '7' && !this.settingsTabLoaded.ddns) {
+          this.settingsTabLoaded.ddns = true;
+          try {
+            await this.getDDNSStatus();
+          } catch (e) {
+            this.settingsTabLoaded.ddns = false;
+            throw e;
+          }
+        }
+      },
+      loading(spinning = true) {
+        this.loadingStates.spinning = spinning;
+      },
+      async getAllSetting() {
+        const msg = await HttpUtil.post("/panel/setting/all");
+
+        if (msg.success) {
+          if (!this.loadingStates.fetched) {
+            this.loadingStates.fetched = true
+          }
+
+          this.oldAllSetting = new AllSetting(msg.obj);
+          this.allSetting = new AllSetting(msg.obj);
+          app.changeRemarkSample();
+          this.saveBtnDisable = true;
+        }
+      },
+      async updateAllSetting() {
+        this.loading(true);
+        const msg = await HttpUtil.post("/panel/setting/update", this.allSetting);
+        this.loading(false);
+        if (msg.success) {
+          await this.getAllSetting();
+        }
+      },
+      syncFail2banForms(status) {
+        if (!status) return;
+        const map = [
+          ['sshd', status.sshd],
+          ['xuiTls', status.xuiTls],
+          ['xuiLogin', status.xuiLogin],
+        ];
+        map.forEach(([key, src]) => {
+          if (!src) return;
+          this.fail2banForms[key] = {
+            target: src.name || this.fail2banForms[key].target,
+            port: src.port || (status.panelPort || this.fail2banForms[key].port),
+            maxretry: src.maxretry || this.fail2banForms[key].maxretry,
+            findtime: src.findtime || this.fail2banForms[key].findtime,
+            bantime: src.bantime || this.fail2banForms[key].bantime,
+            ignoreip: src.ignoreip || this.fail2banForms[key].ignoreip,
+          };
+        });
+      },
+      async getFail2banStatus() {
+        this.fail2banBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/fail2ban/status");
+          if (msg.success && msg.obj) {
+            this.fail2banStatus = msg.obj;
+            this.syncFail2banForms(msg.obj);
+          }
+        } finally {
+          this.fail2banBusy = false;
+        }
+      },
+      async applyFail2ban(target) {
+        const key = target === 'sshd' ? 'sshd' : (target === '3xui-tls' ? 'xuiTls' : 'xuiLogin');
+        this.fail2banBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/fail2ban/apply", this.fail2banForms[key]);
+          if (msg.success) {
+            this.$message.success(msg.msg || '配置已应用');
+            await this.getFail2banStatus();
+          }
+        } finally {
+          this.fail2banBusy = false;
+        }
+      },
+      async unbanFail2ban(jail, ip) {
+        this.fail2banBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/fail2ban/unban", { jail, ip });
+          if (msg.success) {
+            this.$message.success('已取消拉黑 ' + ip);
+            await this.getFail2banStatus();
+          }
+        } finally {
+          this.fail2banBusy = false;
+        }
+      },
+      confirmUnbanFail2ban(jail, ip) {
+        this.$confirm({
+          title: '取消拉黑',
+          content: '确定要从 ' + jail + ' 解禁 IP：' + ip + '？',
+          class: themeSwitcher.currentTheme,
+          okText: '确认解禁',
+          cancelText: '取消',
+          onOk: () => this.unbanFail2ban(jail, ip),
+        });
+      },
+      fail2banBanRows(key) {
+        const jail = this.fail2banStatus[key] || {};
+        const list = Array.isArray(jail.bannedIps) ? jail.bannedIps : [];
+        const q = (this.fail2banSearch[key] || '').trim().toLowerCase();
+        return list
+          .filter(ip => !q || String(ip).toLowerCase().includes(q))
+          .map(ip => ({ ip }));
+      },
+      fail2banLogRows(key) {
+        const jail = this.fail2banStatus[key] || {};
+        const list = Array.isArray(jail.recentLogs) ? jail.recentLogs : [];
+        return list.map((item, index) => ({ ...item, key: key + '-' + index + '-' + (item.time || '') + '-' + (item.ip || '') }));
+      },
+      fail2banEventColor(event) {
+        if (event === 'Ban' || event === 'Restore Ban') return 'red';
+        if (event === 'Unban') return 'green';
+        return 'orange';
+      },
+      async syncFail2banScript() {
+        this.fail2banBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/fail2ban/syncScript");
+          if (msg.success) {
+            this.$message.success(msg.msg || 'fb5 已同步');
+            await this.getFail2banStatus();
+          }
+        } finally {
+          this.fail2banBusy = false;
+        }
+      },
+      removeFail2ban(target, label) {
+        this.$confirm({
+          title: '确认操作',
+          content: '确定要删除/卸载：' + label + '？',
+          class: themeSwitcher.currentTheme,
+          okText: '确定',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: async () => {
+            this.fail2banBusy = true;
+            try {
+              const msg = await HttpUtil.post("/panel/setting/fail2ban/remove", { target });
+              if (msg.success) {
+                this.$message.success(msg.msg || '操作完成');
+                await this.getFail2banStatus();
+              }
+            } finally {
+              this.fail2banBusy = false;
+            }
+          },
+        });
+      },
+      showAllTimezones() {
+        const current = this.timeSyncForm.timezone;
+        this.timeSyncSearchOptions = [...new Set([current, ...this.timeSyncCommonZones].filter(Boolean))];
+      },
+      resolveTimezones(query) {
+        query = (query || '').trim();
+        if (this.timeSyncSearchTimer) clearTimeout(this.timeSyncSearchTimer);
+        if (!query) {
+          this.showAllTimezones();
+          return;
+        }
+        const seq = ++this.timeSyncSearchSeq;
+        this.timeSyncSearchTimer = setTimeout(async () => {
+          const msg = await HttpUtil.post("/panel/setting/timeSync/resolve", { query });
+          if (seq !== this.timeSyncSearchSeq) return;
+          if (msg.success && Array.isArray(msg.obj)) {
+            this.timeSyncSearchOptions = msg.obj;
+            if (msg.obj.length === 1) this.timeSyncForm.timezone = msg.obj[0];
+          }
+        }, 220);
+      },
+      async getTimeSyncStatus() {
+        this.timeSyncBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/timeSync/status");
+          if (msg.success && msg.obj) {
+            this.timeSyncStatus = msg.obj;
+            if (msg.obj.configuredTimezone) this.timeSyncForm.timezone = msg.obj.configuredTimezone;
+          }
+        } finally { this.timeSyncBusy = false; }
+      },
+      async getTimezones() {
+        const msg = await HttpUtil.post("/panel/setting/timeSync/timezones");
+        if (msg.success && Array.isArray(msg.obj)) this.timeSyncSearchOptions = msg.obj;
+      },
+      async installTimeSync() {
+        if (!this.timeSyncForm.timezone) return this.$message.warning('请选择时区');
+        this.timeSyncBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/timeSync/install", this.timeSyncForm);
+          if (msg.success) {
+            this.timeSyncLastOutput = msg.obj || '';
+            this.$message.success(msg.msg || '时间同步已安装/更新');
+            await this.getTimeSyncStatus();
+            await this.getTimeSyncLogs();
+          }
+        } finally { this.timeSyncBusy = false; }
+      },
+      async setTimeSyncTimezone() {
+        if (!this.timeSyncForm.timezone) return this.$message.warning('请选择时区');
+        this.timeSyncBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/timeSync/timezone", this.timeSyncForm);
+          if (msg.success) {
+            this.timeSyncLastOutput = msg.obj || '';
+            this.$message.success(msg.msg || '时区已修改');
+            await this.getTimeSyncStatus();
+          }
+        } finally { this.timeSyncBusy = false; }
+      },
+      async syncTimeNow() {
+        this.timeSyncBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/timeSync/sync");
+          if (msg.success) {
+            this.timeSyncLastOutput = msg.obj || '';
+            this.$message.success(msg.msg || '同步完成');
+            await this.getTimeSyncStatus();
+            await this.getTimeSyncLogs();
+          }
+        } finally { this.timeSyncBusy = false; }
+      },
+      async getTimeSyncLogs() {
+        const msg = await HttpUtil.post("/panel/setting/timeSync/logs");
+        if (msg.success && msg.obj) this.timeSyncLogs = msg.obj;
+      },
+      uninstallTimeSync() {
+        this.$confirm({
+          title: '卸载时间同步管理器',
+          content: '将删除 time-sync-manager 及其定时任务，但保留 systemd-timesyncd。确定继续？',
+          class: themeSwitcher.currentTheme, okType: 'danger', okText: '卸载', cancelText: '取消',
+          onOk: async () => {
+            this.timeSyncBusy = true;
+            try {
+              const msg = await HttpUtil.post("/panel/setting/timeSync/uninstall");
+              if (msg.success) {
+                this.$message.success(msg.msg || '已卸载');
+                this.timeSyncLastOutput = '';
+                await this.getTimeSyncStatus();
+              }
+            } finally { this.timeSyncBusy = false; }
+          }
+        });
+      },
+      async getDDNSStatus() {
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/status");
+          if (msg.success && msg.obj) {
+            this.ddnsStatus = msg.obj;
+            this.ddnsInterval = msg.obj.interval || 30;
+          }
+        } finally { this.ddnsBusy = false; }
+      },
+      async installDDNS() {
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/install");
+          if (msg.success) {
+            this.ddnsLastOutput = msg.obj || '';
+            this.$message.success(msg.msg || 'DDNS 已安装/更新');
+            await this.getDDNSStatus();
+          }
+        } finally { this.ddnsBusy = false; }
+      },
+      async addDDNSRecord() {
+        const f = this.ddnsAddForm;
+        if (!f.zone || !f.name || !f.token) return this.$message.warning('请填写 Zone、完整域名和 API Token');
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/add", f);
+          if (msg.success) {
+            this.ddnsLastOutput = msg.obj || '';
+            this.$message.success(msg.msg || '域名已添加');
+            this.ddnsAddForm = { zone: f.zone, name: '', token: '', createMissing: f.createMissing };
+            await this.getDDNSStatus();
+          }
+        } finally { this.ddnsBusy = false; }
+      },
+      deleteDDNSRecord(name) {
+        this.$confirm({
+          title: '移除 DDNS 域名', content: '只移除本机 DDNS 管理，不删除 Cloudflare DNS 记录：' + name,
+          class: themeSwitcher.currentTheme, okType: 'danger', okText: '移除', cancelText: '取消',
+          onOk: async () => {
+            this.ddnsBusy = true;
+            try {
+              const msg = await HttpUtil.post("/panel/setting/ddns/delete", { name });
+              if (msg.success) { this.$message.success(msg.msg || '已移除'); await this.getDDNSStatus(); }
+            } finally { this.ddnsBusy = false; }
+          }
+        });
+      },
+      async setDDNSRecordEnabled(name, enabled) {
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/enabled", { name, enabled });
+          if (msg.success) { this.$message.success(enabled ? '已启用' : '已停用'); await this.getDDNSStatus(); }
+        } finally { this.ddnsBusy = false; }
+      },
+      openDDNSTokenModal(name) {
+        this.ddnsTokenModal = { visible: true, name, token: '' };
+      },
+      async replaceDDNSToken() {
+        if (!this.ddnsTokenModal.token) return this.$message.warning('请输入新的 Token');
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/token", { name: this.ddnsTokenModal.name, token: this.ddnsTokenModal.token });
+          if (msg.success) {
+            this.$message.success(msg.msg || 'Token 已更新');
+            this.ddnsTokenModal = { visible: false, name: '', token: '' };
+            await this.getDDNSStatus();
+          }
+        } finally { this.ddnsBusy = false; }
+      },
+      async setDDNSInterval() {
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/interval", { interval: this.ddnsInterval });
+          if (msg.success) { this.$message.success(msg.msg || '间隔已修改'); await this.getDDNSStatus(); }
+        } finally { this.ddnsBusy = false; }
+      },
+      async setDDNSSchedule(enabled) {
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/schedule", { enabled });
+          if (msg.success) { this.$message.success(msg.msg || '自动同步状态已修改'); await this.getDDNSStatus(); }
+        } finally { this.ddnsBusy = false; }
+      },
+      async runDDNSNow() {
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/run");
+          if (msg.success) {
+            this.ddnsLastOutput = msg.obj || '';
+            this.$message.success(msg.msg || '手动同步完成');
+            await this.getDDNSStatus(); await this.getDDNSLogs();
+          }
+        } finally { this.ddnsBusy = false; }
+      },
+      async getDDNSLogs() {
+        const msg = await HttpUtil.post("/panel/setting/ddns/logs");
+        if (msg.success) this.ddnsLogs = msg.obj || '';
+      },
+      async updateDDNSScript() {
+        this.ddnsBusy = true;
+        try {
+          const msg = await HttpUtil.post("/panel/setting/ddns/updateScript");
+          if (msg.success) {
+            this.ddnsLastOutput = msg.obj || '';
+            this.$message.success(msg.msg || '在线更新完成');
+            await this.getDDNSStatus();
+          }
+        } finally { this.ddnsBusy = false; }
+      },
+      ddnsStatusColor(status) {
+        if (status === 'updated' || status === 'ok' || status === 'unchanged') return 'green';
+        if (status === 'error' || status === 'failed') return 'red';
+        if (status === 'disabled') return 'default';
+        return 'blue';
+      },
+      uninstallDDNS() {
+        this.$confirm({
+          title: '卸载 DDNS',
+          content: '将删除本机 DDNS 程序、Token 配置、状态和日志；不会删除 Cloudflare DNS 记录。确定继续？',
+          class: themeSwitcher.currentTheme, okType: 'danger', okText: '卸载', cancelText: '取消',
+          onOk: async () => {
+            this.ddnsBusy = true;
+            try {
+              const msg = await HttpUtil.post("/panel/setting/ddns/uninstall");
+              if (msg.success) {
+                this.ddnsLastOutput = msg.obj || '';
+                this.ddnsLogs = '';
+                this.$message.success(msg.msg || 'DDNS 已卸载');
+                await this.getDDNSStatus();
+              }
+            } finally { this.ddnsBusy = false; }
+          }
+        });
+      },
+      async updateUser() {
+        const sendUpdateUserRequest = async () => {
+          this.loading(true);
+          const msg = await HttpUtil.post("/panel/setting/updateUser", this.user);
+          this.loading(false);
+          if (msg.success) {
+            this.user = {};
+            window.location.replace(basePath + "logout");
+          }
+        }
+
+        if (this.allSetting.twoFactorEnable) {
+          twoFactorModal.show({
+            title: '{{ i18n "pages.settings.security.twoFactorModalChangeCredentialsTitle" }}',
+            description: '{{ i18n "pages.settings.security.twoFactorModalChangeCredentialsStep" }}',
+            token: this.allSetting.twoFactorToken,
+            type: 'confirm',
+            confirm: (success) => {
+              if (success) {
+                sendUpdateUserRequest();
+              }
+            }
+          })
+        } else {
+          sendUpdateUserRequest();
+        }
+      },
+      async restartPanel() {
+        await new Promise(resolve => {
+          this.$confirm({
+            title: '{{ i18n "pages.settings.restartPanel" }}',
+            content: '{{ i18n "pages.settings.restartPanelDesc" }}',
+            class: themeSwitcher.currentTheme,
+            okText: '{{ i18n "sure" }}',
+            cancelText: '{{ i18n "cancel" }}',
+            onOk: () => resolve(),
+          });
+        });
+        this.loading(true);
+        const msg = await HttpUtil.post("/panel/setting/restartPanel");
+        this.loading(false);
+        if (msg.success) {
+          this.loading(true);
+          await PromiseUtil.sleep(5000);
+          var { webCertFile, webKeyFile, webDomain: host, webPort: port, webBasePath: base } = this.allSetting;
+          if (host == this.oldAllSetting.webDomain) host = null;
+          if (port == this.oldAllSetting.webPort) port = null;
+          const isTLS = webCertFile !== "" || webKeyFile !== "";
+          const url = URLBuilder.buildURL({ host, port, isTLS, base, path: "panel/settings" });
+          window.location.replace(url);
+        }
+      },
+      toggleTwoFactor(newValue) {
+        if (newValue) {
+          const newTwoFactorToken = RandomUtil.randomBase32String()
+
+          twoFactorModal.show({
+            title: '{{ i18n "pages.settings.security.twoFactorModalSetTitle" }}',
+            token: newTwoFactorToken,
+            type: 'set',
+            confirm: (success) => {
+              if (success) {
+                Vue.prototype.$message['success']('{{ i18n "pages.settings.security.twoFactorModalSetSuccess" }}')
+
+                this.allSetting.twoFactorToken = newTwoFactorToken
+              }
+
+              this.allSetting.twoFactorEnable = success
+            }
+          })
+        } else {
+          twoFactorModal.show({
+            title: '{{ i18n "pages.settings.security.twoFactorModalDeleteTitle" }}',
+            description: '{{ i18n "pages.settings.security.twoFactorModalRemoveStep" }}',
+            token: this.allSetting.twoFactorToken,
+            type: 'confirm',
+            confirm: (success) => {
+              if (success) {
+                Vue.prototype.$message['success']('{{ i18n "pages.settings.security.twoFactorModalDeleteSuccess" }}')
+
+                this.allSetting.twoFactorEnable = false
+                this.allSetting.twoFactorToken = ""
+              }
+            }
+          })
+        }
+      },
+      addNoise() {
+        const newNoise = { type: "rand", packet: "10-20", delay: "10-16", applyTo: "ip" };
+        this.noisesArray = [...this.noisesArray, newNoise];
+      },
+      removeNoise(index) {
+        const newNoises = [...this.noisesArray];
+        newNoises.splice(index, 1);
+        this.noisesArray = newNoises;
+      },
+      updateNoiseType(index, value) {
+        const updatedNoises = [...this.noisesArray];
+        updatedNoises[index] = { ...updatedNoises[index], type: value };
+        this.noisesArray = updatedNoises;
+      },
+      updateNoisePacket(index, value) {
+        const updatedNoises = [...this.noisesArray];
+        updatedNoises[index] = { ...updatedNoises[index], packet: value };
+        this.noisesArray = updatedNoises;
+      },
+      updateNoiseDelay(index, value) {
+        const updatedNoises = [...this.noisesArray];
+        updatedNoises[index] = { ...updatedNoises[index], delay: value };
+        this.noisesArray = updatedNoises;
+      },
+      updateNoiseApplyTo(index, value) {
+        const updatedNoises = [...this.noisesArray];
+        updatedNoises[index] = { ...updatedNoises[index], applyTo: value };
+        this.noisesArray = updatedNoises;
+      },
+    },
+    computed: {
+      fragment: {
+        get: function () { return this.allSetting?.subJsonFragment != ""; },
+        set: function (v) {
+          this.allSetting.subJsonFragment = v ? JSON.stringify(this.defaultFragment) : "";
+        }
+      },
+      fragmentPackets: {
+        get: function () { return this.fragment ? JSON.parse(this.allSetting.subJsonFragment).settings.fragment.packets : ""; },
+        set: function (v) {
+          if (v != "") {
+            newFragment = JSON.parse(this.allSetting.subJsonFragment);
+            newFragment.settings.fragment.packets = v;
+            this.allSetting.subJsonFragment = JSON.stringify(newFragment);
+          }
+        }
+      },
+      fragmentLength: {
+        get: function () { return this.fragment ? JSON.parse(this.allSetting.subJsonFragment).settings.fragment.length : ""; },
+        set: function (v) {
+          if (v != "") {
+            newFragment = JSON.parse(this.allSetting.subJsonFragment);
+            newFragment.settings.fragment.length = v;
+            this.allSetting.subJsonFragment = JSON.stringify(newFragment);
+          }
+        }
+      },
+      fragmentInterval: {
+        get: function () { return this.fragment ? JSON.parse(this.allSetting.subJsonFragment).settings.fragment.interval : ""; },
+        set: function (v) {
+          if (v != "") {
+            newFragment = JSON.parse(this.allSetting.subJsonFragment);
+            newFragment.settings.fragment.interval = v;
+            this.allSetting.subJsonFragment = JSON.stringify(newFragment);
+          }
+        }
+      },
+      noises: {
+        get() {
+          return this.allSetting?.subJsonNoises != "";
+        },
+        set(v) {
+          if (v) {
+            this.allSetting.subJsonNoises = JSON.stringify(this.defaultNoises);
+          } else {
+            this.allSetting.subJsonNoises = "";
+          }
+        }
+      },
+      noisesArray: {
+        get() {
+          return this.noises ? JSON.parse(this.allSetting.subJsonNoises).settings.noises : [];
+        },
+        set(value) {
+          if (this.noises) {
+            const newNoises = JSON.parse(this.allSetting.subJsonNoises);
+            newNoises.settings.noises = value;
+            this.allSetting.subJsonNoises = JSON.stringify(newNoises);
+          }
+        }
+      },
+      enableMux: {
+        get: function () { return this.allSetting?.subJsonMux != ""; },
+        set: function (v) {
+          this.allSetting.subJsonMux = v ? JSON.stringify(this.defaultMux) : "";
+        }
+      },
+      muxConcurrency: {
+        get: function () { return this.enableMux ? JSON.parse(this.allSetting.subJsonMux).concurrency : -1; },
+        set: function (v) {
+          newMux = JSON.parse(this.allSetting.subJsonMux);
+          newMux.concurrency = v;
+          this.allSetting.subJsonMux = JSON.stringify(newMux);
+        }
+      },
+      muxXudpConcurrency: {
+        get: function () { return this.enableMux ? JSON.parse(this.allSetting.subJsonMux).xudpConcurrency : -1; },
+        set: function (v) {
+          newMux = JSON.parse(this.allSetting.subJsonMux);
+          newMux.xudpConcurrency = v;
+          this.allSetting.subJsonMux = JSON.stringify(newMux);
+        }
+      },
+      muxXudpProxyUDP443: {
+        get: function () { return this.enableMux ? JSON.parse(this.allSetting.subJsonMux).xudpProxyUDP443 : "reject"; },
+        set: function (v) {
+          newMux = JSON.parse(this.allSetting.subJsonMux);
+          newMux.xudpProxyUDP443 = v;
+          this.allSetting.subJsonMux = JSON.stringify(newMux);
+        }
+      },
+      enableDirect: {
+        get: function () { return this.allSetting?.subJsonRules != ""; },
+        set: function (v) {
+          this.allSetting.subJsonRules = v ? JSON.stringify(this.defaultRules) : "";
+        }
+      },
+      directIPs: {
+        get: function () {
+          if (!this.enableDirect) return [];
+          const rules = JSON.parse(this.allSetting.subJsonRules);
+          if (!Array.isArray(rules)) return [];
+          const ipRule = rules.find(r => r.ip);
+          return ipRule?.ip ?? [];
+        },
+        set: function (v) {
+          let rules = JSON.parse(this.allSetting.subJsonRules);
+          if (!Array.isArray(rules)) return;
+
+          if (v.length == 0) {
+            rules = rules.filter(r => !r.ip);
+          } else {
+            let ruleIndex = rules.findIndex(r => r.ip);
+            if (ruleIndex == -1) ruleIndex = rules.push(this.defaultRules[1]) - 1;
+
+            rules[ruleIndex].ip = [];
+            v.forEach(d => {
+              rules[ruleIndex].ip.push(d);
+            });
+          }
+          this.allSetting.subJsonRules = JSON.stringify(rules);
+        }
+      },
+      directDomains: {
+        get: function () {
+          if (!this.enableDirect) return [];
+          const rules = JSON.parse(this.allSetting.subJsonRules);
+          if (!Array.isArray(rules)) return [];
+          const domainRule = rules.find(r => r.domain);
+          return domainRule?.domain ?? [];
+        },
+        set: function (v) {
+          let rules = JSON.parse(this.allSetting.subJsonRules);
+          if (!Array.isArray(rules)) return;
+          if (v.length == 0) {
+            rules = rules.filter(r => !r.domain);
+          } else {
+            let ruleIndex = rules.findIndex(r => r.domain);
+            if (ruleIndex == -1) ruleIndex = rules.push(this.defaultRules[0]) - 1;
+
+            rules[ruleIndex].domain = v;
+          }
+          this.allSetting.subJsonRules = JSON.stringify(rules);
+        }
+      },
+      confAlerts: {
+        get: function () {
+          if (!this.allSetting) return [];
+          var alerts = []
+          if (window.location.protocol !== "https:") alerts.push('{{ i18n "secAlertSSL" }}');
+          if (this.allSetting.webPort === 2053) alerts.push('{{ i18n "secAlertPanelPort" }}');
+          panelPath = window.location.pathname.split('/').length < 4
+          if (panelPath && this.allSetting.webBasePath == '/') alerts.push('{{ i18n "secAlertPanelURI" }}');
+          if (this.allSetting.subEnable) {
+            subPath = this.allSetting.subURI.length > 0 ? new URL(this.allSetting.subURI).pathname : this.allSetting.subPath;
+            if (subPath == '/sub/') alerts.push('{{ i18n "secAlertSubURI" }}');
+            subJsonPath = this.allSetting.subJsonURI.length > 0 ? new URL(this.allSetting.subJsonURI).pathname : this.allSetting.subJsonPath;
+            if (subJsonPath == '/json/') alerts.push('{{ i18n "secAlertSubJsonURI" }}');
+          }
+          return alerts
+        }
+      }
+    },
+    watch: {
+      allSetting: {
+        deep: true,
+        handler() {
+          if (!this.loadingStates.fetched) return;
+          this.saveBtnDisable = this.oldAllSetting.equals(this.allSetting);
+        }
+      }
+    },
+    async mounted() {
+      await this.getAllSetting();
+    }
+  });
+</script>
+{{ template "page/body_end" .}}

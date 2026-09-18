@@ -1,0 +1,206 @@
+{{define "settings/panel/general"}}
+<style>
+.red-placeholder input::-webkit-input-placeholder { color: red !important; }
+.red-placeholder input::-moz-placeholder { color: red !important; }
+.red-placeholder input:-ms-input-placeholder { color: red !important; }
+.red-placeholder input::placeholder { color: red !important; }
+</style>
+<a-collapse default-active-key="1" @change="onGeneralCollapseChange">
+    <a-collapse-panel key="1" header='{{ i18n "pages.xray.generalConfigs"}}'>
+        <a-setting-list-item paddings="small">
+            <template #title>
+                {{ i18n "pages.settings.remarkModel"}}
+            </template>
+            <template #description>
+                {{ i18n "pages.settings.sampleRemark"}}: <i>#[[ remarkSample ]]</i>
+            </template>
+            <template #control>
+                <a-input-group :style="{ width: '100%' }">
+                    <a-select :style="{ paddingRight: '.5rem', minWidth: '80%', width: 'auto' }" mode="multiple"
+                        v-model="remarkModel" :dropdown-class-name="themeSwitcher.currentTheme">
+                        <a-select-option v-for="(value, key) in remarkModels" :value="key">[[ value ]]</a-select-option>
+                    </a-select>
+                    <a-select :style="{ width: '20%' }" v-model="remarkSeparator"
+                        :dropdown-class-name="themeSwitcher.currentTheme">
+                        <a-select-option v-for="key in remarkSeparators" :value="key">[[ key ]]</a-select-option>
+                    </a-select>
+                </a-input-group>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.panelListeningIP"}}</template>
+            <template #description>{{ i18n "pages.settings.panelListeningIPDesc"}}</template>
+            <template #control>
+                <a-input type="text" v-model="allSetting.webListen"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.panelListeningDomain"}}</template>
+            <template #description>{{ i18n "pages.settings.panelListeningDomainDesc"}}</template>
+            <template #control>
+                <a-input type="text" v-model="allSetting.webDomain"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.panelPort"}}</template>
+            <template #description>{{ i18n "pages.settings.panelPortDesc"}}</template>
+            <template #control>
+                <a-input-number :min="1" :min="65531" v-model="allSetting.webPort" :style="{ width: '100%' }"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.panelUrlPath"}}</template>
+            <template #description>{{ i18n "pages.settings.panelUrlPathDesc"}}</template>
+            <template #control>
+                <a-input type="text" v-model="allSetting.webBasePath"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.sessionMaxAge" }}</template>
+            <template #description>{{ i18n "pages.settings.sessionMaxAgeDesc" }}</template>
+            <template #control>
+                <a-input-number :min="60" v-model="allSetting.sessionMaxAge" :style="{ width: '100%' }"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.pageSize" }}</template>
+            <template #description>{{ i18n "pages.settings.pageSizeDesc" }}</template>
+            <template #control>
+                <a-input-number :min="0" step="5" v-model="allSetting.pageSize" :style="{ width: '100%' }"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.language"}}</template>
+            <template #control>
+                <a-select ref="selectLang" v-model="lang" @change="LanguageManager.setLanguage(lang)"
+                    :dropdown-class-name="themeSwitcher.currentTheme" :style="{ width: '100%' }">
+                    <a-select-option :value="l.value" :label="l.value" v-for="l in LanguageManager.supportedLanguages">
+                        <span role="img" :aria-label="l.name" v-text="l.icon"></span> &nbsp;&nbsp; <span
+                            v-text="l.name"></span>
+                    </a-select-option>
+                </a-select>
+            </template>
+        </a-setting-list-item>
+    </a-collapse-panel>
+    <a-collapse-panel key="2" header='{{ i18n "pages.settings.notifications" }}'>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.expireTimeDiff" }}</template>
+            <template #description>{{ i18n "pages.settings.expireTimeDiffDesc" }}</template>
+            <template #control>
+                <a-input-number :min="0" v-model="allSetting.expireDiff" :style="{ width: '100%' }"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.trafficDiff" }}</template>
+            <template #description>{{ i18n "pages.settings.trafficDiffDesc" }}</template>
+            <template #control>
+                <a-input-number :min="0" v-model="allSetting.trafficDiff" :style="{ width: '100%' }"></a-input>
+            </template>
+        </a-setting-list-item>
+    </a-collapse-panel>
+    <a-collapse-panel key="3" header='{{ i18n "pages.settings.certs" }}'>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.publicKeyPath"}}</template>
+            <template #description>{{ i18n "pages.settings.publicKeyPathDesc"}}</template>
+            <template #control>
+                <a-input type="text" v-model="allSetting.webCertFile" placeholder="/root/cert/域名/fullchain.pem" class="red-placeholder"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.privateKeyPath"}}</template>
+            <template #description>{{ i18n "pages.settings.privateKeyPathDesc"}}</template>
+            <template #control>
+                <a-input type="text" v-model="allSetting.webKeyFile" placeholder="/root/cert/域名/privkey.pem" class="red-placeholder"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-divider orientation="left">菜单 18 / 19 证书续期管理</a-divider>
+        <a-spin :spinning="certManagerBusy">
+            <template v-if="certManagerStatus.managed">
+                <a-alert type="info" show-icon :style="{ marginBottom:'12px' }"
+                    :message="'当前证书来源：' + (certManagerStatus.sourceLabel || '-')"
+                    :description="certManagerStatus.credentialNote || '面板只保存证书申请方式、域名和证书路径；敏感凭据不会在这里显示。'">
+                </a-alert>
+                <a-descriptions size="small" bordered :column="isMobile ? 1 : 2">
+                    <a-descriptions-item label="申请方式">[[ certManagerStatus.sourceLabel || '-' ]]</a-descriptions-item>
+                    <a-descriptions-item label="域名">[[ certManagerStatus.metadata ? certManagerStatus.metadata.domain : '-' ]]</a-descriptions-item>
+                    <a-descriptions-item label="泛域名">[[ certManagerStatus.metadata && certManagerStatus.metadata.wildcard ? '是' : '否' ]]</a-descriptions-item>
+                    <a-descriptions-item label="菜单来源">[[ certManagerStatus.metadata ? ('菜单 ' + certManagerStatus.metadata.menu) : '-' ]]</a-descriptions-item>
+                    <a-descriptions-item label="证书文件">[[ certManagerStatus.currentCertFile || '-' ]]</a-descriptions-item>
+                    <a-descriptions-item label="私钥文件">[[ certManagerStatus.currentKeyFile || '-' ]]</a-descriptions-item>
+                    <a-descriptions-item label="证书签发时间">[[ formatCertManagerTime(certManagerStatus.notBefore) ]]</a-descriptions-item>
+                    <a-descriptions-item label="证书到期时间">[[ formatCertManagerTime(certManagerStatus.notAfter) ]]</a-descriptions-item>
+                    <a-descriptions-item label="剩余有效期">[[ certManagerStatus.daysRemaining ]] 天</a-descriptions-item>
+                    <a-descriptions-item label="下次强制更新">[[ formatCertManagerTime(certManagerStatus.nextForcedRenewAt) ]]</a-descriptions-item>
+                    <a-descriptions-item label="定时检查">[[ certManagerStatus.timerActive ? '运行中' : '未运行' ]]</a-descriptions-item>
+                    <a-descriptions-item v-if="certManagerStatus.metadata && certManagerStatus.metadata.issuePort" label="菜单18签发端口">[[ certManagerStatus.metadata.issuePort ]]</a-descriptions-item>
+                </a-descriptions>
+
+                <a-setting-list-item paddings="small" :style="{ marginTop:'12px' }">
+                    <template #title>定期强制更新当前证书</template>
+                    <template #description>acme.sh 原有自动续期继续保留；这里额外按周期执行一次 --renew --force。默认 6 个月。</template>
+                    <template #control>
+                        <a-switch v-model="certManagerForm.enabled"></a-switch>
+                    </template>
+                </a-setting-list-item>
+                <a-setting-list-item paddings="small">
+                    <template #title>强制更新周期</template>
+                    <template #description>1–24 个月，默认 6 个月。</template>
+                    <template #control>
+                        <a-input-number v-model="certManagerForm.months" :min="1" :max="24" :disabled="!certManagerForm.enabled" :style="{ width:'100%' }"></a-input-number>
+                    </template>
+                </a-setting-list-item>
+                <a-space wrap :style="{ marginTop:'12px' }">
+                    <a-button type="primary" @click="saveCertManager" :loading="certManagerBusy">保存续期设置</a-button>
+                    <a-button icon="sync" @click="renewCertManagerNow" :loading="certManagerBusy">立即强制更新当前证书</a-button>
+                    <a-button icon="reload" @click="getCertManagerStatus" :loading="certManagerBusy">刷新状态</a-button>
+                </a-space>
+                <a-alert v-if="certManagerLastOutput" type="success" show-icon :style="{ marginTop:'12px' }">
+                    <template #message>最近续期输出</template>
+                    <template #description><pre class="panel-tool-log">[[ certManagerLastOutput ]]</pre></template>
+                </a-alert>
+            </template>
+            <a-alert v-else-if="certManagerLoaded" type="warning" show-icon
+                message="未识别到菜单 18 / 19 管理的证书"
+                description="通过 x-ui 菜单 18 或 19 重新申请/安装证书后，这里会自动保存申请方式并默认启用 6 个月强制更新；旧版 acme.sh 证书也会尝试自动识别。">
+            </a-alert>
+        </a-spin>
+    </a-collapse-panel>
+    <a-collapse-panel key="4" header='{{ i18n "pages.settings.externalTraffic" }}'>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.externalTrafficInformEnable"}}</template>
+            <template #description>{{ i18n "pages.settings.externalTrafficInformEnableDesc"}}</template>
+            <template #control>
+                <a-switch v-model="allSetting.externalTrafficInformEnable"></a-switch>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.externalTrafficInformURI"}}</template>
+            <template #description>{{ i18n "pages.settings.externalTrafficInformURIDesc"}}</template>
+            <template #control>
+                <a-input type="text" placeholder="(http|https)://domain[:port]/path/"
+                    v-model="allSetting.externalTrafficInformURI"></a-input>
+            </template>
+        </a-setting-list-item>
+    </a-collapse-panel>
+    <a-collapse-panel key="5" header='{{ i18n "pages.settings.dateAndTime" }}'>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.timeZone"}}</template>
+            <template #description>{{ i18n "pages.settings.timeZoneDesc"}}</template>
+            <template #control>
+                <a-input type="text" v-model="allSetting.timeLocation"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.datepicker"}}</template>
+            <template #description>{{ i18n "pages.settings.datepickerDescription"}}</template>
+            <template #control>
+                <a-select :style="{ width: '100%' }" :dropdown-class-name="themeSwitcher.currentTheme" v-model="datepicker">
+                    <a-select-option v-for="item in datepickerList" :value="item.value">
+                        <span v-text="item.name"></span>
+                    </a-select-option>
+                </a-select>
+            </template>
+        </a-setting-list-item>
+    </a-collapse-panel>
+</a-collapse>
+{{end}}

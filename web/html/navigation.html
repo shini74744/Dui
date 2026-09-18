@@ -1,0 +1,55 @@
+{{ template "page/head_start" .}}
+<style>
+  #content-layout .ant-layout-content {
+    max-width: 1200px;
+    padding: 0 16px;
+    box-sizing: border-box;
+  }
+  .navigation-empty {
+    min-height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .navigation-empty .ant-empty-description {
+    opacity: .68;
+  }
+</style>
+{{ template "page/head_end" .}}
+
+{{ template "page/body_start" .}}
+<a-layout id="app" v-cloak :class="themeSwitcher.currentTheme">
+  <a-sidebar></a-sidebar>
+  <a-layout id="content-layout">
+    <a-layout-content>
+      <a-card title="实用导航" :bordered="true">
+        <a-tabs default-active-key="1">
+          <a-tab-pane key="1">
+            <template #tab><a-icon type="tool"></a-icon><span>有用技巧</span></template>
+            <div class="navigation-empty"><a-empty description="暂无内容"></a-empty></div>
+          </a-tab-pane>
+          <a-tab-pane key="2">
+            <template #tab><a-icon type="wallet"></a-icon><span>推广赞助</span></template>
+            <div class="navigation-empty"><a-empty description="暂无内容"></a-empty></div>
+          </a-tab-pane>
+          <a-tab-pane key="3">
+            <template #tab><a-icon type="appstore"></a-icon><span>其他资源</span></template>
+            <div class="navigation-empty"><a-empty description="暂无内容"></a-empty></div>
+          </a-tab-pane>
+        </a-tabs>
+      </a-card>
+    </a-layout-content>
+  </a-layout>
+</a-layout>
+
+{{template "page/body_scripts" .}}
+{{template "component/aSidebar" .}}
+{{template "component/aThemeSwitch" .}}
+<script>
+  const app = new Vue({
+    delimiters: ['[[', ']]'],
+    el: '#app',
+    data: { themeSwitcher },
+  });
+</script>
+{{ template "page/body_end" .}}

@@ -1,0 +1,479 @@
+{{ define "page/head_start" }}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="renderer" content="webkit">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="stylesheet" href="{{ .base_path }}assets/ant-design-vue/antd.min.css">
+  <link rel="stylesheet" href="{{ .base_path }}assets/css/custom.min.css?{{ .cur_ver }}">
+  <style>
+    [v-cloak] {
+      display: none;
+    }
+    /* vazirmatn-regular - arabic_latin_latin-ext */
+    @font-face {
+      font-display: swap;
+      font-family: 'Vazirmatn';
+      font-style: normal;
+      font-weight: 400;
+      src: url('{{ .base_path }}assets/Vazirmatn-UI-NL-Regular.woff2') format('woff2');
+      unicode-range: U+0600-06FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE80-FEFC, U+0030-0039;
+    }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Vazirmatn', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    }
+  </style>
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('dui-ui-theme') === 'starry') {
+          document.documentElement.setAttribute('data-dui-ui', 'starry');
+        }
+      } catch (_) {}
+    })();
+  </script>
+  <style id="starry-global-styles">
+    html[data-dui-ui="starry"] body {
+      background:
+        radial-gradient(ellipse at 18% 8%, rgba(64, 93, 220, .16) 0, transparent 34%),
+        radial-gradient(ellipse at 82% 18%, rgba(22, 163, 196, .10) 0, transparent 28%),
+        radial-gradient(ellipse at 62% 92%, rgba(117, 67, 183, .12) 0, transparent 36%),
+        linear-gradient(145deg, #030713 0%, #07101f 45%, #080b1a 100%) !important;
+      color: #dce7f8;
+    }
+    html[data-dui-ui="starry"] body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: .68;
+      background-image:
+        radial-gradient(circle, rgba(255,255,255,.82) 0 1px, transparent 1.3px),
+        radial-gradient(circle, rgba(125,211,252,.62) 0 1px, transparent 1.4px),
+        radial-gradient(circle, rgba(196,181,253,.56) 0 1.1px, transparent 1.5px);
+      background-size: 118px 118px, 173px 173px, 251px 251px;
+      background-position: 10px 18px, 61px 39px, 104px 71px;
+      animation: duiStarDrift 120s linear infinite;
+    }
+    html[data-dui-ui="starry"] body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0;
+      background: linear-gradient(118deg, transparent 0 48.8%, rgba(255,255,255,.45) 49.5%, rgba(125,211,252,.22) 50.1%, transparent 51.2%) no-repeat;
+      background-size: 240% 240%;
+      animation: duiMeteor 18s ease-in-out infinite;
+    }
+    @keyframes duiStarDrift {
+      from { transform: translate3d(0,0,0); }
+      to { transform: translate3d(-118px,59px,0); }
+    }
+    @keyframes duiMeteor {
+      0%, 76%, 100% { background-position: 180% -90%; opacity: 0; }
+      79% { opacity: .42; }
+      86% { background-position: -90% 180%; opacity: 0; }
+    }
+    html[data-dui-ui="starry"] #app,
+    html[data-dui-ui="starry"] #content-layout,
+    html[data-dui-ui="starry"] .ant-layout,
+    html[data-dui-ui="starry"] .ant-layout-content {
+      position: relative;
+      z-index: 1;
+      background: transparent !important;
+    }
+    html[data-dui-ui="starry"] .ant-sidebar > .ant-layout-sider,
+    html[data-dui-ui="starry"] .ant-layout-sider,
+    html[data-dui-ui="starry"] .ant-layout-sider-trigger,
+    html[data-dui-ui="starry"] .ant-menu,
+    html[data-dui-ui="starry"] .ant-menu-dark,
+    html[data-dui-ui="starry"] .ant-menu-dark .ant-menu-sub {
+      background: rgba(4, 8, 20, .94) !important;
+      border-color: rgba(116, 151, 210, .12) !important;
+      color: #cad7ed !important;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    html[data-dui-ui="starry"] .ant-sidebar > .ant-layout-sider {
+      border-right: 1px solid rgba(112, 145, 210, .13) !important;
+      box-shadow: 12px 0 44px rgba(0,0,0,.18);
+    }
+    html[data-dui-ui="starry"] .ant-menu-item,
+    html[data-dui-ui="starry"] .ant-menu-submenu-title,
+    html[data-dui-ui="starry"] .ant-layout-sider-trigger {
+      color: #aebbd1 !important;
+    }
+    html[data-dui-ui="starry"] .ant-menu-item .anticon,
+    html[data-dui-ui="starry"] .ant-menu-submenu-title .anticon {
+      color: #8fa6c9 !important;
+    }
+    html[data-dui-ui="starry"] .ant-menu:not(.ant-menu-horizontal) .ant-menu-item-selected {
+      color: #f4f7ff !important;
+      background: linear-gradient(100deg, rgba(55,91,184,.88), rgba(92,65,168,.78)) !important;
+      box-shadow: inset 0 0 0 1px rgba(155,185,255,.18), 0 8px 24px rgba(28,52,121,.18);
+      animation: none !important;
+    }
+    html[data-dui-ui="starry"] .ant-menu-item-selected .anticon {
+      color: #dbeafe !important;
+    }
+    html[data-dui-ui="starry"] .ant-menu-item:hover,
+    html[data-dui-ui="starry"] .ant-menu-submenu-title:hover {
+      color: #eef4ff !important;
+      background: rgba(73,102,163,.16) !important;
+    }
+    html[data-dui-ui="starry"] .ant-card,
+    html[data-dui-ui="starry"] .glass-card,
+    html[data-dui-ui="starry"] .ant-tabs,
+    html[data-dui-ui="starry"] .ant-collapse,
+    html[data-dui-ui="starry"] .ant-table,
+    html[data-dui-ui="starry"] .ant-list-bordered {
+      color: #dce7f8 !important;
+      background: linear-gradient(145deg, rgba(10,20,42,.84), rgba(7,12,28,.78)) !important;
+      border-color: rgba(105,142,204,.20) !important;
+      box-shadow: 0 16px 44px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.025) !important;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    html[data-dui-ui="starry"] .ant-card,
+    html[data-dui-ui="starry"] .glass-card {
+      border-radius: 20px !important;
+    }
+    html[data-dui-ui="starry"] .ant-card:hover,
+    html[data-dui-ui="starry"] .glass-card:hover {
+      border-color: rgba(126,164,230,.34) !important;
+      box-shadow: 0 20px 52px rgba(0,0,0,.25), 0 0 24px rgba(56,103,214,.055) !important;
+    }
+    html[data-dui-ui="starry"] .ant-card-head,
+    html[data-dui-ui="starry"] .ant-card-body,
+    html[data-dui-ui="starry"] .ant-card-actions,
+    html[data-dui-ui="starry"] .ant-collapse-content,
+    html[data-dui-ui="starry"] .ant-collapse-item,
+    html[data-dui-ui="starry"] .ant-collapse-header,
+    html[data-dui-ui="starry"] .ant-list-item {
+      color: #dce7f8 !important;
+      background: transparent !important;
+      border-color: rgba(117,145,190,.13) !important;
+    }
+    html[data-dui-ui="starry"] .ant-card-head-title,
+    html[data-dui-ui="starry"] .ant-statistic-title,
+    html[data-dui-ui="starry"] .ant-statistic-content,
+    html[data-dui-ui="starry"] .ant-tabs-tab,
+    html[data-dui-ui="starry"] .ant-list-item-meta-title,
+    html[data-dui-ui="starry"] .ant-list-item-meta-description {
+      color: #dce7f8 !important;
+    }
+    html[data-dui-ui="starry"] .ant-tabs-tab-active,
+    html[data-dui-ui="starry"] .ant-tabs-tab:hover {
+      color: #8db7ff !important;
+    }
+    html[data-dui-ui="starry"] .ant-tabs-ink-bar {
+      background: linear-gradient(90deg,#4f8dff,#9474e8) !important;
+    }
+    html[data-dui-ui="starry"] .ant-input,
+    html[data-dui-ui="starry"] .ant-input-number,
+    html[data-dui-ui="starry"] .ant-select-selection,
+    html[data-dui-ui="starry"] .ant-input-group-addon {
+      color: #dce7f8 !important;
+      background: rgba(8,17,37,.78) !important;
+      border-color: rgba(112,145,203,.22) !important;
+    }
+    html[data-dui-ui="starry"] .ant-input:focus,
+    html[data-dui-ui="starry"] .ant-input:hover,
+    html[data-dui-ui="starry"] .ant-select-selection:hover,
+    html[data-dui-ui="starry"] .ant-input-number:hover {
+      border-color: rgba(111,159,244,.58) !important;
+      box-shadow: 0 0 0 2px rgba(74,117,206,.10) !important;
+    }
+    html[data-dui-ui="starry"] .ant-table-thead > tr > th,
+    html[data-dui-ui="starry"] .ant-table-tbody > tr > td {
+      color: #dce7f8 !important;
+      background: rgba(8,16,34,.55) !important;
+      border-color: rgba(112,145,203,.12) !important;
+    }
+    html[data-dui-ui="starry"] .ant-table-tbody > tr:hover > td {
+      background: rgba(48,75,135,.17) !important;
+    }
+    html[data-dui-ui="starry"] .ant-btn:not(.ant-btn-danger) {
+      border-color: rgba(112,151,220,.30) !important;
+    }
+    html[data-dui-ui="starry"] .ant-btn-primary {
+      color: #fff !important;
+      background: linear-gradient(135deg,#376ccc,#7257bf) !important;
+      border-color: rgba(135,169,233,.36) !important;
+      box-shadow: 0 8px 22px rgba(40,70,145,.18);
+    }
+    html[data-dui-ui="starry"] .ant-tag {
+      color: #dce9fb !important;
+      background: rgba(13,28,56,.76) !important;
+      border-color: rgba(105,151,222,.24) !important;
+    }
+    html[data-dui-ui="starry"] .dui-logo-text {
+      color: #f4f7ff !important;
+      text-shadow: 0 0 16px rgba(143,181,255,.28), 0 0 38px rgba(115,84,190,.18) !important;
+      animation: none !important;
+    }
+    html[data-dui-ui="starry"] .dui-desc,
+    html[data-dui-ui="starry"] .dui-desc * {
+      color: #c5d3e9 !important;
+    }
+    html[data-dui-ui="starry"] .ant-modal-content,
+    html[data-dui-ui="starry"] .ant-modal-header {
+      color: #dce7f8 !important;
+      background: #091226 !important;
+      border-color: rgba(112,145,203,.16) !important;
+    }
+    html[data-dui-ui="starry"] .ant-modal-title,
+    html[data-dui-ui="starry"] .ant-modal-close-x {
+      color: #eaf1ff !important;
+    }
+    html[data-dui-ui="starry"] .drawer-handle {
+      color: #cbd9ef !important;
+      background: #091226 !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html[data-dui-ui="starry"] body::before,
+      html[data-dui-ui="starry"] body::after { animation: none !important; }
+    }
+
+    /* 提示层可读性：白天 / 黑夜 / 星空统一增强 */
+    body:not(.dark) .ant-alert-message,
+    body:not(.dark) .ant-modal-title,
+    body:not(.dark) .ant-popover-title,
+    body:not(.dark) .ant-notification-notice-message {
+      color: rgba(0,0,0,.88) !important;
+    }
+    body:not(.dark) .ant-alert-description,
+    body:not(.dark) .ant-modal-body,
+    body:not(.dark) .ant-popover-inner-content,
+    body:not(.dark) .ant-message-notice-content,
+    body:not(.dark) .ant-notification-notice-description {
+      color: rgba(0,0,0,.72) !important;
+    }
+    .dark .ant-alert-message,
+    .dark .ant-alert-description,
+    .dark .ant-modal-title,
+    .dark .ant-modal-body,
+    .dark .ant-modal-confirm-title,
+    .dark .ant-modal-confirm-content,
+    .dark .ant-popover-title,
+    .dark .ant-popover-inner-content,
+    .dark .ant-message-notice-content,
+    .dark .ant-notification-notice-message,
+    .dark .ant-notification-notice-description {
+      color: rgba(255,255,255,.88) !important;
+    }
+    .dark .ant-popover-inner,
+    .dark .ant-notification-notice,
+    .dark .ant-message-notice-content {
+      background: #182235 !important;
+      border-color: #33435f !important;
+    }
+    /* 暗黑模式不能沿用 Ant Design 的浅色 Alert 背景，否则白字几乎不可读 */
+    .dark .ant-alert-info {
+      background: #10273c !important;
+      border-color: #245a82 !important;
+    }
+    .dark .ant-alert-info .ant-alert-icon { color: #58a9e8 !important; }
+    .dark .ant-alert-success {
+      background: #102c28 !important;
+      border-color: #286b5d !important;
+    }
+    .dark .ant-alert-success .ant-alert-icon { color: #50c9ad !important; }
+    .dark .ant-alert-warning {
+      background: #352713 !important;
+      border-color: #76501d !important;
+    }
+    .dark .ant-alert-warning .ant-alert-icon { color: #f0aa45 !important; }
+    .dark .ant-alert-error {
+      background: #33191c !important;
+      border-color: #74323a !important;
+    }
+    .dark .ant-alert-error .ant-alert-icon { color: #ef737a !important; }
+    .dark .ant-alert-close-text,
+    .dark .ant-alert-close-icon { color: rgba(255,255,255,.72) !important; }
+
+    .dark .ant-statistic-title,
+    .dark .ant-statistic-content,
+    .dark .ant-descriptions-item-label,
+    .dark .ant-descriptions-item-content,
+    .dark .ant-divider-inner-text,
+    .dark .ant-empty-description,
+    .dark .ant-checkbox-wrapper,
+    .dark .ant-radio-wrapper,
+    .dark .ant-form-item-label > label {
+      color: rgba(255,255,255,.82) !important;
+    }
+    .dark .ant-descriptions-view {
+      border-color: #33435f !important;
+    }
+    .dark .ant-descriptions-bordered .ant-descriptions-item-label {
+      background: #151f31 !important;
+      border-color: #33435f !important;
+    }
+    .dark .ant-descriptions-bordered .ant-descriptions-item-content {
+      background: #0c1422 !important;
+      border-color: #33435f !important;
+    }
+    .dark .ant-select-dropdown {
+      background: #151f31 !important;
+      border: 1px solid #33435f !important;
+    }
+    .dark .ant-select-dropdown-menu-item {
+      color: rgba(255,255,255,.82) !important;
+      background: transparent !important;
+    }
+    .dark .ant-select-dropdown-menu-item-active:not(.ant-select-dropdown-menu-item-disabled),
+    .dark .ant-select-dropdown-menu-item:hover:not(.ant-select-dropdown-menu-item-disabled) {
+      color: #fff !important;
+      background: #263754 !important;
+    }
+    .dark .ant-select-dropdown-menu-item-selected {
+      color: #fff !important;
+      background: #1f4560 !important;
+    }
+    .dark .ant-select-search__field,
+    .dark .ant-select-search__field::placeholder,
+    .dark .ant-select-selection__placeholder,
+    .dark .ant-select-arrow {
+      color: rgba(255,255,255,.62) !important;
+    }
+    html[data-dui-ui="starry"] .ant-alert-message,
+    html[data-dui-ui="starry"] .ant-alert-description,
+    html[data-dui-ui="starry"] .ant-modal-title,
+    html[data-dui-ui="starry"] .ant-modal-body,
+    html[data-dui-ui="starry"] .ant-modal-confirm-title,
+    html[data-dui-ui="starry"] .ant-modal-confirm-content,
+    html[data-dui-ui="starry"] .ant-popover-title,
+    html[data-dui-ui="starry"] .ant-popover-inner-content,
+    html[data-dui-ui="starry"] .ant-message-notice-content,
+    html[data-dui-ui="starry"] .ant-notification-notice-message,
+    html[data-dui-ui="starry"] .ant-notification-notice-description {
+      color: #e9f1ff !important;
+    }
+    html[data-dui-ui="starry"] .ant-popover-inner,
+    html[data-dui-ui="starry"] .ant-notification-notice,
+    html[data-dui-ui="starry"] .ant-message-notice-content {
+      background: #0b1730 !important;
+      border: 1px solid rgba(121,157,219,.28) !important;
+      box-shadow: 0 16px 42px rgba(0,0,0,.32) !important;
+    }
+    html[data-dui-ui="starry"] .ant-popover-arrow::before {
+      background: #0b1730 !important;
+    }
+    html[data-dui-ui="starry"] .ant-alert-info {
+      background: rgba(15,39,67,.94) !important;
+      border-color: rgba(83,148,205,.46) !important;
+    }
+    html[data-dui-ui="starry"] .ant-alert-success {
+      background: rgba(13,47,43,.92) !important;
+      border-color: rgba(69,169,145,.42) !important;
+    }
+    html[data-dui-ui="starry"] .ant-alert-warning {
+      background: rgba(54,39,18,.94) !important;
+      border-color: rgba(181,124,43,.42) !important;
+    }
+    html[data-dui-ui="starry"] .ant-alert-error {
+      background: rgba(54,23,32,.94) !important;
+      border-color: rgba(180,70,94,.42) !important;
+    }
+
+    .panel-tool-install-button.is-installed {
+      color: rgba(0,0,0,.65) !important;
+      background: #fff !important;
+      border-color: #d9d9d9 !important;
+      box-shadow: none !important;
+    }
+    .panel-tool-install-button.is-installed:hover,
+    .panel-tool-install-button.is-installed:focus {
+      color: #4b6380 !important;
+      background: #f7f9fc !important;
+      border-color: #aab7c7 !important;
+    }
+    .dark .panel-tool-install-button.is-installed {
+      color: rgba(255,255,255,.72) !important;
+      background: #182235 !important;
+      border-color: #3a4963 !important;
+      box-shadow: none !important;
+    }
+    .dark .panel-tool-install-button.is-installed:hover,
+    .dark .panel-tool-install-button.is-installed:focus {
+      color: #fff !important;
+      background: #202d45 !important;
+      border-color: #526683 !important;
+    }
+    html[data-dui-ui="starry"] .panel-tool-install-button.is-installed {
+      color: #c3d0e4 !important;
+      background: rgba(16,27,49,.92) !important;
+      border-color: rgba(116,145,194,.28) !important;
+      box-shadow: none !important;
+    }
+
+    .panel-tool-log {
+      margin: 0;
+      padding: 12px 14px;
+      max-height: 360px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.55;
+      border-radius: 10px;
+      border: 1px solid #d9e0ea;
+      background: #f7f9fc;
+      color: #27364a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+    }
+    .panel-tool-hint {
+      margin-top: 8px;
+      color: rgba(0,0,0,.58);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .dark .panel-tool-log {
+      border-color: #34445f;
+      background: #0d1728;
+      color: #d9e5f7;
+    }
+    .dark .panel-tool-hint { color: rgba(255,255,255,.62); }
+    html[data-dui-ui="starry"] .panel-tool-log {
+      border-color: rgba(113,151,216,.24);
+      background: rgba(4,11,25,.82);
+      color: #dce9fb;
+    }
+    html[data-dui-ui="starry"] .panel-tool-hint { color: #9fb0ca; }
+  </style>
+  <title>{{ .host }} – {{ i18n .title}}</title>
+{{ end }}
+
+{{ define "page/head_end" }}
+</head>
+{{ end }}
+
+{{ define "page/body_start" }}
+<body>
+  <div id="message"></div>
+{{ end }}
+
+{{ define "page/body_scripts" }}
+<script src="{{ .base_path }}assets/vue/vue.min.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/moment/moment.min.js"></script>
+<script src="{{ .base_path }}assets/ant-design-vue/antd.min.js"></script>
+<script src="{{ .base_path }}assets/axios/axios.min.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/qs/qs.min.js"></script>
+<script src="{{ .base_path }}assets/js/axios-init.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/util/date-util.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/util/index.js?{{ .cur_ver }}"></script>
+<script>
+  const basePath = '{{ .base_path }}';
+  axios.defaults.baseURL = basePath;
+</script>
+{{ end }}
+  
+{{ define "page/body_end" }}
+</body>
+</html>
+{{ end }}

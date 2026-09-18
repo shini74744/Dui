@@ -1,0 +1,108 @@
+{{define "settings/panel/ddns"}}
+<a-space direction="vertical" :size="16" :style="{ width:'100%' }">
+  <a-alert type="info" show-icon
+    message="Cloudflare 多域名 DDNS"
+    description="基于原 ddns.sh：IPv4/A 记录、多域名、独立 Token、自动同步、手动同步、启停、日志、在线更新和旧版单域名配置迁移。Token 只在提交时发送，不会回显到页面。">
+  </a-alert>
+
+  <a-alert v-if="ddnsStatus.legacyDetected && !ddnsStatus.configured" type="warning" show-icon
+    message="检测到旧版 /etc/cloudflare-ddns.env"
+    description="点击“安装/更新 DDNS”会按原脚本逻辑迁移到新版多域名配置，并保留旧配置备份。">
+  </a-alert>
+
+  <a-card title="运行状态">
+    <a-row :gutter="[12,12]">
+      <a-col :xs="24" :md="6"><a-statistic title="DDNS 管理器" :value="ddnsStatus.installed ? ('已安装' + (ddnsStatus.version ? ' v'+ddnsStatus.version : '')) : '未安装'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="初始化系统" :value="ddnsStatus.init || '未识别'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="自动同步" :value="ddnsStatus.scheduleActive ? '运行中' : '已暂停'"></a-statistic></a-col>
+      <a-col :xs="24" :md="6"><a-statistic title="检查间隔" :value="ddnsStatus.interval ? (ddnsStatus.interval + ' 秒') : '-'"></a-statistic></a-col>
+    </a-row>
+
+    <a-descriptions v-if="ddnsStatus.lastRun" size="small" bordered :column="isMobile ? 1 : 2" :style="{ marginTop:'16px' }">
+      <a-descriptions-item label="最近轮次">[[ ddnsStatus.lastRun.checked_at || '-' ]]</a-descriptions-item>
+      <a-descriptions-item label="本轮出口 IPv4">[[ ddnsStatus.lastRun.public_ipv4 || '-' ]]</a-descriptions-item>
+      <a-descriptions-item label="轮次状态">[[ ddnsStatus.lastRun.status || '-' ]]</a-descriptions-item>
+      <a-descriptions-item label="说明">[[ ddnsStatus.lastRun.message || '-' ]]</a-descriptions-item>
+    </a-descriptions>
+
+    <a-space wrap :style="{ marginTop:'14px' }">
+      <a-button class="panel-tool-install-button" :class="{ 'is-installed': ddnsStatus.installed }" :type="ddnsStatus.installed ? 'default' : 'primary'" icon="download" @click="installDDNS" :loading="ddnsBusy">[[ ddnsStatus.installed ? '更新 DDNS' : '安装 DDNS' ]]</a-button>
+      <a-button icon="reload" @click="getDDNSStatus" :loading="ddnsBusy">刷新状态</a-button>
+      <a-button icon="sync" @click="runDDNSNow" :disabled="!ddnsStatus.installed" :loading="ddnsBusy">立即检测并同步</a-button>
+      <a-button :icon="ddnsStatus.scheduleActive ? 'pause' : 'play-circle'" @click="setDDNSSchedule(!ddnsStatus.scheduleActive)"
+        :disabled="!ddnsStatus.installed" :loading="ddnsBusy">
+        [[ ddnsStatus.scheduleActive ? '暂停自动同步' : '恢复自动同步' ]]
+      </a-button>
+      <a-button icon="cloud-download" @click="updateDDNSScript" :disabled="!ddnsStatus.installed" :loading="ddnsBusy">在线更新脚本</a-button>
+    </a-space>
+
+    <a-alert v-if="ddnsLastOutput" type="success" show-icon :style="{ marginTop:'12px' }">
+      <template #message>最近操作输出</template>
+      <template #description><pre class="panel-tool-log">[[ ddnsLastOutput ]]</pre></template>
+    </a-alert>
+  </a-card>
+
+  <a-card title="添加域名">
+    <a-row :gutter="[12,12]">
+      <a-col :xs="24" :md="6"><a-input v-model="ddnsAddForm.zone" placeholder="Zone，例如 example.com"></a-input></a-col>
+      <a-col :xs="24" :md="6"><a-input v-model="ddnsAddForm.name" placeholder="完整域名；@ 表示 Zone 本身"></a-input></a-col>
+      <a-col :xs="24" :md="8"><a-input-password v-model="ddnsAddForm.token" placeholder="Cloudflare API Token"></a-input-password></a-col>
+      <a-col :xs="24" :md="4"><a-button type="primary" block @click="addDDNSRecord" :disabled="!ddnsStatus.installed" :loading="ddnsBusy">添加</a-button></a-col>
+    </a-row>
+    <a-checkbox v-model="ddnsAddForm.createMissing" :style="{ marginTop:'10px' }">Cloudflare 中没有 A 记录时自动创建灰云 A 记录</a-checkbox>
+    <div class="panel-tool-hint">Token 需要对应 Zone 的 <b>Zone:Read</b> 和 <b>DNS:Edit</b> 权限；不会在页面状态中回显。</div>
+  </a-card>
+
+  <a-card title="域名管理">
+    <a-table size="small" row-key="name" :columns="ddnsColumns" :data-source="ddnsStatus.records || []"
+      :pagination="{ pageSize: 20, showSizeChanger: true, pageSizeOptions:['20','50','100'] }">
+      <template slot="enabled" slot-scope="text, record">
+        <a-switch :checked="record.enabled" @change="checked => setDDNSRecordEnabled(record.name, checked)" :loading="ddnsBusy"></a-switch>
+      </template>
+      <template slot="status" slot-scope="text, record">
+        <a-tag :color="ddnsStatusColor(record.status)">[[ record.status || '暂无结果' ]]</a-tag>
+        <span v-if="record.message" :title="record.message">[[ record.message ]]</span>
+      </template>
+      <template slot="action" slot-scope="text, record">
+        <a-space>
+          <a-button size="small" @click="openDDNSTokenModal(record.name)">更换 Token</a-button>
+          <a-button size="small" type="danger" ghost @click="deleteDDNSRecord(record.name)">移除</a-button>
+        </a-space>
+      </template>
+    </a-table>
+  </a-card>
+
+  <a-card title="同步设置">
+    <a-row :gutter="[12,12]" align="middle">
+      <a-col :xs="24" :md="8">
+        <a-input-number v-model="ddnsInterval" :min="30" :max="86400" :style="{ width:'100%' }" addon-after="秒"></a-input-number>
+      </a-col>
+      <a-col :xs="24" :md="16">
+        <a-space>
+          <a-button type="primary" @click="setDDNSInterval" :disabled="!ddnsStatus.configured" :loading="ddnsBusy">保存检查间隔</a-button>
+          <span class="panel-tool-hint">范围 30–86400 秒；systemd 定时器会按原脚本逻辑刷新，暂停状态保持不变。</span>
+        </a-space>
+      </a-col>
+    </a-row>
+  </a-card>
+
+  <a-card title="运行日志">
+    <a-space :style="{ marginBottom:'12px' }">
+      <a-button icon="file-text" @click="getDDNSLogs" :loading="ddnsBusy">刷新日志</a-button>
+    </a-space>
+    <pre class="panel-tool-log">[[ ddnsLogs || '暂无日志' ]]</pre>
+  </a-card>
+
+  <a-card title="维护">
+    <a-alert type="warning" show-icon :style="{ marginBottom:'12px' }"
+      message="卸载会删除本机 DDNS 程序、Token 配置、状态与日志，但不会删除 Cloudflare 上的 DNS 记录。"></a-alert>
+    <a-button type="danger" :disabled="!ddnsStatus.installed && !ddnsStatus.configured" @click="uninstallDDNS" :loading="ddnsBusy">卸载 DDNS</a-button>
+  </a-card>
+
+  <a-modal title="更换 Cloudflare API Token" :visible="ddnsTokenModal.visible" @ok="replaceDDNSToken"
+    @cancel="ddnsTokenModal.visible=false" :confirm-loading="ddnsBusy" ok-text="保存" cancel-text="取消">
+    <div :style="{ marginBottom:'8px' }">域名：<b>[[ ddnsTokenModal.name ]]</b></div>
+    <a-input-password v-model="ddnsTokenModal.token" placeholder="输入新的 API Token"></a-input-password>
+  </a-modal>
+</a-space>
+{{end}}
