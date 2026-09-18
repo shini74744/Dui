@@ -13,7 +13,17 @@ XUI_REPO="${XUI_REPO:-shini74744/Dui}"
 XUI_BRANCH="${XUI_BRANCH:-main}"
 XUI_RAW_BASE="https://raw.githubusercontent.com/${XUI_REPO}/${XUI_BRANCH}"
 XUI_RELEASE_BASE="https://github.com/${XUI_REPO}/releases"
-XUI_API_BASE="https://api.github.com/repos/${XUI_REPO}"
+
+dui_latest_version() {
+    local final_url tag
+    final_url=$(curl -fsSL --retry 2 --connect-timeout 10 --max-time 20 -o /dev/null -w '%{url_effective}' "${XUI_RELEASE_BASE}/latest" 2>/dev/null || true)
+    tag="${final_url##*/}"
+    if [[ "$tag" == v* && "$tag" != "latest" ]]; then
+        printf '%s\n' "$tag"
+        return 0
+    fi
+    return 1
+}
 
 dui_arch() {
     case "$(uname -m)" in
@@ -60,7 +70,7 @@ echo -e "——————————————————————"
 echo -e "当前服务器的操作系统为:${red} $release${plain}"
 echo ""
 xui_version=$(/usr/local/x-ui/x-ui -v)
-last_version=$(curl -fsSL "${XUI_API_BASE}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+last_version=$(dui_latest_version || true)
 echo -e "${green}当前 Dui 版本：${red}v${xui_version}${plain}"
 echo ""
 echo -e "${yellow}GitHub 最新 Release 版本：${red}${last_version}${plain}"
@@ -190,7 +200,7 @@ update() {
         [[ $# == 0 ]] && before_show_menu
         return 1
     }
-    latest_version=$(curl -fsSL "${XUI_API_BASE}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    latest_version=$(dui_latest_version || true)
     if [[ -z "$latest_version" ]]; then
         LOGE "获取 GitHub 最新 Release 版本失败，旧版本未改动"
         [[ $# == 0 ]] && before_show_menu
