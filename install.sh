@@ -69,11 +69,11 @@ else
         echo ""
         echo -e "${green}-------->>>>片刻之后脚本将会自动引导安装〔Dui面板〕${plain}"
     else
-        echo -e "${green}---------->>>>>当前代理面板的版本为: ${red}〔Dui面板〕v${xui_version}${plain}"
+        echo -e "${green}---------->>>>>当前 Dui 版本：${red}v${xui_version}${plain}"
     fi
 fi
 echo ""
-echo -e "${yellow}---------------------->>>>>〔Dui面板〕统一项目最新版为：${last_version}${plain}"
+echo -e "${yellow}---------------------->>>>> Dui GitHub 最新 Release 版本：${red}${last_version}${plain}"
 sleep 4
 
 os_version=$(grep -i version_id /etc/os-release | cut -d \" -f2 | cut -d . -f1)
@@ -290,8 +290,10 @@ install_x-ui() {
     fi
 
     echo ""
-    echo -e "${green}从同一 Dui 项目安装 ${yellow}${last_version}${green} (${platform})${plain}"
-    echo -e "${green}Release 包：${yellow}${asset}${plain}"
+    echo -e "${green}正在从 Dui GitHub 最新 Release 安装：${plain}"
+    echo -e "${green}版本：${yellow}${last_version}${plain}"
+    echo -e "${green}架构：${yellow}${platform}${plain}"
+    echo -e "${green}安装包：${yellow}${asset}${plain}"
 
     tmpdir=$(mktemp -d) || return 1
     staged="${tmpdir}/x-ui"
