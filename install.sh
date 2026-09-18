@@ -291,13 +291,14 @@ install_x-ui() {
         [[ "$last_version" != v* ]] && last_version="v${last_version}"
     fi
 
-    local platform asset package_url tmpdir staged backup_dir="" etc_backup=""
+    local platform asset package_url tmpdir staged backup_dir="" etc_backup="" release_mode="指定"
     platform=$(arch)
     asset="x-ui-linux-${platform}.tar.gz"
     package_url="${XUI_RELEASE_BASE}/download/${last_version}/${asset}"
+    [[ $# == 0 ]] && release_mode="最新"
 
     echo ""
-    echo -e "${green}正在从 Dui GitHub 最新 Release 安装：${plain}"
+    echo -e "${green}正在从 Dui GitHub ${release_mode} Release 安装：${plain}"
     echo -e "${green}版本：${yellow}${last_version}${plain}"
     echo -e "${green}架构：${yellow}${platform}${plain}"
 

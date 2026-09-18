@@ -154,10 +154,24 @@ jobs:
         run: |
           set -euo pipefail
           gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -y >/dev/null 2>&1 || true
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
+
+          created=0
+          for attempt in 1 2 3 4 5; do
+            if gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Dui $GITHUB_REF_NAME"; then
+              created=1
+              break
+            fi
+            echo "Release create attempt $attempt failed; retrying..."
+            sleep 5
+          done
+          test "$created" = 1
+
+          gh release upload "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            --latest
+            --clobber release-assets/*
+
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
