@@ -60,10 +60,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v25.11.30`：
+例如安装 `v25.11.31`：
 
 ```bash
-VERSION=v25.11.30 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v25.11.31 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令

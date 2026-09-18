@@ -48,9 +48,9 @@ echo -e "当前服务器的操作系统为:${red} $release${plain}"
 echo ""
 xui_version=$(/usr/local/x-ui/x-ui -v)
 last_version=$(curl -fsSL "${XUI_API_BASE}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-echo -e "${green}当前代理面板的版本为: ${red}〔Dui〕v${xui_version}${plain}"
+echo -e "${green}当前 Dui 版本：${red}v${xui_version}${plain}"
 echo ""
-echo -e "${yellow}〔Dui〕最新版为---------->>> ${last_version}${plain}"
+echo -e "${yellow}GitHub 最新 Release 版本：${red}${last_version}${plain}"
 
 os_version=$(grep -i version_id /etc/os-release | cut -d \" -f2 | cut -d . -f1)
 
