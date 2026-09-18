@@ -293,7 +293,6 @@ install_x-ui() {
     echo -e "${green}正在从 Dui GitHub 最新 Release 安装：${plain}"
     echo -e "${green}版本：${yellow}${last_version}${plain}"
     echo -e "${green}架构：${yellow}${platform}${plain}"
-    echo -e "${green}安装包：${yellow}${asset}${plain}"
 
     tmpdir=$(mktemp -d) || return 1
     staged="${tmpdir}/x-ui"
