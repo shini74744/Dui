@@ -11,7 +11,6 @@ XUI_REPO="${XUI_REPO:-shini74744/Dui}"
 XUI_BRANCH="${XUI_BRANCH:-main}"
 XUI_RAW_BASE="https://raw.githubusercontent.com/${XUI_REPO}/${XUI_BRANCH}"
 XUI_RELEASE_BASE="https://github.com/${XUI_REPO}/releases"
-XUI_API_BASE="https://api.github.com/repos/${XUI_REPO}"
 
 cur_dir=$(pwd)
 
@@ -33,6 +32,17 @@ fi
 echo ""
 echo -e "${green}---------->>>>>目前服务器的操作系统为: $release${plain}"
 
+dui_latest_version() {
+    local final_url tag
+    final_url=$(curl -fsSL --retry 2 --connect-timeout 10 --max-time 20 -o /dev/null -w '%{url_effective}' "${XUI_RELEASE_BASE}/latest" 2>/dev/null || true)
+    tag="${final_url##*/}"
+    if [[ "$tag" == v* && "$tag" != "latest" ]]; then
+        printf '%s\n' "$tag"
+        return 0
+    fi
+    return 1
+}
+
 arch() {
     case "$(uname -m)" in
         x86_64 | x64 | amd64 ) echo 'amd64' ;;
@@ -50,8 +60,8 @@ echo ""
 echo -e "${yellow}---------->>>>>当前系统的架构为: $(arch)${plain}"
 echo ""
 
-# 获取最新版本号（仅用于显示）
-last_version=$(curl -fsSL "${XUI_API_BASE}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+# 获取 GitHub 最新 Release 版本（直接跟随 releases/latest 跳转，不依赖 API 配额）
+last_version=$(dui_latest_version || true)
 
 # 获取 x-ui 版本
 xui_version=$(/usr/local/x-ui/x-ui -v 2>/dev/null)
@@ -270,7 +280,7 @@ install_x-ui() {
     cd /usr/local/ || exit 1
 
     if [[ $# == 0 ]]; then
-        last_version=$(curl -fsSL "${XUI_API_BASE}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        last_version=$(dui_latest_version || true)
         if [[ -z "$last_version" ]]; then
             echo -e "${red}获取 Dui 最新 Release 失败，请稍后再试。${plain}"
             return 1
