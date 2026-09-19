@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"x-ui/util/common"
+
+	"github.com/robfig/cron/v3"
 )
 
 type Msg struct {
@@ -36,6 +38,21 @@ type AllSetting struct {
 	TgRunTime                   string `json:"tgRunTime" form:"tgRunTime"`
 	TgBotBackup                 bool   `json:"tgBotBackup" form:"tgBotBackup"`
 	TgBotLoginNotify            bool   `json:"tgBotLoginNotify" form:"tgBotLoginNotify"`
+	TgPanelName                 string `json:"tgPanelName" form:"tgPanelName"`
+	TgNotifyLoginSuccess        bool   `json:"tgNotifyLoginSuccess" form:"tgNotifyLoginSuccess"`
+	TgNotifyLoginFail           bool   `json:"tgNotifyLoginFail" form:"tgNotifyLoginFail"`
+	TgNotifyPanelBruteForce     bool   `json:"tgNotifyPanelBruteForce" form:"tgNotifyPanelBruteForce"`
+	TgNotifySSHBruteForce       bool   `json:"tgNotifySSHBruteForce" form:"tgNotifySSHBruteForce"`
+	TgNotifyTimeSync            bool   `json:"tgNotifyTimeSync" form:"tgNotifyTimeSync"`
+	TgNotifyDDNS                bool   `json:"tgNotifyDDNS" form:"tgNotifyDDNS"`
+	TgNotifyCPU                 bool   `json:"tgNotifyCPU" form:"tgNotifyCPU"`
+	TgCPUThreshold              int    `json:"tgCPUThreshold" form:"tgCPUThreshold"`
+	TgCPUDuration               int    `json:"tgCPUDuration" form:"tgCPUDuration"`
+	TgNotifyMemory              bool   `json:"tgNotifyMemory" form:"tgNotifyMemory"`
+	TgMemoryThreshold           int    `json:"tgMemoryThreshold" form:"tgMemoryThreshold"`
+	TgMemoryDuration            int    `json:"tgMemoryDuration" form:"tgMemoryDuration"`
+	TgNotifyDisk                bool   `json:"tgNotifyDisk" form:"tgNotifyDisk"`
+	TgDiskThreshold             int    `json:"tgDiskThreshold" form:"tgDiskThreshold"`
 	TgCpu                       int    `json:"tgCpu" form:"tgCpu"`
 	TgLang                      string `json:"tgLang" form:"tgLang"`
 	TimeLocation                string `json:"timeLocation" form:"timeLocation"`
@@ -128,6 +145,33 @@ func (s *AllSetting) CheckValid() error {
 	_, err := time.LoadLocation(s.TimeLocation)
 	if err != nil {
 		return common.NewError("time location not exist:", s.TimeLocation)
+	}
+
+	if s.TgCPUThreshold < 1 || s.TgCPUThreshold > 100 {
+		return common.NewError("Telegram CPU threshold must be 1-100")
+	}
+	if s.TgMemoryThreshold < 1 || s.TgMemoryThreshold > 100 {
+		return common.NewError("Telegram memory threshold must be 1-100")
+	}
+	if s.TgDiskThreshold < 1 || s.TgDiskThreshold > 100 {
+		return common.NewError("Telegram disk threshold must be 1-100")
+	}
+	if s.TgCPUDuration < 30 || s.TgCPUDuration > 2592000 {
+		return common.NewError("Telegram CPU duration must be 30-2592000 seconds")
+	}
+	if s.TgMemoryDuration < 30 || s.TgMemoryDuration > 2592000 {
+		return common.NewError("Telegram memory duration must be 30-2592000 seconds")
+	}
+
+	if strings.TrimSpace(s.TgRunTime) == "" {
+		s.TgRunTime = "@daily"
+	}
+	parser := cron.NewParser(
+		cron.Second | cron.Minute | cron.Hour |
+			cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+	)
+	if _, err := parser.Parse(s.TgRunTime); err != nil {
+		return common.NewError("Telegram notification schedule invalid:", s.TgRunTime)
 	}
 
 	return nil

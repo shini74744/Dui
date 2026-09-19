@@ -15,6 +15,7 @@ import (
 	"x-ui/xray"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type InboundService struct {
@@ -345,6 +346,9 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 	} else {
 		logger.Debug("No enabled inbound founded to removing by api", tag)
 	}
+
+	// Delete client-specific Telegram bots together with this inbound.
+	_ = db.Where("inbound_id = ?", id).Delete(&model.ClientTelegramBot{}).Error
 
 	// Delete client traffics of inbounds
 	err := db.Where("inbound_id = ?", id).Delete(xray.ClientTraffic{}).Error
@@ -750,6 +754,9 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 	needRestart := false
 
 	if len(email) > 0 {
+		_ = db.Where("inbound_id = ? AND email = ?", inboundId, email).
+			Delete(&model.ClientTelegramBot{}).Error
+
 		notDepleted := true
 		err = db.Model(xray.ClientTraffic{}).Select("enable").Where("email = ?", email).First(&notDepleted).Error
 		if err != nil {
@@ -896,6 +903,14 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 
 	if len(clients[0].Email) > 0 {
 		if len(oldEmail) > 0 {
+			if oldEmail != clients[0].Email {
+				_ = tx.Model(&model.ClientTelegramBot{}).
+					Where("inbound_id = ? AND email = ?", data.Id, oldEmail).
+					Updates(map[string]any{
+						"email":      clients[0].Email,
+						"updated_at": time.Now().Unix(),
+					}).Error
+			}
 			err = s.UpdateClientStat(tx, oldEmail, &clients[0])
 			if err != nil {
 				return false, err
@@ -1016,19 +1031,67 @@ func (s *InboundService) addInboundTraffic(tx *gorm.DB, traffics []*xray.Traffic
 		return nil
 	}
 
-	var err error
-
 	for _, traffic := range traffics {
-		if traffic.IsInbound {
-			err = tx.Model(&model.Inbound{}).Where("tag = ?", traffic.Tag).
-				Updates(map[string]any{
-					"up":       gorm.Expr("up + ?", traffic.Up),
-					"down":     gorm.Expr("down + ?", traffic.Down),
-					"all_time": gorm.Expr("COALESCE(all_time, 0) + ?", traffic.Up+traffic.Down),
-				}).Error
-			if err != nil {
-				return err
+		if !traffic.IsInbound {
+			continue
+		}
+
+		result := tx.Model(&model.Inbound{}).Where("tag = ?", traffic.Tag).
+			Updates(map[string]any{
+				"up":       gorm.Expr("up + ?", traffic.Up),
+				"down":     gorm.Expr("down + ?", traffic.Down),
+				"all_time": gorm.Expr("COALESCE(all_time, 0) + ?", traffic.Up+traffic.Down),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+
+		// Xray cannot produce per-client traffic counters for an empty Email.
+		// When this inbound has exactly one client and that client has no Email,
+		// safely attribute the inbound delta to one internal daily-ranking key.
+		// Multi-client inbounds are intentionally skipped to avoid false attribution.
+		deltaUp := traffic.Up
+		deltaDown := traffic.Down
+		if result.RowsAffected == 0 || deltaUp+deltaDown <= 0 {
+			continue
+		}
+
+		var inbound model.Inbound
+		if err := tx.Select("id", "settings").Where("tag = ?", traffic.Tag).First(&inbound).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				continue
 			}
+			return err
+		}
+
+		var settings struct {
+			Clients []struct {
+				Email string `json:"email"`
+			} `json:"clients"`
+		}
+		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
+			continue
+		}
+		if len(settings.Clients) != 1 || strings.TrimSpace(settings.Clients[0].Email) != "" {
+			continue
+		}
+
+		daily := model.DailyClientTraffic{
+			Date:      time.Now().Format("2006-01-02"),
+			Email:     fmt.Sprintf("%s%d", model.DailyTrafficEmptyEmailPrefix, inbound.Id),
+			InboundId: inbound.Id,
+			Up:        deltaUp,
+			Down:      deltaDown,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "date"}, {Name: "email"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"inbound_id": daily.InboundId,
+				"up":         gorm.Expr("up + ?", deltaUp),
+				"down":       gorm.Expr("down + ?", deltaDown),
+			}),
+		}).Create(&daily).Error; err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1068,9 +1131,32 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 	for dbTraffic_index := range dbClientTraffics {
 		for traffic_index := range traffics {
 			if dbClientTraffics[dbTraffic_index].Email == traffics[traffic_index].Email {
-				dbClientTraffics[dbTraffic_index].Up += traffics[traffic_index].Up
-				dbClientTraffics[dbTraffic_index].Down += traffics[traffic_index].Down
-				dbClientTraffics[dbTraffic_index].AllTime += (traffics[traffic_index].Up + traffics[traffic_index].Down)
+				deltaUp := traffics[traffic_index].Up
+				deltaDown := traffics[traffic_index].Down
+				dbClientTraffics[dbTraffic_index].Up += deltaUp
+				dbClientTraffics[dbTraffic_index].Down += deltaDown
+				dbClientTraffics[dbTraffic_index].AllTime += (deltaUp + deltaDown)
+
+				if deltaUp+deltaDown > 0 {
+					daily := model.DailyClientTraffic{
+						Date:      time.Now().Format("2006-01-02"),
+						Email:     traffics[traffic_index].Email,
+						InboundId: dbClientTraffics[dbTraffic_index].InboundId,
+						Up:        deltaUp,
+						Down:      deltaDown,
+					}
+					err = tx.Clauses(clause.OnConflict{
+						Columns: []clause.Column{{Name: "date"}, {Name: "email"}},
+						DoUpdates: clause.Assignments(map[string]any{
+							"inbound_id": daily.InboundId,
+							"up":         gorm.Expr("up + ?", deltaUp),
+							"down":       gorm.Expr("down + ?", deltaDown),
+						}),
+					}).Create(&daily).Error
+					if err != nil {
+						return err
+					}
+				}
 
 				// Add user in onlineUsers array on traffic
 				if traffics[traffic_index].Up+traffics[traffic_index].Down > 0 {

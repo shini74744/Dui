@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"x-ui/util/crypto"
+	"x-ui/web/clientbot"
 	"x-ui/web/entity"
 	"x-ui/web/service"
 	"x-ui/web/session"
@@ -89,6 +90,16 @@ type certManagerUpdateForm struct {
 	Months  int  `json:"months" form:"months"`
 }
 
+type telegramNotificationSendForm struct {
+	BindingID int    `json:"bindingId" form:"bindingId"`
+	Subject   string `json:"subject" form:"subject"`
+	Content   string `json:"content" form:"content"`
+}
+
+type telegramNotificationHistoryForm struct {
+	Limit int `json:"limit" form:"limit"`
+}
+
 func NewSettingController(g *gin.RouterGroup) *SettingController {
 	a := &SettingController{}
 	a.initRouter(g)
@@ -135,6 +146,10 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/certManager/status", a.getCertManagerStatus)
 	g.POST("/certManager/update", a.updateCertManager)
 	g.POST("/certManager/renew", a.renewCertManagerNow)
+
+	g.POST("/telegram/notification/targets", a.getTelegramNotificationTargets)
+	g.POST("/telegram/notification/send", a.sendTelegramNotification)
+	g.POST("/telegram/notification/history", a.getTelegramNotificationHistory)
 }
 
 func (a *SettingController) getAllSetting(c *gin.Context) {
@@ -144,6 +159,28 @@ func (a *SettingController) getAllSetting(c *gin.Context) {
 		return
 	}
 	jsonObj(c, allSetting, nil)
+}
+
+func (a *SettingController) getTelegramNotificationTargets(c *gin.Context) {
+	targets, err := clientbot.ListNotificationTargets()
+	jsonObj(c, targets, err)
+}
+
+func (a *SettingController) sendTelegramNotification(c *gin.Context) {
+	form := &telegramNotificationSendForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "通知参数无效", err)
+		return
+	}
+	history, err := clientbot.SendManualNotification(form.BindingID, form.Subject, form.Content)
+	jsonObj(c, history, err)
+}
+
+func (a *SettingController) getTelegramNotificationHistory(c *gin.Context) {
+	form := &telegramNotificationHistoryForm{}
+	_ = c.ShouldBind(form)
+	rows, err := clientbot.ListNotificationHistory(form.Limit)
+	jsonObj(c, rows, err)
 }
 
 func (a *SettingController) getDefaultSettings(c *gin.Context) {
@@ -272,11 +309,13 @@ func (a *SettingController) installTimeSync(c *gin.Context) {
 		return
 	}
 	out, err := a.timeSyncService.Install(form.Timezone)
+	service.NotifyTimeSyncAction("安装/更新时间同步", err)
 	jsonMsgObj(c, "时间同步管理器已安装/更新", out, err)
 }
 
 func (a *SettingController) syncTimeNow(c *gin.Context) {
 	out, err := a.timeSyncService.SyncNow()
+	service.NotifyTimeSyncAction("手动立即同步", err)
 	jsonMsgObj(c, "时间同步已执行", out, err)
 }
 
@@ -287,6 +326,7 @@ func (a *SettingController) setTimeSyncTimezone(c *gin.Context) {
 		return
 	}
 	out, err := a.timeSyncService.SetTimezone(form.Timezone)
+	service.NotifyTimeSyncAction("修改时区："+form.Timezone, err)
 	jsonMsgObj(c, "时区已修改", out, err)
 }
 
@@ -371,6 +411,7 @@ func (a *SettingController) setDDNSSchedule(c *gin.Context) {
 
 func (a *SettingController) runDDNSNow(c *gin.Context) {
 	out, err := a.ddnsService.RunNow()
+	service.NotifyDDNSAction("手动检测并同步", err)
 	jsonMsgObj(c, "DDNS 手动检测已完成", out, err)
 }
 

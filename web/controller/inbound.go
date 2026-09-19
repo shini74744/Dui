@@ -6,6 +6,8 @@ import (
 	"strconv"
 
 	"x-ui/database/model"
+	"x-ui/web/clientbot"
+	"x-ui/web/job"
 	"x-ui/web/service"
 	"x-ui/web/session"
 
@@ -43,6 +45,14 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/delDepletedClients/:id", a.delDepletedClients)
 	g.POST("/import", a.importInbound)
 	g.POST("/onlines", a.onlines)
+	g.GET("/activity", a.activity)
+	g.POST("/activity/details", a.activityDetails)
+	g.POST("/blacklist/destination", a.manageDestinationBlacklist)
+	g.POST("/blacklist/sourceIP", a.manageSourceIPBlacklist)
+	g.POST("/clientBot/get", a.getClientBot)
+	g.POST("/clientBot/save", a.saveClientBot)
+	g.POST("/clientBot/test", a.testClientBot)
+	g.POST("/clientBot/unbind", a.unbindClientBot)
 	g.POST("/lastOnline", a.lastOnline)
 	g.POST("/updateClientTraffic/:email", a.updateClientTraffic)
 }
@@ -130,6 +140,7 @@ func (a *InboundController) delInbound(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+	clientbot.Reconcile()
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundDeleteSuccess"), id, nil)
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
@@ -221,6 +232,7 @@ func (a *InboundController) delInboundClient(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+	clientbot.Reconcile()
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientDeleteSuccess"), nil)
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
@@ -244,6 +256,7 @@ func (a *InboundController) updateInboundClient(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+	clientbot.Reconcile()
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientUpdateSuccess"), nil)
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
@@ -342,6 +355,138 @@ func (a *InboundController) delDepletedClients(c *gin.Context) {
 
 func (a *InboundController) onlines(c *gin.Context) {
 	jsonObj(c, a.inboundService.GetOnlineClients(), nil)
+}
+
+func (a *InboundController) activity(c *gin.Context) {
+	jsonObj(c, job.GetInboundActivityStats(), nil)
+}
+
+type activityDetailsForm struct {
+	InboundID int    `json:"inboundId" form:"inboundId"`
+	Email     string `json:"email" form:"email"`
+	WithGeo   bool   `json:"withGeo" form:"withGeo"`
+}
+
+func (a *InboundController) activityDetails(c *gin.Context) {
+	form := &activityDetailsForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "连接详情参数无效", err)
+		return
+	}
+	if form.InboundID <= 0 {
+		jsonMsg(c, "连接详情参数无效", fmt.Errorf("invalid inbound id"))
+		return
+	}
+	details, err := job.GetClientActivityDetails(form.InboundID, form.Email, form.WithGeo)
+	jsonObj(c, details, err)
+}
+
+type destinationBlacklistForm struct {
+	Action    string `json:"action" form:"action"`
+	Scope     string `json:"scope" form:"scope"`
+	InboundID int    `json:"inboundId" form:"inboundId"`
+	Email     string `json:"email" form:"email"`
+	Value     string `json:"value" form:"value"`
+}
+
+type sourceIPBlacklistForm struct {
+	Action string `json:"action" form:"action"`
+	IP     string `json:"ip" form:"ip"`
+}
+
+func (a *InboundController) manageDestinationBlacklist(c *gin.Context) {
+	form := &destinationBlacklistForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "黑名单参数无效", err)
+		return
+	}
+	svc := &service.ManagedBlacklistService{}
+	var err error
+	switch form.Action {
+	case "add":
+		err = svc.AddDestination(form.InboundID, form.Email, form.Value, form.Scope)
+	case "remove":
+		err = svc.RemoveDestination(form.InboundID, form.Email, form.Value, form.Scope)
+	default:
+		err = fmt.Errorf("不支持的黑名单操作")
+	}
+	if err != nil {
+		jsonMsg(c, "黑名单操作失败", err)
+		return
+	}
+	jsonObj(c, svc.DestinationStatus(form.InboundID, form.Email, form.Value), nil)
+}
+
+func (a *InboundController) manageSourceIPBlacklist(c *gin.Context) {
+	form := &sourceIPBlacklistForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "来源 IP 黑名单参数无效", err)
+		return
+	}
+	svc := &service.ManagedBlacklistService{}
+	var err error
+	switch form.Action {
+	case "add":
+		err = svc.AddSourceIP(form.IP)
+	case "remove":
+		err = svc.RemoveSourceIP(form.IP)
+	default:
+		err = fmt.Errorf("不支持的黑名单操作")
+	}
+	if err != nil {
+		jsonMsg(c, "来源 IP 黑名单操作失败", err)
+		return
+	}
+	jsonObj(c, svc.SourceIPStatus(form.IP), nil)
+}
+
+type clientBotForm struct {
+	InboundID int    `json:"inboundId" form:"inboundId"`
+	Email     string `json:"email" form:"email"`
+	Enabled   bool   `json:"enabled" form:"enabled"`
+	Mode      string `json:"mode" form:"mode"`
+	BotToken  string `json:"botToken" form:"botToken"`
+	ChatID    int64  `json:"chatId" form:"chatId"`
+}
+
+func (a *InboundController) getClientBot(c *gin.Context) {
+	form := &clientBotForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "客户端机器人参数无效", err)
+		return
+	}
+	view, err := clientbot.GetConfig(form.InboundID, form.Email)
+	jsonObj(c, view, err)
+}
+
+func (a *InboundController) saveClientBot(c *gin.Context) {
+	form := &clientBotForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "客户端机器人参数无效", err)
+		return
+	}
+	view, err := clientbot.SaveConfig(form.InboundID, form.Email, form.Enabled, form.Mode, form.BotToken, form.ChatID)
+	jsonObj(c, view, err)
+}
+
+func (a *InboundController) testClientBot(c *gin.Context) {
+	form := &clientBotForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "客户端机器人参数无效", err)
+		return
+	}
+	username, err := clientbot.TestConfig(form.Mode, form.BotToken, form.ChatID)
+	jsonObj(c, map[string]any{"username": username}, err)
+}
+
+func (a *InboundController) unbindClientBot(c *gin.Context) {
+	form := &clientBotForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "客户端机器人参数无效", err)
+		return
+	}
+	err := clientbot.Unbind(form.InboundID, form.Email)
+	jsonObj(c, map[string]any{"unbound": err == nil}, err)
 }
 
 func (a *InboundController) lastOnline(c *gin.Context) {

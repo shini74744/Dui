@@ -9,6 +9,13 @@
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
+            <template #title>当前面板名称</template>
+            <template #description>一个机器人管理多台面板时用于区分来源；留空则使用系统 hostname。</template>
+            <template #control>
+                <a-input v-model.trim="allSetting.tgPanelName" maxlength="80" placeholder="例如：香港-01 / 日本家宽-02"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
             <template #title>{{ i18n "pages.settings.telegramToken"}}</template>
             <template #description>{{ i18n "pages.settings.telegramTokenDesc"}}</template>
             <template #control>
@@ -35,37 +42,234 @@
             </template>
         </a-setting-list-item>
     </a-collapse-panel>
-    <a-collapse-panel key="2" header='{{ i18n "pages.settings.notifications" }}'>
+    <a-collapse-panel key="2" header="事件通知中心">
+        <a-alert type="info" show-icon :style="{ marginBottom:'12px' }"
+            message="每台面板的事件都会附带“当前面板名称”，适合一个 Bot 管理多台服务器。"
+            description="登录失败通知不会记录或发送用户输入的密码；SSH/面板防爆破提醒由 Fail2ban 状态变化触发。">
+        </a-alert>
         <a-setting-list-item paddings="small">
-            <template #title>{{ i18n "pages.settings.telegramNotifyTime"}}</template>
-            <template #description>{{ i18n "pages.settings.telegramNotifyTimeDesc"}}</template>
+            <template #title>登录通知总开关</template>
+            <template #description>控制面板登录成功/失败两类基础提醒。</template>
+            <template #control><a-switch v-model="allSetting.tgBotLoginNotify"></a-switch></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>面板登录成功提醒</template>
+            <template #description>发送账户、来源 IP、浏览器/User-Agent、Host 与登录时间。</template>
+            <template #control><a-switch v-model="allSetting.tgNotifyLoginSuccess" :disabled="!allSetting.tgBotLoginNotify"></a-switch></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>面板登录失败提醒</template>
+            <template #description>记录尝试账户、来源 IP 和浏览器/User-Agent；不会记录或发送用户输入的密码。</template>
+            <template #control><a-switch v-model="allSetting.tgNotifyLoginFail" :disabled="!allSetting.tgBotLoginNotify"></a-switch></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>面板爆破 / Fail2ban 提醒</template>
+            <template #description>本项不设置固定阈值；真正的封禁次数、检测周期和封禁时长完全以“防爆破”页面中的 maxretry / findtime / bantime 配置为准，只监控 3xui-login / 3xui-tls 的实际封禁与解封。</template>
+            <template #control><a-switch v-model="allSetting.tgNotifyPanelBruteForce"></a-switch></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>SSH 端口防爆破提醒</template>
+            <template #description>监控 Fail2ban 的 sshd jail；出现新封禁或解封时推送 IP。依赖防爆破页面已启用 SSH 规则。</template>
+            <template #control><a-switch v-model="allSetting.tgNotifySSHBruteForce"></a-switch></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>时区 / 时间同步提醒</template>
+            <template #description>手动同步、修改时区及 time-sync-manager 自动任务完成/失败时提醒。</template>
+            <template #control><a-switch v-model="allSetting.tgNotifyTimeSync"></a-switch></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>DDNS 同步提醒</template>
+            <template #description>手动或自动 DDNS 轮次完成时推送出口 IPv4、状态、说明和检查时间。</template>
+            <template #control><a-switch v-model="allSetting.tgNotifyDDNS"></a-switch></template>
+        </a-setting-list-item>
+
+        <a-divider orientation="left">资源阈值报警</a-divider>
+        <a-setting-list-item paddings="small">
+            <template #title>CPU 阈值报警</template>
+            <template #description>CPU 使用率持续超过阈值指定时间才报警；恢复正常后发送一次恢复通知。</template>
             <template #control>
-                <a-input type="text" v-model="allSetting.tgRunTime"></a-input>
+                <a-space wrap>
+                    <a-switch v-model="allSetting.tgNotifyCPU"></a-switch>
+                    <a-input-number v-model="allSetting.tgCPUThreshold" :min="1" :max="100" :disabled="!allSetting.tgNotifyCPU" :style="{ width:'88px' }"></a-input-number>
+                    <span>%</span>
+                    <span>持续</span>
+                    <a-input-number v-model="tgCPUDurationValue"
+                        :min="tgCPUDurationUnit === 's' ? 30 : 1"
+                        :disabled="!allSetting.tgNotifyCPU"
+                        :style="{ width:'96px' }"></a-input-number>
+                    <a-select v-model="tgCPUDurationUnit" :disabled="!allSetting.tgNotifyCPU" :style="{ width:'86px' }">
+                        <a-select-option value="s">秒</a-select-option>
+                        <a-select-option value="m">分钟</a-select-option>
+                        <a-select-option value="h">小时</a-select-option>
+                        <a-select-option value="d">天</a-select-option>
+                    </a-select>
+                </a-space>
             </template>
         </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>内存阈值报警</template>
+            <template #description>内存使用率持续超过阈值指定时间才报警；恢复正常后发送一次恢复通知。</template>
+            <template #control>
+                <a-space wrap>
+                    <a-switch v-model="allSetting.tgNotifyMemory"></a-switch>
+                    <a-input-number v-model="allSetting.tgMemoryThreshold" :min="1" :max="100" :disabled="!allSetting.tgNotifyMemory" :style="{ width:'88px' }"></a-input-number>
+                    <span>%</span>
+                    <span>持续</span>
+                    <a-input-number v-model="tgMemoryDurationValue"
+                        :min="tgMemoryDurationUnit === 's' ? 30 : 1"
+                        :disabled="!allSetting.tgNotifyMemory"
+                        :style="{ width:'96px' }"></a-input-number>
+                    <a-select v-model="tgMemoryDurationUnit" :disabled="!allSetting.tgNotifyMemory" :style="{ width:'86px' }">
+                        <a-select-option value="s">秒</a-select-option>
+                        <a-select-option value="m">分钟</a-select-option>
+                        <a-select-option value="h">小时</a-select-option>
+                        <a-select-option value="d">天</a-select-option>
+                    </a-select>
+                </a-space>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>磁盘阈值报警</template>
+            <template #description>根分区使用率达到阈值立即报警；恢复正常后发送一次恢复通知。</template>
+            <template #control>
+                <a-space wrap>
+                    <a-switch v-model="allSetting.tgNotifyDisk"></a-switch>
+                    <a-input-number v-model="allSetting.tgDiskThreshold" :min="1" :max="100" :disabled="!allSetting.tgNotifyDisk" :style="{ width:'88px' }"></a-input-number>
+                    <span>%</span>
+                </a-space>
+            </template>
+        </a-setting-list-item>
+
+        <a-divider orientation="left">周期通知</a-divider>
+        <a-setting-list-item paddings="small">
+            <template #title>定时通知频率</template>
+            <template #description>选择直观的通知周期，面板会自动转换为内部计划；旧的 @daily / Cron 配置也会自动识别。</template>
+            <template #control>
+                <a-select v-model="tgScheduleMode" @change="syncTelegramSchedule" :style="{ width:'100%' }">
+                    <a-select-option value="hours">每隔 N 小时</a-select-option>
+                    <a-select-option value="daily">每天固定时间</a-select-option>
+                    <a-select-option value="custom">高级自定义 Cron</a-select-option>
+                </a-select>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item v-if="tgScheduleMode === 'hours'" paddings="small">
+            <template #title>每隔几小时提醒</template>
+            <template #description>例如 6 表示每 6 小时发送一次周期通知。</template>
+            <template #control>
+                <a-input-number v-model="tgScheduleHours" :min="1" :max="23" @change="syncTelegramSchedule" :style="{ width:'100%' }"></a-input-number>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item v-if="tgScheduleMode === 'daily'" paddings="small">
+            <template #title>每天提醒时间</template>
+            <template #description>使用 24 小时制 HH:MM:SS，例如 08:30:00；按面板当前系统时区执行。</template>
+            <template #control>
+                <a-input v-model.trim="tgScheduleTime" placeholder="08:30:00" @change="syncTelegramSchedule"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item v-if="tgScheduleMode === 'custom'" paddings="small">
+            <template #title>高级 Cron</template>
+            <template #description>高级用户可直接填写 6 段 Cron（秒 分 时 日 月 周）或 @daily / @hourly。</template>
+            <template #control>
+                <a-input v-model.trim="tgScheduleCustom" placeholder="0 30 8 * * *" @change="syncTelegramSchedule"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-alert :type="tgScheduleError ? 'error' : 'success'" show-icon :style="{ margin:'8px 0 14px' }"
+            :message="'当前周期：' + telegramScheduleLabel()"
+            :description="'内部计划：' + (allSetting.tgRunTime || '@daily')">
+        </a-alert>
         <a-setting-list-item paddings="small">
             <template #title>{{ i18n "pages.settings.tgNotifyBackup" }}</template>
             <template #description>{{ i18n "pages.settings.tgNotifyBackupDesc" }}</template>
-            <template #control>
-                <a-switch v-model="allSetting.tgBotBackup"></a-switch>
-            </template>
-        </a-setting-list-item>
-        <a-setting-list-item paddings="small">
-            <template #title>{{ i18n "pages.settings.tgNotifyLogin" }}</template>
-            <template #description>{{ i18n "pages.settings.tgNotifyLoginDesc" }}</template>
-            <template #control>
-                <a-switch v-model="allSetting.tgBotLoginNotify"></a-switch>
-            </template>
-        </a-setting-list-item>
-        <a-setting-list-item paddings="small">
-            <template #title>{{ i18n "pages.settings.tgNotifyCpu" }}</template>
-            <template #description>{{ i18n "pages.settings.tgNotifyCpuDesc" }}</template>
-            <template #control>
-                <a-input-number :min="0" :min="100" v-model="allSetting.tgCpu" :style="{ width: '100%' }"></a-switch>
-            </template>
+            <template #control><a-switch v-model="allSetting.tgBotBackup"></a-switch></template>
         </a-setting-list-item>
     </a-collapse-panel>
-    <a-collapse-panel key="3" header='{{ i18n "pages.settings.proxyAndServer" }}'>
+    <a-collapse-panel key="3" header="通知">
+        <a-alert type="info" show-icon :style="{ marginBottom:'14px' }"
+            message="给已经绑定 Telegram 的客户端发送独立通知。"
+            description="目标按“协议 / 备注 - 端口 - 用户 - TG”显示；通知主题、内容、发送结果都会永久保存到历史记录。">
+        </a-alert>
+
+        <a-form layout="vertical">
+            <a-form-item label="通知目标">
+                <a-select v-model="telegramNotificationForm.bindingId"
+                    show-search
+                    option-filter-prop="children"
+                    placeholder="请选择 协议 / 备注 - 端口 - 用户 - TG"
+                    :style="{ width:'100%' }">
+                    <a-select-option v-for="target in telegramNotificationTargets"
+                        :key="target.bindingId"
+                        :value="target.bindingId">
+                        [[ target.label ]]
+                        <template v-if="!target.running"> · 当前不可用</template>
+                    </a-select-option>
+                </a-select>
+                <div v-if="telegramNotificationTargets.length === 0" :style="{ marginTop:'6px', opacity:.72 }">
+                    暂无已绑定 Telegram 的客户端，请先在“入站列表 → 编辑客户端 → 机器人通知”中完成绑定。
+                </div>
+            </a-form-item>
+
+            <a-form-item label="通知主题">
+                <a-input v-model.trim="telegramNotificationForm.subject"
+                    maxlength="120"
+                    placeholder="例如：套餐到期提醒 / 线路维护通知">
+                </a-input>
+            </a-form-item>
+
+            <a-form-item label="通知内容">
+                <a-textarea v-model="telegramNotificationForm.content"
+                    :auto-size="{ minRows:5, maxRows:12 }"
+                    :max-length="3500"
+                    placeholder="填写要发送给这个客户端的通知内容">
+                </a-textarea>
+            </a-form-item>
+
+            <a-form-item>
+                <a-space wrap>
+                    <a-button type="primary"
+                        icon="notification"
+                        :loading="telegramNotificationBusy"
+                        @click="sendTelegramManualNotification">
+                        发送通知
+                    </a-button>
+                    <a-button icon="reload" @click="loadTelegramNotificationData">刷新绑定与历史</a-button>
+                </a-space>
+            </a-form-item>
+        </a-form>
+
+        <a-divider orientation="left">历史通知记录</a-divider>
+        <a-table
+            :columns="telegramNotificationHistoryColumns"
+            :data-source="telegramNotificationHistory"
+            row-key="id"
+            size="small"
+            bordered
+            :pagination="{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10','20','50'] }"
+            :scroll="{ x: 1250 }">
+            <template slot="createdAt" slot-scope="text, record">
+                [[ formatTelegramNotificationTime(record.createdAt) ]]
+            </template>
+            <template slot="target" slot-scope="text, record">
+                <div>[[ record.protocol ]] / [[ record.remark ]] - [[ record.port ]]</div>
+                <div :style="{ opacity:.72 }">[[ record.email ]]</div>
+            </template>
+            <template slot="tg" slot-scope="text, record">
+                <div>[[ record.mode === 'panel' ? '面板TG' : '自定义TG' ]]</div>
+                <div :style="{ opacity:.72 }">
+                    <template v-if="record.botUsername">@[[ record.botUsername ]] · </template>
+                    [[ record.chatId ]]
+                </div>
+            </template>
+            <template slot="content" slot-scope="text, record">
+                <div :style="{ whiteSpace:'pre-wrap', wordBreak:'break-word' }">[[ record.content ]]</div>
+            </template>
+            <template slot="status" slot-scope="text, record">
+                <a-tag :color="record.success ? 'green' : 'red'">[[ record.success ? '成功' : '失败' ]]</a-tag>
+                <div v-if="record.error" :style="{ marginTop:'4px', color:'#ff7875', whiteSpace:'normal' }">[[ record.error ]]</div>
+            </template>
+        </a-table>
+    </a-collapse-panel>
+
+    <a-collapse-panel key="4" header='{{ i18n "pages.settings.proxyAndServer" }}'>
         <a-setting-list-item paddings="small">
             <template #title>{{ i18n "pages.settings.telegramProxy"}}</template>
             <template #description>{{ i18n "pages.settings.telegramProxyDesc"}}</template>

@@ -19,6 +19,7 @@ import (
 	"x-ui/sub"
 	"x-ui/util/crypto"
 	"x-ui/web"
+	"x-ui/web/clientbot"
 	"x-ui/web/global"
 	"x-ui/web/job"
 	"x-ui/web/service"
@@ -54,6 +55,12 @@ func runWebServer() {
 		log.Fatalf("Error initializing database: %v", err)
 	}
 
+	// 恢复持久化的来源 IP 黑名单。仅操作 DUI 自己的 nftables/iptables 链。
+	managedBlacklistService := &service.ManagedBlacklistService{}
+	if err := managedBlacklistService.ApplySourceIPBlacklist(); err != nil {
+		logger.Warningf("恢复来源 IP 黑名单失败: %v", err)
+	}
+
 	// 〔中文注释〕: 1. 初始化所有需要的服务实例
 	xrayService := service.XrayService{}
 	settingService := service.SettingService{}
@@ -83,6 +90,8 @@ func runWebServer() {
 		tgBot := service.NewTgBot(&inboundService, &settingService, &serverService, &xrayService, &lastStatus)
 		tgBotService = tgBot
 	}
+	service.SetEventTelegramService(tgBotService)
+	service.SetClientBotHooks(clientbot.SetPanelBot, clientbot.HandlePanelCommand)
 
 	// 〔中文注释〕: 3. 【核心步骤】执行依赖注入
 	//    将 tgBotService 实例注入到 serverService 中。
@@ -108,6 +117,9 @@ func runWebServer() {
 		log.Fatalf("Error starting web server: %v", err)
 		return
 	}
+
+	// 客户端专属 Telegram Bot 管理器独立运行；自定义 Bot 不依赖面板全局 Bot。
+	clientbot.Start()
 
 	var subServer *sub.Server
 	subServer = sub.NewServer()

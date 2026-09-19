@@ -34,6 +34,9 @@ func (a *XraySettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/warp/:action", a.warp)
 	g.GET("/getOutboundsTraffic", a.getOutboundsTraffic)
 	g.POST("/resetOutboundsTraffic", a.resetOutboundsTraffic)
+	g.POST("/blacklist/list", a.getManagedBlacklist)
+	g.POST("/blacklist/remove", a.removeManagedBlacklist)
+	g.POST("/blacklist/clear", a.clearManagedBlacklist)
 	g.GET("/ruleSet/apps", a.getRuleSetApps)
 	g.POST("/ruleSet/resolve", a.resolveRuleSet)
 	g.POST("/ruleSet/resolveURL", a.resolveRuleSetURL)
@@ -137,6 +140,39 @@ func (a *XraySettingController) resetOutboundsTraffic(c *gin.Context) {
 		return
 	}
 	jsonObj(c, "", nil)
+}
+
+type managedBlacklistRemoveForm struct {
+	ID int `json:"id" form:"id"`
+}
+
+type managedBlacklistClearForm struct {
+	Kind string `json:"kind" form:"kind"`
+}
+
+func (a *XraySettingController) getManagedBlacklist(c *gin.Context) {
+	svc := &service.ManagedBlacklistService{}
+	rows, err := svc.List()
+	jsonObj(c, rows, err)
+}
+
+func (a *XraySettingController) removeManagedBlacklist(c *gin.Context) {
+	form := &managedBlacklistRemoveForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "黑名单参数无效", err)
+		return
+	}
+	svc := &service.ManagedBlacklistService{}
+	err := svc.RemoveByID(form.ID)
+	jsonObj(c, map[string]any{"removed": err == nil}, err)
+}
+
+func (a *XraySettingController) clearManagedBlacklist(c *gin.Context) {
+	form := &managedBlacklistClearForm{}
+	_ = c.ShouldBind(form)
+	svc := &service.ManagedBlacklistService{}
+	err := svc.Clear(form.Kind)
+	jsonObj(c, map[string]any{"cleared": err == nil}, err)
 }
 
 type ruleSetResolveForm struct {

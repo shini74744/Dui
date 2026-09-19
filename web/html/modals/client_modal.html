@@ -7,6 +7,88 @@
         <a-tag v-if="isExpiry || isTrafficExhausted" color="red" :style="{ marginBottom: '10px', display: 'block', textAlign: 'center' }">Account is (Expired|Traffic Ended) And Disabled</a-tag>
     </template>
     {{template "form/client"}}
+
+    <a-form v-if="isEdit" layout="horizontal" :colon="false" :label-col="{ md: {span:8} }" :wrapper-col="{ md: {span:14} }">
+        <a-form-item label="机器人通知">
+            <a-space wrap>
+                <a-tag v-if="clientBot.enabled" :color="clientBot.running ? 'green' : 'orange'">
+                    已绑定 · [[ clientBot.mode === 'panel' ? '面板机器人' : '自定义机器人' ]]
+                    <template v-if="clientBot.botUsername"> · @[[ clientBot.botUsername ]]</template>
+                    · [[ clientBot.chatId ]]
+                </a-tag>
+                <a-tag v-else>未绑定</a-tag>
+                <a-button size="small" type="primary" @click="openClientBotBinding" :disabled="!client.email">
+                    [[ clientBot.enabled ? '查看/修改' : '绑定' ]]
+                </a-button>
+            </a-space>
+            <div v-if="!client.email" :style="{ marginTop:'6px', opacity:.7 }">请先填写并保存电子邮件，再绑定 Telegram。</div>
+            <div v-if="clientBot.lastError" :style="{ marginTop:'6px', color:'#ff7875' }">[[ clientBot.lastError ]]</div>
+        </a-form-item>
+    </a-form>
+
+    <a-modal v-model="clientBot.modalVisible" title="客户端 Telegram 绑定"
+        :class="themeSwitcher.currentTheme" :footer="null"
+        :mask-closable="false" width="560px">
+        <a-alert type="info" show-icon :style="{ marginBottom:'14px' }"
+            message="绑定后，这个 Telegram 只能查询当前客户端的信息。"
+            description="支持查看剩余流量、到期时间、流量重置时间、来源 IP 数和当前连接数。">
+        </a-alert>
+
+        <a-form layout="vertical">
+            <a-form-item label="绑定客户端">
+                <a-input :value="clientBot.email" disabled></a-input>
+            </a-form-item>
+
+            <a-form-item label="Telegram 来源">
+                <a-radio-group v-model="clientBot.mode">
+                    <a-radio-button value="panel">使用面板 Telegram</a-radio-button>
+                    <a-radio-button value="custom">使用自定义 Telegram</a-radio-button>
+                </a-radio-group>
+            </a-form-item>
+
+            <template v-if="clientBot.mode === 'panel'">
+                <a-form-item label="面板机器人">
+                    <a-space wrap>
+                        <a-tag :color="clientBot.panelAvailable ? 'green' : 'red'">
+                            [[ clientBot.panelAvailable ? '可用' : '未启用/未运行' ]]
+                        </a-tag>
+                        <span v-if="clientBot.panelBotUsername">@[[ clientBot.panelBotUsername ]]</span>
+                    </a-space>
+                    <div :style="{ marginTop:'6px', opacity:.72 }">
+                        复用面板设置里的 Bot Token、代理和 API Server，不会启动第二个机器人实例。
+                    </div>
+                </a-form-item>
+            </template>
+
+            <template v-else>
+                <a-form-item label="自定义 Bot Token">
+                    <a-input v-model.trim="clientBot.botToken" type="password" placeholder="123456789:AA..."></a-input>
+                </a-form-item>
+            </template>
+
+            <a-form-item label="Telegram Chat ID">
+                <a-input-number v-model="clientBot.chatId" :style="{ width:'100%' }" placeholder="例如 123456789"></a-input-number>
+            </a-form-item>
+
+            <a-form-item v-if="clientBot.enabled" label="当前绑定信息">
+                <a-descriptions bordered size="small" :column="1">
+                    <a-descriptions-item label="来源">[[ clientBot.mode === 'panel' ? '面板 Telegram' : '自定义 Telegram' ]]</a-descriptions-item>
+                    <a-descriptions-item label="机器人"><span v-if="clientBot.botUsername">@[[ clientBot.botUsername ]]</span><span v-else>-</span></a-descriptions-item>
+                    <a-descriptions-item label="Chat ID">[[ clientBot.chatId || '-' ]]</a-descriptions-item>
+                    <a-descriptions-item label="状态">[[ clientBot.running ? '运行中' : '未运行' ]]</a-descriptions-item>
+                </a-descriptions>
+            </a-form-item>
+
+            <a-form-item>
+                <a-space wrap>
+                    <a-button @click="testClientBotBinding" :loading="clientBot.testing">测试连接</a-button>
+                    <a-button type="primary" @click="saveClientBotBinding" :loading="clientBot.saving">[[ clientBot.enabled ? '保存修改' : '保存绑定' ]]</a-button>
+                    <a-button v-if="clientBot.enabled" type="danger" @click="unbindClientBot" :loading="clientBot.unbinding">解除绑定</a-button>
+                    <a-button @click="clientBot.modalVisible=false">关闭</a-button>
+                </a-space>
+            </a-form-item>
+        </a-form>
+    </a-modal>
 </a-modal>
 <script>
 
@@ -21,6 +103,7 @@
         clients: [],
         clientStats: [],
         oldClientId: "",
+        originalEmail: "",
         index: null,
         clientIps: null,
         delayedStart: false,
@@ -46,11 +129,18 @@
                     this.delayedStart = true;
                 }
                 this.oldClientId = this.getClientId(dbInbound.protocol, clients[index]);
+                this.originalEmail = this.clients[index].email || "";
             } else {
+                this.originalEmail = "";
                 this.addClient(this.inbound, this.clients);
             }
             this.clientStats = this.dbInbound.clientStats.find(row => row.email === this.clients[this.index].email);
             this.confirm = confirm;
+            Vue.nextTick(() => {
+                if (isEdit && typeof clientModalApp !== 'undefined') {
+                    clientModalApp.loadClientBotBinding();
+                }
+            });
         },  
         getClientId(protocol, client) {
             switch (protocol) {
@@ -82,6 +172,24 @@
         el: '#client-modal',
         data: {
             clientModal,
+            clientBot: {
+                modalVisible: false,
+                loading: false,
+                saving: false,
+                testing: false,
+                unbinding: false,
+                inboundId: 0,
+                email: '',
+                enabled: false,
+                mode: 'panel',
+                botToken: '',
+                chatId: null,
+                running: false,
+                botUsername: '',
+                lastError: '',
+                panelAvailable: false,
+                panelBotUsername: '',
+            },
             get inbound() {
                 return this.clientModal.inbound;
             },
@@ -120,6 +228,144 @@
             },
         },
         methods: {
+            clientBotPayload() {
+                return {
+                    inboundId: this.clientModal.dbInbound.id,
+                    email: this.clientModal.originalEmail || (this.client ? this.client.email : ''),
+                    enabled: true,
+                    mode: this.clientBot.mode,
+                    botToken: this.clientBot.mode === 'custom' ? (this.clientBot.botToken || '') : '',
+                    chatId: Number(this.clientBot.chatId || 0),
+                };
+            },
+            applyClientBotView(view) {
+                view = view || {};
+                this.clientBot.inboundId = view.inboundId || this.clientModal.dbInbound.id || 0;
+                this.clientBot.email = view.email || this.clientModal.originalEmail || (this.client ? this.client.email : '');
+                this.clientBot.enabled = !!view.enabled;
+                this.clientBot.mode = view.mode === 'custom' ? 'custom' : 'panel';
+                this.clientBot.botToken = view.botToken || '';
+                this.clientBot.chatId = view.chatId || null;
+                this.clientBot.running = !!view.running;
+                this.clientBot.botUsername = view.botUsername || '';
+                this.clientBot.lastError = view.lastError || '';
+                this.clientBot.panelAvailable = !!view.panelAvailable;
+                this.clientBot.panelBotUsername = view.panelBotUsername || '';
+            },
+            async loadClientBotBinding() {
+                const email = this.clientModal.originalEmail || (this.client ? this.client.email : '');
+                if (!this.clientModal.isEdit || !email) {
+                    this.applyClientBotView({
+                        inboundId: this.clientModal.dbInbound.id,
+                        email: email,
+                        enabled: false,
+                        mode: 'panel',
+                    });
+                    return;
+                }
+                this.clientBot.loading = true;
+                try {
+                    const msg = await HttpUtil.post('/panel/api/inbounds/clientBot/get', {
+                        inboundId: this.clientModal.dbInbound.id,
+                        email: email,
+                    });
+                    if (msg.success) {
+                        this.applyClientBotView(msg.obj);
+                    } else {
+                        this.clientBot.lastError = msg.msg || '读取绑定信息失败';
+                    }
+                } catch (e) {
+                    this.clientBot.lastError = String(e || '读取绑定信息失败');
+                } finally {
+                    this.clientBot.loading = false;
+                }
+            },
+            async openClientBotBinding() {
+                if (!this.client || !this.client.email) {
+                    this.$message.warning('请先填写并保存电子邮件');
+                    return;
+                }
+                await this.loadClientBotBinding();
+                this.clientBot.modalVisible = true;
+            },
+            async testClientBotBinding() {
+                const payload = this.clientBotPayload();
+                if (!payload.chatId) {
+                    this.$message.warning('请填写 Telegram Chat ID');
+                    return;
+                }
+                if (payload.mode === 'custom' && !payload.botToken) {
+                    this.$message.warning('请填写自定义 Bot Token');
+                    return;
+                }
+                this.clientBot.testing = true;
+                try {
+                    const msg = await HttpUtil.post('/panel/api/inbounds/clientBot/test', payload);
+                    if (msg.success) {
+                        const username = msg.obj && msg.obj.username ? msg.obj.username : '';
+                        this.$message.success('测试成功' + (username ? '：@' + username : ''));
+                    } else {
+                        this.$message.error(msg.msg || '测试失败');
+                    }
+                } finally {
+                    this.clientBot.testing = false;
+                }
+            },
+            async saveClientBotBinding() {
+                const payload = this.clientBotPayload();
+                if (!payload.email) {
+                    this.$message.warning('请先填写并保存电子邮件');
+                    return;
+                }
+                if (!payload.chatId) {
+                    this.$message.warning('请填写 Telegram Chat ID');
+                    return;
+                }
+                if (payload.mode === 'custom' && !payload.botToken) {
+                    this.$message.warning('请填写自定义 Bot Token');
+                    return;
+                }
+                this.clientBot.saving = true;
+                try {
+                    const msg = await HttpUtil.post('/panel/api/inbounds/clientBot/save', payload);
+                    if (msg.success) {
+                        this.applyClientBotView(msg.obj);
+                        this.clientBot.modalVisible = false;
+                        this.$message.success('Telegram 绑定已保存');
+                    } else {
+                        this.$message.error(msg.msg || '保存绑定失败');
+                    }
+                } finally {
+                    this.clientBot.saving = false;
+                }
+            },
+            unbindClientBot() {
+                this.$confirm({
+                    title: '解除客户端 Telegram 绑定',
+                    content: '解除后，该 Telegram 将不能再查询这个客户端的信息，也不会再收到该客户端的到期/流量通知。',
+                    class: themeSwitcher.currentTheme,
+                    okText: '解除绑定',
+                    cancelText: '取消',
+                    onOk: async () => {
+                        this.clientBot.unbinding = true;
+                        try {
+                            const msg = await HttpUtil.post('/panel/api/inbounds/clientBot/unbind', {
+                                inboundId: this.clientModal.dbInbound.id,
+                                email: this.clientModal.originalEmail || (this.client ? this.client.email : ''),
+                            });
+                            if (msg.success) {
+                                await this.loadClientBotBinding();
+                                this.clientBot.modalVisible = false;
+                                this.$message.success('已解除 Telegram 绑定');
+                            } else {
+                                this.$message.error(msg.msg || '解除绑定失败');
+                            }
+                        } finally {
+                            this.clientBot.unbinding = false;
+                        }
+                    },
+                });
+            },
             async getDBClientIps(email) {
                 const msg = await HttpUtil.post(`/panel/api/inbounds/clientIps/${email}`);
                 if (!msg.success) {

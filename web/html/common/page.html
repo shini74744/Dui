@@ -445,6 +445,19 @@
       color: #dce9fb;
     }
     html[data-dui-ui="starry"] .panel-tool-hint { color: #9fb0ca; }
+
+    @media (max-width: 768px) {
+      .ant-modal {
+        width: calc(100vw - 16px) !important;
+        max-width: calc(100vw - 16px) !important;
+        margin: 8px auto !important;
+        top: 8px;
+      }
+      .ant-modal-body {
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+    }
   </style>
   <title>{{ .host }} – {{ i18n .title}}</title>
 {{ end }}

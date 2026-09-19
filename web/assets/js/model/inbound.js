@@ -1803,6 +1803,7 @@ Inbound.VmessSettings.VMESS = class extends XrayCommonClass {
         expiryTime = 0,
         enable = true,
         tgId = '',
+        tgNotify = false,
         subId = RandomUtil.randomLowerAndNum(16),
         comment = '',
         reset = 0,
@@ -1819,6 +1820,7 @@ Inbound.VmessSettings.VMESS = class extends XrayCommonClass {
         this.expiryTime = expiryTime;
         this.enable = enable;
         this.tgId = tgId;
+        this.tgNotify = tgNotify;
         this.subId = subId;
         this.comment = comment;
         this.reset = reset;
@@ -1838,6 +1840,7 @@ Inbound.VmessSettings.VMESS = class extends XrayCommonClass {
             json.expiryTime,
             json.enable,
             json.tgId,
+            json.tgNotify ?? false,
             json.subId,
             json.comment,
             json.reset,
@@ -1946,6 +1949,7 @@ Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
         expiryTime = 0,
         enable = true,
         tgId = '',
+        tgNotify = false,
         subId = RandomUtil.randomLowerAndNum(16),
         comment = '',
         reset = 0,
@@ -1962,6 +1966,7 @@ Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
         this.expiryTime = expiryTime;
         this.enable = enable;
         this.tgId = tgId;
+        this.tgNotify = tgNotify;
         this.subId = subId;
         this.comment = comment;
         this.reset = reset;
@@ -1981,6 +1986,7 @@ Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
             json.expiryTime,
             json.enable,
             json.tgId,
+            json.tgNotify ?? false,
             json.subId,
             json.comment,
             json.reset,
@@ -2095,6 +2101,7 @@ Inbound.TrojanSettings.Trojan = class extends XrayCommonClass {
         expiryTime = 0,
         enable = true,
         tgId = '',
+        tgNotify = false,
         subId = RandomUtil.randomLowerAndNum(16),
         comment = '',
         reset = 0,
@@ -2110,6 +2117,7 @@ Inbound.TrojanSettings.Trojan = class extends XrayCommonClass {
         this.expiryTime = expiryTime;
         this.enable = enable;
         this.tgId = tgId;
+        this.tgNotify = tgNotify;
         this.subId = subId;
         this.comment = comment;
         this.reset = reset;
@@ -2127,6 +2135,7 @@ Inbound.TrojanSettings.Trojan = class extends XrayCommonClass {
             expiryTime: this.expiryTime,
             enable: this.enable,
             tgId: this.tgId,
+            tgNotify: this.tgNotify,
             subId: this.subId,
             comment: this.comment,
             reset: this.reset,
@@ -2145,6 +2154,7 @@ Inbound.TrojanSettings.Trojan = class extends XrayCommonClass {
             json.expiryTime,
             json.enable,
             json.tgId,
+            json.tgNotify ?? false,
             json.subId,
             json.comment,
             json.reset,
@@ -2268,6 +2278,7 @@ Inbound.ShadowsocksSettings.Shadowsocks = class extends XrayCommonClass {
         expiryTime = 0,
         enable = true,
         tgId = '',
+        tgNotify = false,
         subId = RandomUtil.randomLowerAndNum(16),
         comment = '',
         reset = 0,
@@ -2284,6 +2295,7 @@ Inbound.ShadowsocksSettings.Shadowsocks = class extends XrayCommonClass {
         this.expiryTime = expiryTime;
         this.enable = enable;
         this.tgId = tgId;
+        this.tgNotify = tgNotify;
         this.subId = subId;
         this.comment = comment;
         this.reset = reset;
@@ -2302,6 +2314,7 @@ Inbound.ShadowsocksSettings.Shadowsocks = class extends XrayCommonClass {
             expiryTime: this.expiryTime,
             enable: this.enable,
             tgId: this.tgId,
+            tgNotify: this.tgNotify,
             subId: this.subId,
             comment: this.comment,
             reset: this.reset,
@@ -2321,6 +2334,7 @@ Inbound.ShadowsocksSettings.Shadowsocks = class extends XrayCommonClass {
             json.expiryTime,
             json.enable,
             json.tgId,
+            json.tgNotify ?? false,
             json.subId,
             json.comment,
             json.reset,

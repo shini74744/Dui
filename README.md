@@ -20,8 +20,25 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - NTP / 时区管理
 - Swap 管理
 - 证书管理与自动续签
-- Telegram 管理机器人
-- 星空主题与移动端适配
+- Telegram 管理机器人、事件通知中心与客户端独立机器人
+- CPU / 内存 / 磁盘阈值告警
+- 客户端到期 / 流量耗尽通知
+- 每日客户端流量排名
+- 来源 IP / 在线连接数实时统计
+- 用户连接详情：IP 归属、运营商 / ASN、访问目标、实际出站、日志次数
+- 网站 / 目标黑名单：全局或按入站 + 用户精确生效
+- 来源 IP 入站黑名单与集中黑名单管理
+- 星空主题、侧边栏动画与移动端适配
+
+## v26.9.22 重点更新
+
+- Telegram：事件通知中心、资源阈值报警、客户端独立机器人、客户端专属状态查询与手动通知历史。
+- 入站监控：来源 IP / 在线连接数、连接详情、IP 归属 / ASN / ISP、访问目标、日志次数与实际出站。
+- 黑名单管理：网站 / 目标支持全局或当前用户范围；来源 IP 支持整机入站拒绝；统一在 Xray 设置中集中解除。
+- 首页：每日流量排名兼容单用户空 Email 入站；端口 / 用户连接数独立颜色阈值。
+- UI：DUI-PRO 品牌、移动端左右留白、侧边栏收起/展开动画等细节优化。
+- 安全：登录失败不再记录或发送密码；自定义客户端机器人只暴露当前客户端状态。
+- 保持对现有数据库、安装路径和 `x-ui` systemd 服务名称的兼容。
 
 ## 一键安装
 
@@ -60,10 +77,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v26.9.19`：
+例如安装 `v26.9.22`：
 
 ```bash
-VERSION=v26.9.19 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v26.9.22 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令

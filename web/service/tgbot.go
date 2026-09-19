@@ -87,6 +87,19 @@ var (
 
 var userStates = make(map[int64]string)
 
+var (
+	clientBotPanelReadyHook func(*telego.Bot, string)
+	clientBotCommandHook    func(*telego.Bot, telego.Message) bool
+)
+
+func SetClientBotHooks(
+	panelReady func(*telego.Bot, string),
+	commandHook func(*telego.Bot, telego.Message) bool,
+) {
+	clientBotPanelReadyHook = panelReady
+	clientBotCommandHook = commandHook
+}
+
 // 〔中文注释〕: 贴纸的发送顺序将在运行时被随机打乱。
 var LOTTERY_STICKER_IDS = [3]string{
 	// STICKER_ID_1: 官方 Telegram Loading 动画 (经典)
@@ -238,6 +251,17 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 		return err
 	}
 
+	if me, getMeErr := bot.GetMe(context.Background()); getMeErr == nil {
+		if clientBotPanelReadyHook != nil {
+			clientBotPanelReadyHook(bot, me.Username)
+		}
+	} else {
+		logger.Warning("Failed to get panel bot identity:", getMeErr)
+		if clientBotPanelReadyHook != nil {
+			clientBotPanelReadyHook(bot, "")
+		}
+	}
+
 	// After bot initialization, set up bot commands with localized descriptions
 	err = bot.SetMyCommands(context.Background(), &telego.SetMyCommandsParams{
 		Commands: []telego.BotCommand{
@@ -316,6 +340,9 @@ func (t *Tgbot) SetHostname() {
 }
 
 func (t *Tgbot) Stop() {
+	if clientBotPanelReadyHook != nil {
+		clientBotPanelReadyHook(nil, "")
+	}
 	if botHandler != nil {
 		botHandler.Stop()
 	}
@@ -363,6 +390,9 @@ func (t *Tgbot) OnReceive() {
 
 	botHandler.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		delete(userStates, message.Chat.ID)
+		if clientBotCommandHook != nil && clientBotCommandHook(bot, message) {
+			return nil
+		}
 		t.answerCommand(&message, message.Chat.ID, checkAdmin(message.From.ID))
 		return nil
 	}, th.AnyCommand())
@@ -2492,7 +2522,8 @@ func (t *Tgbot) SendReport() {
 	}
 
 	greetingMsg := fmt.Sprintf(
-		"☀️ **每日定时报告** (任务: `%s`)\n\n*  美好的一天，从〔Dui 面板〕开始！*\n\n⏰ **当前时间**：`%s`",
+		"☀️ **周期定时报告**\n\n🏷 **面板**：`%s`\n⏱ **计划**：`%s`\n⏰ **当前时间**：`%s`",
+		telegramPanelName(),
 		taskName,
 		time.Now().Format("2006-01-02 15:04:05"),
 	)
@@ -2679,7 +2710,7 @@ func (t *Tgbot) prepareServerUsageInfo() string {
 	return info
 }
 
-func (t *Tgbot) UserLoginNotify(username string, password string, ip string, time string, status LoginStatus) {
+func (t *Tgbot) UserLoginNotify(username string, _ string, ip string, time string, status LoginStatus) {
 	if !t.IsRunning() {
 		return
 	}
@@ -2702,7 +2733,6 @@ func (t *Tgbot) UserLoginNotify(username string, password string, ip string, tim
 	case LoginFail:
 		msg += t.I18nBot("tgbot.messages.loginFailed")
 		msg += t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
-		msg += t.I18nBot("tgbot.messages.password", "Password=="+password)
 	}
 	msg += t.I18nBot("tgbot.messages.username", "Username=="+username)
 	msg += t.I18nBot("tgbot.messages.ip", "IP=="+ip)
