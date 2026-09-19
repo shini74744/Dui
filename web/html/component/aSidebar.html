@@ -1,6 +1,6 @@
 {{define "component/sidebar/content"}}
 <template>
-    <div class="ant-sidebar">
+    <div class="ant-sidebar" :class="{ 'is-collapsed': collapsed }">
         <a-layout-sider :theme="themeSwitcher.currentTheme" collapsible :collapsed="collapsed"
             @collapse="(isCollapsed, type) => collapseHandle(isCollapsed, type)" breakpoint="md">
             <a-theme-switch></a-theme-switch>
@@ -32,8 +32,87 @@
 
 {{define "component/aSidebar"}}
 <style>
-    .ant-sidebar>.ant-layout-sider {
+    .ant-sidebar > .ant-layout-sider {
         height: 100%;
+        overflow: hidden;
+        transition:
+            flex-basis .28s cubic-bezier(.22, .61, .36, 1),
+            width .28s cubic-bezier(.22, .61, .36, 1),
+            min-width .28s cubic-bezier(.22, .61, .36, 1),
+            max-width .28s cubic-bezier(.22, .61, .36, 1) !important;
+        will-change: width, min-width, max-width, flex-basis;
+    }
+
+    .ant-sidebar > .ant-layout-sider .ant-menu {
+        transition: width .28s cubic-bezier(.22, .61, .36, 1);
+    }
+
+    .ant-sidebar > .ant-layout-sider .ant-menu-item,
+    .ant-sidebar > .ant-layout-sider .ant-menu-submenu-title {
+        overflow: hidden;
+        transition:
+            padding .28s cubic-bezier(.22, .61, .36, 1),
+            margin .28s cubic-bezier(.22, .61, .36, 1),
+            background-color .18s ease,
+            color .18s ease !important;
+    }
+
+    .ant-sidebar > .ant-layout-sider .ant-menu-item .anticon,
+    .ant-sidebar > .ant-layout-sider .ant-menu-submenu-title .anticon {
+        transition:
+            margin .28s cubic-bezier(.22, .61, .36, 1),
+            transform .28s cubic-bezier(.22, .61, .36, 1),
+            color .18s ease;
+    }
+
+    .ant-sidebar > .ant-layout-sider .ant-menu-item > span,
+    .ant-sidebar > .ant-layout-sider .ant-menu-submenu-title > span {
+        display: inline-block;
+        max-width: 150px;
+        opacity: 1;
+        transform: translateX(0);
+        transition:
+            opacity .16s ease,
+            transform .28s cubic-bezier(.22, .61, .36, 1),
+            max-width .28s cubic-bezier(.22, .61, .36, 1);
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+
+    .ant-sidebar.is-collapsed > .ant-layout-sider .ant-menu-item > span,
+    .ant-sidebar.is-collapsed > .ant-layout-sider .ant-menu-submenu-title > span {
+        max-width: 0;
+        opacity: 0;
+        transform: translateX(-8px);
+        pointer-events: none;
+    }
+
+    .ant-sidebar > .ant-layout-sider .ant-layout-sider-trigger {
+        overflow: hidden;
+        transition:
+            width .28s cubic-bezier(.22, .61, .36, 1),
+            background-color .18s ease,
+            color .18s ease !important;
+    }
+
+    .ant-sidebar > .ant-layout-sider .ant-layout-sider-trigger .anticon {
+        transition: transform .24s cubic-bezier(.22, .61, .36, 1);
+    }
+
+    .ant-sidebar > .ant-layout-sider .ant-layout-sider-trigger:hover .anticon {
+        transform: scale(1.12);
+    }
+
+    #content-layout {
+        min-width: 0;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .ant-sidebar > .ant-layout-sider,
+        .ant-sidebar > .ant-layout-sider *,
+        .ant-sidebar > .ant-layout-sider .ant-layout-sider-trigger {
+            transition-duration: .01ms !important;
+        }
     }
 </style>
 
@@ -95,10 +174,10 @@
                 this.visible = !this.visible;
             },
             collapseHandle(collapsed, type) {
+                // 直接同步状态，避免“触发器先变化、菜单后一拍变化”的视觉卡顿。
+                this.collapsed = collapsed;
                 if (type === "clickTrigger") {
-                    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed);
-
-                    this.collapsed = JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSED_KEY));
+                    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, JSON.stringify(collapsed));
                 }
             }
         },

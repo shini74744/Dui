@@ -357,14 +357,13 @@ func (s *Server) startTask() {
 			return
 		}
 
+		// 后台事件通知：SSH/面板 Fail2ban、DDNS 自动同步、时间同步。
+		s.cron.AddFunc("@every 30s", service.PollTelegramEventNotifications)
+
 		// check for Telegram bot callback query hash storage reset
 		s.cron.AddJob("@every 2m", job.NewCheckHashStorageJob())
 
-		// Check CPU load and alarm to TgBot if threshold passes
-		cpuThreshold, err := s.settingService.GetTgCpu()
-		if (err == nil) && (cpuThreshold > 0) {
-			s.cron.AddJob("@every 10s", job.NewCheckCpuJob())
-		}
+		// CPU/内存/磁盘报警已统一由 Telegram 事件通知中心处理。
 	} else {
 		s.cron.Remove(entry)
 	}

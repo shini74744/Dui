@@ -69,6 +69,21 @@
     </a-space>
   </a-space>
 </template>
+<template slot="activity" slot-scope="text, client">
+  <button type="button" class="activity-badge activity-badge-button"
+    title="点击查看来源 IP 与连接详情"
+    @click.stop="openClientActivityDetail(record, client)">
+    <span class="activity-value"
+      :class="activityLevelClass('client', 'ip', getClientActivity(record.id, client.email).sourceIps)">
+      [[ getClientActivity(record.id, client.email).sourceIps ]]
+    </span>
+    <span class="activity-separator">|</span>
+    <span class="activity-value"
+      :class="activityLevelClass('client', 'conn', getClientActivity(record.id, client.email).onlineConnections)">
+      [[ getClientActivity(record.id, client.email).onlineConnections ]]
+    </span>
+  </button>
+</template>
 <template slot="traffic" slot-scope="text, client">
   <a-popover :overlay-class-name="themeSwitcher.currentTheme">
     <template slot="content" v-if="client.email">

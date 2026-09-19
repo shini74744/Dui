@@ -32,13 +32,18 @@ func initModels() error {
 		&model.User{},
 		&model.Inbound{},
 		&model.OutboundTraffics{},
+		&model.DailyClientTraffic{},
+		&model.ClientNotifyState{},
+		&model.ClientTelegramBot{},
+		&model.TelegramNotificationHistory{},
+		&model.ManagedBlacklistEntry{},
 		&model.Setting{},
 		&model.InboundClientIps{},
 		&xray.ClientTraffic{},
 		&model.HistoryOfSeeders{},
-		&LinkHistory{},   // 把 LinkHistory 表也迁移
-		&ShortLink{},     // 新增 ShortLink 模型
-		&model.LotteryWin{}, 
+		&LinkHistory{}, // 把 LinkHistory 表也迁移
+		&ShortLink{},   // 新增 ShortLink 模型
+		&model.LotteryWin{},
 	}
 	for _, model := range models {
 		if err := db.AutoMigrate(model); err != nil {

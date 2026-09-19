@@ -37,6 +37,60 @@
   .ant-collapse-content-box .ant-alert {
     margin-block-end: 12px;
   }
+
+  .dui-rule-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .dui-rule-actions .ant-btn {
+    margin: 0 !important;
+    max-width: 100%;
+  }
+
+  .dui-import-card-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  @media (max-width: 768px) {
+    .ant-modal {
+      width: calc(100vw - 16px) !important;
+      max-width: calc(100vw - 16px) !important;
+      margin: 8px auto !important;
+      top: 8px;
+    }
+
+    .ant-modal-body {
+      padding: 16px !important;
+      overflow-x: hidden;
+    }
+
+    .ant-space-horizontal {
+      flex-wrap: wrap !important;
+    }
+
+    .dui-rule-actions .ant-btn {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: auto;
+      min-height: 32px;
+      white-space: normal;
+    }
+
+    .dui-import-card-row {
+      flex-wrap: wrap;
+    }
+
+    .dui-import-card-row > .ant-btn {
+      margin-left: auto;
+    }
+  }
 </style>
 {{ template "page/head_end" .}}
 
@@ -138,6 +192,105 @@
                   </template>
                   {{ template "settings/xray/dns" . }}
                 </a-tab-pane>
+                <a-tab-pane key="tpl-blacklist" :style="{ paddingTop: '20px' }" force-render="true">
+                  <template #tab>
+                    <a-icon type="stop"></a-icon>
+                    <span>黑名单管理</span>
+                  </template>
+
+                  <a-card :bordered="false">
+                    <a-alert
+                      type="info"
+                      show-icon
+                      :style="{ marginBottom:'14px' }"
+                      message="这里集中管理“用户连接详情”中添加的网站/目标黑名单与来源 IP 黑名单。"
+                      description="网站/目标解除后会自动重建 Xray 路由并重载；来源 IP 解除后会同步删除 DUI 自己的防火墙拒绝规则。">
+                    </a-alert>
+
+                    <a-row :gutter="[8,8]" :style="{ marginBottom:'12px' }">
+                      <a-col :xs="24" :md="10">
+                        <a-input-search
+                          v-model.trim="managedBlacklistSearch"
+                          allow-clear
+                          placeholder="搜索 黑名单地址 / 协议 / 备注 / 端口 / 用户">
+                        </a-input-search>
+                      </a-col>
+                      <a-col :xs="12" :md="5">
+                        <a-select v-model="managedBlacklistKind" :style="{ width:'100%' }">
+                          <a-select-option value="all">全部类型</a-select-option>
+                          <a-select-option value="destination">网站 / 目标</a-select-option>
+                          <a-select-option value="source_ip">来源 IP</a-select-option>
+                        </a-select>
+                      </a-col>
+                      <a-col :xs="12" :md="5">
+                        <a-select v-model="managedBlacklistScope" :style="{ width:'100%' }">
+                          <a-select-option value="all">全部范围</a-select-option>
+                          <a-select-option value="global">全局</a-select-option>
+                          <a-select-option value="client">当前用户</a-select-option>
+                        </a-select>
+                      </a-col>
+                      <a-col :xs="24" :md="4">
+                        <a-button block icon="reload" :loading="managedBlacklistLoading" @click="loadManagedBlacklist">
+                          刷新
+                        </a-button>
+                      </a-col>
+                    </a-row>
+
+                    <a-space wrap :style="{ marginBottom:'12px' }">
+                      <a-tag color="blue">总数 [[ managedBlacklistCount() ]]</a-tag>
+                      <a-tag color="purple">网站/目标 [[ managedBlacklistCount('destination') ]]</a-tag>
+                      <a-tag color="red">来源 IP [[ managedBlacklistCount('source_ip') ]]</a-tag>
+                      <a-button size="small" @click="clearManagedBlacklist('destination')">清空网站/目标</a-button>
+                      <a-button size="small" @click="clearManagedBlacklist('source_ip')">清空来源 IP</a-button>
+                      <a-button size="small" type="danger" @click="clearManagedBlacklist('')">清空全部</a-button>
+                    </a-space>
+
+                    <a-table
+                      :columns="managedBlacklistColumns"
+                      :data-source="filteredManagedBlacklistRows()"
+                      row-key="id"
+                      size="small"
+                      bordered
+                      :loading="managedBlacklistLoading"
+                      :pagination="{ pageSize: 15, showSizeChanger: true, pageSizeOptions: ['15','30','50','100'] }"
+                      :scroll="{ x: 1250 }">
+                      <template slot="kind" slot-scope="text, record">
+                        <a-tag :color="record.kind === 'source_ip' ? 'red' : 'purple'">
+                          [[ record.kind === 'source_ip' ? '来源 IP' : '网站 / 目标' ]]
+                        </a-tag>
+                      </template>
+                      <template slot="scope" slot-scope="text, record">
+                        <a-tag :color="record.scope === 'global' ? 'red' : 'orange'">
+                          [[ record.scope === 'global' ? '全局' : '当前用户' ]]
+                        </a-tag>
+                      </template>
+                      <template slot="inbound" slot-scope="text, record">
+                        <template v-if="record.inboundId">
+                          <div>
+                            <a-tag v-if="record.protocol" color="blue">[[ record.protocol ]]</a-tag>
+                            [[ record.remark || '-' ]]
+                          </div>
+                          <div :style="{ opacity:.7, marginTop:'2px' }">
+                            端口 [[ record.port || '-' ]] · ID [[ record.inboundId ]]
+                          </div>
+                        </template>
+                        <span v-else>-</span>
+                      </template>
+                      <template slot="email" slot-scope="text, record">
+                        <span>[[ record.email || '-' ]]</span>
+                      </template>
+                      <template slot="createdAt" slot-scope="text, record">
+                        [[ formatManagedBlacklistTime(record.createdAt) ]]
+                      </template>
+                      <template slot="action" slot-scope="text, record">
+                        <a-button size="small" type="danger" @click="removeManagedBlacklist(record)">
+                          解除
+                        </a-button>
+                      </template>
+                    </a-table>
+                  </a-card>
+                </a-tab-pane>
+
                 <a-tab-pane key="tpl-advanced" force-render="true">
                   <template #tab>
                     <a-icon type="code"></a-icon>
@@ -421,6 +574,20 @@
       refreshing: false,
       restartResult: '',
       showAlert: false,
+      managedBlacklistLoading: false,
+      managedBlacklistRows: [],
+      managedBlacklistSearch: '',
+      managedBlacklistKind: 'all',
+      managedBlacklistScope: 'all',
+      managedBlacklistColumns: [
+        { title: '类型', key: 'kind', width: 120, scopedSlots: { customRender: 'kind' } },
+        { title: '黑名单地址', dataIndex: 'value', key: 'value', width: 260, ellipsis: true },
+        { title: '范围', key: 'scope', width: 140, scopedSlots: { customRender: 'scope' } },
+        { title: '入站', key: 'inbound', width: 260, scopedSlots: { customRender: 'inbound' } },
+        { title: '用户', key: 'email', width: 220, scopedSlots: { customRender: 'email' } },
+        { title: '添加时间', key: 'createdAt', width: 170, scopedSlots: { customRender: 'createdAt' } },
+        { title: '操作', key: 'action', width: 100, align: 'center', scopedSlots: { customRender: 'action' } },
+      ],
       advSettings: 'xraySetting',
       obsSettings: '',
       cm: null,
@@ -607,9 +774,101 @@
           this.saveBtnDisable = true;
         }
       },
+      async loadManagedBlacklist() {
+        this.managedBlacklistLoading = true;
+        try {
+          const msg = await HttpUtil.post('/panel/xray/blacklist/list');
+          if (msg.success) {
+            this.managedBlacklistRows = Array.isArray(msg.obj) ? msg.obj : [];
+          } else {
+            this.$message.error(msg.msg || '读取黑名单失败');
+          }
+        } finally {
+          this.managedBlacklistLoading = false;
+        }
+      },
+      managedBlacklistCount(kind = '') {
+        if (!kind) return (this.managedBlacklistRows || []).length;
+        return (this.managedBlacklistRows || []).filter(row => row.kind === kind).length;
+      },
+      filteredManagedBlacklistRows() {
+        const keyword = String(this.managedBlacklistSearch || '').trim().toLowerCase();
+        return (this.managedBlacklistRows || []).filter(row => {
+          if (this.managedBlacklistKind !== 'all' && row.kind !== this.managedBlacklistKind) return false;
+          if (this.managedBlacklistScope !== 'all' && row.scope !== this.managedBlacklistScope) return false;
+          if (!keyword) return true;
+          const haystack = [
+            row.value, row.kind, row.scope, row.protocol, row.remark,
+            row.port, row.email, row.inboundId
+          ].filter(v => v !== undefined && v !== null).join(' ').toLowerCase();
+          return haystack.includes(keyword);
+        });
+      },
+      formatManagedBlacklistTime(ts) {
+        if (!ts) return '-';
+        return moment.unix(Number(ts)).format('YYYY-MM-DD HH:mm:ss');
+      },
+      removeManagedBlacklist(row) {
+        const label = row.kind === 'source_ip' ? '来源 IP' : '网站/目标';
+        this.$confirm({
+          title: '解除黑名单',
+          content: `确认解除 ${label}：${row.value}？`,
+          class: themeSwitcher.currentTheme,
+          okText: '解除',
+          cancelText: '取消',
+          onOk: async () => {
+            this.managedBlacklistLoading = true;
+            try {
+              const msg = await HttpUtil.post('/panel/xray/blacklist/remove', { id: Number(row.id) });
+              if (msg.success) {
+                this.$message.success('黑名单已解除');
+                await this.loadManagedBlacklist();
+                await this.getXraySetting();
+                await this.getXrayResult();
+              } else {
+                this.$message.error(msg.msg || '解除黑名单失败');
+              }
+            } finally {
+              this.managedBlacklistLoading = false;
+            }
+          },
+        });
+      },
+      clearManagedBlacklist(kind = '') {
+        const name = kind === 'destination'
+          ? '所有网站/目标黑名单'
+          : kind === 'source_ip'
+            ? '所有来源 IP 黑名单'
+            : '全部黑名单';
+        this.$confirm({
+          title: '批量清空黑名单',
+          content: `确认清空 ${name}？此操作会立即同步 Xray / 防火墙规则。`,
+          class: themeSwitcher.currentTheme,
+          okType: 'danger',
+          okText: '确认清空',
+          cancelText: '取消',
+          onOk: async () => {
+            this.managedBlacklistLoading = true;
+            try {
+              const msg = await HttpUtil.post('/panel/xray/blacklist/clear', { kind });
+              if (msg.success) {
+                this.$message.success('黑名单已清空');
+                await this.loadManagedBlacklist();
+                await this.getXraySetting();
+                await this.getXrayResult();
+              } else {
+                this.$message.error(msg.msg || '清空黑名单失败');
+              }
+            } finally {
+              this.managedBlacklistLoading = false;
+            }
+          },
+        });
+      },
       changePage(pageKey) {
         if (pageKey == 'tpl-advanced') this.changeCode();
         if (pageKey == 'tpl-balancer') this.changeObsCode();
+        if (pageKey == 'tpl-blacklist') this.loadManagedBlacklist();
       },
       syncRulesWithOutbound(tag, setting) {
         const newTemplateSettings = this.templateSettings;

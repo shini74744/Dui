@@ -177,6 +177,117 @@
     .dui-desc b {
         font-weight: normal;
     }
+
+    .runtime-card .ant-card-head-wrapper {
+        display: grid !important;
+        grid-template-columns: minmax(130px, 38%) minmax(0, 62%);
+        align-items: start;
+    }
+    .runtime-card .ant-card-head-title {
+        min-width: 0;
+        padding-right: 10px;
+    }
+    .runtime-card .ant-card-extra {
+        width: 100%;
+        max-width: none;
+        padding: 10px 0 6px;
+        margin: 0;
+        text-align: center;
+    }
+    .runtime-uptime {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .daily-traffic-ranking {
+        width: 100%;
+        min-width: 0;
+        font-size: 10px;
+        line-height: 1.25;
+        text-align: center;
+    }
+    .daily-ranking-title {
+        font-weight: 600;
+        margin-bottom: 5px;
+        opacity: .92;
+    }
+    .daily-ranking-row {
+        display: grid;
+        text-align: left;
+        grid-template-columns: 18px minmax(54px, 1fr) auto minmax(52px, 1fr) auto;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 0;
+        white-space: nowrap;
+    }
+    .daily-ranking-row > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .daily-ranking-rank { opacity: .7; text-align: center; }
+    .daily-ranking-port { opacity: .72; }
+    .daily-ranking-user { opacity: .78; }
+    .daily-ranking-traffic { font-weight: 600; text-align: right; }
+    .daily-ranking-empty { opacity: .58; font-size: 11px; }
+    .ip-network-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 12px;
+    }
+    .ip-network-toolbar-label { font-size: 12px; opacity: .72; }
+    .ip-network-toolbar .ant-btn { min-width: 82px; }
+    @media (max-width: 768px) {
+        /* 手机端首页统一左右留白，避免外层 padding 与 Ant Row gutter 叠加后左右不对称。 */
+        #content-layout > .ant-layout-content {
+            width: 100%;
+            max-width: 100%;
+            margin: 0 !important;
+            padding: 8px 12px 16px !important;
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+        .main-content-row {
+            width: 100%;
+            min-width: 0;
+            margin: 0 !important;
+        }
+        .main-content-row > .ant-row,
+        .main-content-row > .ant-row > .ant-col {
+            min-width: 0;
+        }
+        .main-content-row > .ant-row > .ant-col {
+            box-sizing: border-box;
+        }
+        .runtime-card .ant-card-head-wrapper {
+            grid-template-columns: minmax(125px, 42%) minmax(0, 58%);
+        }
+        .runtime-card .ant-card-head-title {
+            white-space: normal;
+            line-height: 1.35;
+        }
+        .runtime-card .ant-card-extra {
+            padding-top: 8px;
+        }
+        .daily-traffic-ranking {
+            font-size: 9px;
+        }
+        .daily-ranking-title {
+            margin-bottom: 3px;
+        }
+        .daily-ranking-row {
+            grid-template-columns: 14px minmax(38px, 1fr) auto minmax(40px, 1fr) auto;
+            gap: 2px;
+        }
+        .ip-network-toolbar {
+            align-items: stretch;
+        }
+        .ip-network-toolbar .ant-btn {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+    }
 </style>
 
 
@@ -207,7 +318,7 @@
 						<a-row v-else class="main-content-row">
 							<a-row :gutter="[isMobile ? 8 : 16, isMobile ? 8 : 16]" :style="{ flex: '1 1 100%' }">
 
-								<a-col :sm="24" :lg="16">
+								<a-col :xs="24" :sm="24" :lg="16">
 									<a-tooltip title="点击切换首页 UI 主题">
 										<a-card hoverable :bordered="true" class="glass-card" 
 											:style="{ marginBottom: '16px', paddingBottom: '16px', cursor: 'pointer' }"
@@ -224,7 +335,7 @@
 
 									<a-card title='{{ i18n "pages.index.title" }}' hoverable :bordered="true" class="glass-card" :style="{ marginBottom: '16px' }">
 										<a-row :gutter="[0, isMobile ? 16 : 0]">
-											<a-col :sm="24" :md="12">
+											<a-col :xs="24" :sm="24" :md="12">
 												<a-row>
 													<a-col :span="12" :style="{ textAlign: 'center' }">
 														<a-progress type="dashboard" status="normal"
@@ -251,7 +362,7 @@
 													</a-col>
 												</a-row>
 											</a-col>
-											<a-col :sm="24" :md="12">
+											<a-col :xs="24" :sm="24" :md="12">
 												<a-row>
 													<a-col :span="12" class="swap-status-clickable" :style="{ textAlign: 'center' }" @click="openSwapManager">
 														<a-progress type="dashboard" status="normal"
@@ -327,7 +438,7 @@
 									</a-card>
 
 									<a-row :gutter="[isMobile ? 8 : 16, 0]" :style="{ flexShrink: 0, width: '100%' }">
-										<a-col :sm="24" :md="12">
+										<a-col :xs="24" :sm="24" :md="12">
 											<a-card title='{{ i18n "pages.index.totalData" }}' hoverable :bordered="true" class="glass-card" :style="{ marginBottom: isMobile ? '16px' : '0' }">
 												<a-row :gutter="isMobile ? [8,8] : 0">
 													<a-col :span="12">
@@ -343,7 +454,7 @@
 												</a-row>
 											</a-card>
 										</a-col>
-										<a-col :sm="24" :md="12">
+										<a-col :xs="24" :sm="24" :md="12">
 											<a-card title='{{ i18n "pages.index.connectionCount" }}' hoverable :bordered="true" class="glass-card">
 												<a-row :gutter="isMobile ? [8,8] : 0">
 													<a-col :span="12">
@@ -363,13 +474,13 @@
 
 								</a-col>
 
-								<a-col :sm="24" :lg="8">
+								<a-col :xs="24" :sm="24" :lg="8">
 									<a-card title='{{ i18n "pages.index.duiTitle" }}' hoverable :bordered="true" class="glass-card" :style="{ marginBottom: '16px' }">
 										<div style="white-space: nowrap; overflow-x: auto;">
 											<a rel="noopener" href="https://github.com/shini74744/Dui/releases" target="_blank">
 												<a-tag color="green"><span>v{{ .cur_ver }}</span></a-tag>
 											</a>
-											<a rel="noopener" href="https://t.me/IncuShliidlb"     target="_blank">
+											<a rel="noopener" href="https://shlii.io/" target="_blank">
 												<a-tag color="green"><span>{{ i18n "pages.index.tgPrivateChat" }}</span></a-tag>
 											</a>
 											<a rel="noopener" href="https://nmsl.ma"     target="_blank">
@@ -378,9 +489,25 @@
 										</div>
 									</a-card>
 
-									<a-card title='{{ i18n "pages.index.operationHours" }}' hoverable :bordered="true" class="glass-card" :style="{ marginBottom: '16px' }">
-										<a-tag :color="status.xray.color">Xray: [[ TimeFormatter.formatSecond(status.appStats.uptime) ]]</a-tag>
-										<a-tag color="green">OS: [[ TimeFormatter.formatSecond(status.uptime) ]]</a-tag>
+									<a-card hoverable :bordered="true" class="glass-card runtime-card" :style="{ marginBottom: '16px' }">
+										<template #title>{{ i18n "pages.index.operationHours" }}</template>
+										<template #extra>
+											<div class="daily-traffic-ranking">
+												<div class="daily-ranking-title">每日流量排名</div>
+												<div v-if="dailyTrafficRanking.length === 0" class="daily-ranking-empty">今日暂无新增流量</div>
+												<div v-for="(item, index) in dailyTrafficRanking" :key="item.user + '-' + item.port" class="daily-ranking-row">
+													<span class="daily-ranking-rank">[[ index + 1 ]]</span>
+													<span :title="item.remark">[[ item.remark || '-' ]]</span>
+													<span class="daily-ranking-port">:[[ item.port ]]</span>
+													<span class="daily-ranking-user" :title="item.user">[[ item.user ]]</span>
+													<span class="daily-ranking-traffic">[[ SizeFormatter.sizeFormat(item.traffic) ]]</span>
+												</div>
+											</div>
+										</template>
+										<div class="runtime-uptime">
+											<a-tag :color="status.xray.color">Xray: [[ TimeFormatter.formatSecond(status.appStats.uptime) ]]</a-tag>
+											<a-tag color="green">OS: [[ TimeFormatter.formatSecond(status.uptime) ]]</a-tag>
+										</div>
 									</a-card>
 
 									<a-card title='{{ i18n "pages.index.systemLoad" }}' hoverable :bordered="true" class="glass-card" :style="{ marginBottom: '16px' }">
@@ -427,6 +554,33 @@
 												<a-icon :type="showIp ? 'eye' : 'eye-invisible'" :style="{ fontSize: '1rem' }" @click="showIp = !showIp"></a-icon>
 											</a-tooltip>
 										</template>
+										<div class="ip-network-toolbar">
+											<span class="ip-network-toolbar-label">出口策略</span>
+											<a-tooltip :title="networkExitPolicy.dualStack ? '仅控制 Xray 节点出口' : '当前机器不是双栈，出口切换不可用'">
+												<a-dropdown :trigger="['click']" :disabled="!networkExitPolicy.dualStack">
+													<a-button size="small" :type="networkPolicyButtonType('ipv4')" :loading="networkPolicyLoading" :disabled="!networkExitPolicy.dualStack">
+														V4 · [[ networkPolicyLabel('ipv4') ]] <a-icon type="down"></a-icon>
+													</a-button>
+												<a-menu slot="overlay" @click="event => handleNetworkPolicyMenu('ipv4', event)">
+													<a-menu-item key="normal">恢复 V4 正常出口</a-menu-item>
+													<a-menu-item key="disable">关闭 V4 出口</a-menu-item>
+													<a-menu-item key="prefer">设为 V4 优先</a-menu-item>
+													</a-menu>
+												</a-dropdown>
+											</a-tooltip>
+											<a-tooltip :title="networkExitPolicy.dualStack ? '仅控制 Xray 节点出口' : '当前机器不是双栈，出口切换不可用'">
+												<a-dropdown :trigger="['click']" :disabled="!networkExitPolicy.dualStack">
+													<a-button size="small" :type="networkPolicyButtonType('ipv6')" :loading="networkPolicyLoading" :disabled="!networkExitPolicy.dualStack">
+														V6 · [[ networkPolicyLabel('ipv6') ]] <a-icon type="down"></a-icon>
+													</a-button>
+												<a-menu slot="overlay" @click="event => handleNetworkPolicyMenu('ipv6', event)">
+													<a-menu-item key="normal">恢复 V6 正常出口</a-menu-item>
+													<a-menu-item key="disable">关闭 V6 出口</a-menu-item>
+													<a-menu-item key="prefer">设为 V6 优先</a-menu-item>
+													</a-menu>
+												</a-dropdown>
+											</a-tooltip>
+										</div>
 										<a-row :class="showIp ? 'ip-visible' : 'ip-hidden'" :gutter="isMobile ? [8,8] : 0">
 											<a-col :span="isMobile ? 24 : 12">
 												<a-custom-statistic title="IPv4" :value="status.publicIP.ipv4">
@@ -917,6 +1071,16 @@ ${dateTime}
             showAlert: false,
             showIp: false,
             ipLimitEnable: false,
+            dailyTrafficRanking: [],
+            networkExitPolicy: {
+                ipv4Enabled: true,
+                ipv6Enabled: true,
+                preferred: '',
+                ipv4Available: false,
+                ipv6Available: false,
+                dualStack: false,
+            },
+            networkPolicyLoading: false,
         },
         methods: {
             loading(spinning, tip = '{{ i18n "loading"}}') {
@@ -998,6 +1162,61 @@ ${dateTime}
                     }
                 } catch (e) {
                     console.error("Failed to get status:", e);
+                }
+            },
+            async getDailyTrafficRanking() {
+                try {
+                    const msg = await HttpUtil.get('/panel/api/server/dailyTrafficRanking?limit=5');
+                    if (msg.success) {
+                        this.dailyTrafficRanking = Array.isArray(msg.obj) ? msg.obj : [];
+                    }
+                } catch (e) {
+                    console.error('Failed to get daily traffic ranking:', e);
+                }
+            },
+            async getNetworkExitPolicy() {
+                try {
+                    const msg = await HttpUtil.get('/panel/api/server/network/egress');
+                    if (msg.success && msg.obj) {
+                        this.networkExitPolicy = msg.obj;
+                    }
+                } catch (e) {
+                    console.error('Failed to get network exit policy:', e);
+                }
+            },
+            networkPolicyLabel(family) {
+                const available = family === 'ipv4' ? this.networkExitPolicy.ipv4Available : this.networkExitPolicy.ipv6Available;
+                if (!available) return '不可用';
+                if (!this.networkExitPolicy.dualStack) return '单栈';
+                const enabled = family === 'ipv4' ? this.networkExitPolicy.ipv4Enabled : this.networkExitPolicy.ipv6Enabled;
+                if (!enabled) return '已关闭';
+                if (this.networkExitPolicy.preferred === family) return '优先';
+                return '正常';
+            },
+            networkPolicyButtonType(family) {
+                const enabled = family === 'ipv4' ? this.networkExitPolicy.ipv4Enabled : this.networkExitPolicy.ipv6Enabled;
+                if (!enabled) return 'danger';
+                if (this.networkExitPolicy.preferred === family) return 'primary';
+                return 'default';
+            },
+            handleNetworkPolicyMenu(family, event) {
+                if (!this.networkExitPolicy.dualStack) return;
+                if (!event || !event.key) return;
+                this.setNetworkExitPolicy(family, event.key);
+            },
+            async setNetworkExitPolicy(family, action) {
+                if (this.networkPolicyLoading) return;
+                this.networkPolicyLoading = true;
+                try {
+                    const msg = await HttpUtil.post('/panel/api/server/network/egress', { family, action });
+                    if (msg.success && msg.obj) {
+                        this.networkExitPolicy = msg.obj;
+                        const label = family === 'ipv4' ? 'V4' : 'V6';
+                        const actionText = action === 'disable' ? '出口已关闭' : (action === 'prefer' ? '已设为优先' : '已恢复正常');
+                        this.$message.success(label + ' ' + actionText);
+                    }
+                } finally {
+                    this.networkPolicyLoading = false;
                 }
             },
             setStatus(data) {
@@ -1151,19 +1370,29 @@ ${dateTime}
                 this.showAlert = true;
             }
 
-            // 首屏并行加载面板默认设置与系统状态，状态卡不再等待 defaultSettings。
-            const settingsPromise = HttpUtil.post('/panel/setting/defaultSettings')
-                .then(msg => {
-                    if (msg.success) this.ipLimitEnable = msg.obj.ipLimitEnable;
-                })
-                .catch(e => console.error('Failed to get default settings:', e));
+            // 首屏只等待系统核心状态；辅助数据在页面显示后后台补齐。
+            await this.getStatus();
 
-            await Promise.all([this.getStatus(), settingsPromise]);
+            const loadSupplemental = () => {
+                Promise.allSettled([
+                    HttpUtil.post('/panel/setting/defaultSettings').then(msg => {
+                        if (msg.success) this.ipLimitEnable = msg.obj.ipLimitEnable;
+                    }),
+                    this.getDailyTrafficRanking(),
+                    this.getNetworkExitPolicy(),
+                ]).catch(e => console.error('Failed to load status supplemental data:', e));
+            };
+            this.$nextTick(() => window.setTimeout(loadSupplemental, 60));
 
+            let rankingTick = 0;
             while (true) {
                 await PromiseUtil.sleep(2000);
                 try {
                     await this.getStatus();
+                    rankingTick++;
+                    if (rankingTick % 5 === 0) {
+                        await this.getDailyTrafficRanking();
+                    }
                 } catch (e) {
                     console.error(e);
                 }

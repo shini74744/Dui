@@ -11,7 +11,7 @@ type APIController struct {
 	inboundController *InboundController
 	serverController  *ServerController
 	Tgbot             service.Tgbot
-	serverService  service.ServerService
+	serverService     service.ServerService
 }
 
 func NewAPIController(g *gin.RouterGroup) *APIController {
@@ -32,6 +32,9 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	// Server API
 	server := api.Group("/server")
 	a.serverController = NewServerController(server, a.serverService)
+	server.GET("/dailyTrafficRanking", a.serverController.dailyTrafficRanking)
+	server.GET("/network/egress", a.serverController.getNetworkExitPolicy)
+	server.POST("/network/egress", a.serverController.setNetworkExitPolicy)
 
 	// Extra routes
 	api.GET("/backuptotgbot", a.BackuptoTgbot)

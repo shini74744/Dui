@@ -56,6 +56,9 @@
     .ant-card-body {
       padding: .5rem;
     }
+    .ant-col-sm-24 {
+      margin: .5rem 0 !important;
+    }
     .ant-table .ant-table-content .ant-table-tbody tr:last-child .ant-table-wrapper {
 	    margin:-10px 2px !important;
     }
@@ -158,6 +161,127 @@
   }
   .ant-table-expanded-row .ant-table-thead>tr>th {
     padding: 12px 2px;
+  }
+  .activity-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    height: 24px;
+    padding: 2px 8px;
+    border: 1px solid rgba(0,0,0,.12);
+    border-radius: 999px;
+    background: rgba(0,0,0,.035);
+    font-variant-numeric: tabular-nums;
+    box-sizing: border-box;
+  }
+  .activity-badge-button {
+    border: 1px solid rgba(0,0,0,.12);
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    outline: none;
+  }
+  .activity-badge-button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(24,144,255,.35);
+    box-shadow: 0 3px 10px rgba(0,0,0,.08);
+  }
+  .activity-badge-button:focus-visible {
+    box-shadow: 0 0 0 2px rgba(24,144,255,.16);
+  }
+  .dark .activity-badge-button {
+    border-color: rgba(255,255,255,.13);
+  }
+  html[data-dui-ui="starry"] .activity-badge-button:hover {
+    border-color: rgba(125,211,252,.38);
+    box-shadow: 0 4px 14px rgba(36,92,170,.16);
+  }
+  .activity-badge .activity-value {
+    min-width: 18px;
+    text-align: center;
+    font-weight: 600;
+    line-height: 18px;
+    border-radius: 999px;
+    padding: 0 3px;
+    transition: color .18s ease, background-color .18s ease, box-shadow .18s ease;
+  }
+  .activity-badge .activity-separator {
+    margin: 0 4px;
+    opacity: .45;
+    font-weight: 500;
+  }
+  .activity-level-idle {
+    color: #8c8c8c;
+    background: rgba(140,140,140,.08);
+  }
+  .activity-level-ok {
+    color: #237804;
+    background: rgba(82,196,26,.10);
+  }
+  .activity-level-info {
+    color: #096dd9;
+    background: rgba(24,144,255,.10);
+  }
+  .activity-level-warn {
+    color: #ad4e00;
+    background: rgba(250,140,22,.12);
+  }
+  .activity-level-danger {
+    color: #cf1322;
+    background: rgba(245,34,45,.12);
+    box-shadow: inset 0 0 0 1px rgba(245,34,45,.10);
+  }
+  .dark .activity-badge {
+    border-color: rgba(255,255,255,.13);
+    background: rgba(255,255,255,.045);
+  }
+  .dark .activity-level-idle {
+    color: #8c8c8c;
+    background: rgba(140,140,140,.10);
+  }
+  .dark .activity-level-ok {
+    color: #73d13d;
+    background: rgba(82,196,26,.13);
+  }
+  .dark .activity-level-info {
+    color: #69c0ff;
+    background: rgba(24,144,255,.13);
+  }
+  .dark .activity-level-warn {
+    color: #ffc069;
+    background: rgba(250,140,22,.14);
+  }
+  .dark .activity-level-danger {
+    color: #ff7875;
+    background: rgba(245,34,45,.16);
+    box-shadow: inset 0 0 0 1px rgba(255,120,117,.12);
+  }
+  html[data-dui-ui="starry"] .activity-badge {
+    border-color: rgba(116,151,210,.22);
+    background: rgba(8,17,37,.68);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  }
+  html[data-dui-ui="starry"] .activity-level-idle {
+    color: #9aa8bf;
+    background: rgba(148,163,184,.08);
+  }
+  html[data-dui-ui="starry"] .activity-level-ok {
+    color: #67e8a6;
+    background: rgba(34,197,94,.11);
+  }
+  html[data-dui-ui="starry"] .activity-level-info {
+    color: #7dd3fc;
+    background: rgba(56,189,248,.11);
+  }
+  html[data-dui-ui="starry"] .activity-level-warn {
+    color: #fbbf72;
+    background: rgba(251,146,60,.12);
+  }
+  html[data-dui-ui="starry"] .activity-level-danger {
+    color: #fda4af;
+    background: rgba(244,63,94,.13);
+    box-shadow: inset 0 0 0 1px rgba(244,63,94,.11);
   }
 </style>
 {{ template "page/head_end" .}}
@@ -496,6 +620,19 @@
                         <span v-if="dbInbound.deviceLimit > 0">[[ dbInbound.deviceLimit ]]</span>
                         <span v-else>{{ i18n "pages.inbounds.unlimited" }}</span>
                     </template>
+                    <template slot="activity" slot-scope="text, dbInbound">
+                        <span class="activity-badge">
+                            <span class="activity-value"
+                                :class="activityLevelClass('inbound', 'ip', getInboundActivity(dbInbound.id).sourceIps)">
+                                [[ getInboundActivity(dbInbound.id).sourceIps ]]
+                            </span>
+                            <span class="activity-separator">|</span>
+                            <span class="activity-value"
+                                :class="activityLevelClass('inbound', 'conn', getInboundActivity(dbInbound.id).onlineConnections)">
+                                [[ getInboundActivity(dbInbound.id).onlineConnections ]]
+                            </span>
+                        </span>
+                    </template>
                     <template slot="traffic" slot-scope="text, dbInbound">
                       <a-popover :overlay-class-name="themeSwitcher.currentTheme">
                         <template slot="content">
@@ -711,6 +848,248 @@
         </transition>
       </a-spin>
     <a-modal
+      v-model="activityDetailVisible"
+      title="用户连接详情"
+      :class="themeSwitcher.currentTheme"
+      :width="isMobile ? '96%' : '1180px'"
+      :footer="null"
+      :mask-closable="false">
+      <a-spin :spinning="activityDetailLoading" tip="正在读取连接与 IP 归属...">
+        <a-alert
+          type="info"
+          show-icon
+          :style="{ marginBottom:'14px' }"
+          message="连接详情来自 Xray access.log 与当前系统连接状态。"
+          description="IP 归属仅在打开本弹窗时查询公共 IP 归属服务并缓存 24 小时；不会后台持续查询。">
+        </a-alert>
+
+        <a-space wrap :style="{ marginBottom:'12px' }">
+          <a-tag color="blue">[[ activityDetail.protocol || '-' ]]</a-tag>
+          <a-tag>[[ activityDetail.remark || '-' ]]</a-tag>
+          <a-tag>端口 [[ activityDetail.port || '-' ]]</a-tag>
+          <a-tag color="purple">用户 [[ activityDetail.email || '未填写 Email' ]]</a-tag>
+          <a-tag color="green">来源 IP [[ activityDetail.sourceIps || 0 ]]</a-tag>
+          <a-tag color="cyan">当前连接 [[ activityDetail.onlineConnections || 0 ]]</a-tag>
+          <a-button size="small" icon="reload" @click="refreshClientActivityDetail">刷新</a-button>
+        </a-space>
+
+        <a-alert v-if="activityDetail.note"
+          type="warning"
+          show-icon
+          :style="{ marginBottom:'12px' }"
+          :message="activityDetail.note">
+        </a-alert>
+
+        <a-tabs default-active-key="1">
+          <a-tab-pane key="1" tab="来源 IP">
+            <a-row :gutter="[8,8]" :style="{ marginBottom:'10px' }">
+              <a-col :xs="24" :md="12">
+                <a-input-search v-model.trim="activityIpSearch"
+                  allow-clear
+                  placeholder="模糊搜索 IP / 国家 / 地区 / 城市 / 运营商 / ASN">
+                </a-input-search>
+              </a-col>
+              <a-col :xs="18" :md="8">
+                <a-select v-model="activityIpSort" :style="{ width:'100%' }">
+                  <a-select-option value="online">按当前连接</a-select-option>
+                  <a-select-option value="count">按出现次数</a-select-option>
+                  <a-select-option value="last">按最近出现</a-select-option>
+                  <a-select-option value="first">按首次出现</a-select-option>
+                  <a-select-option value="duration">按活跃时长</a-select-option>
+                </a-select>
+              </a-col>
+              <a-col :xs="6" :md="4">
+                <a-button block @click="activityIpSortDesc=!activityIpSortDesc">
+                  <a-icon :type="activityIpSortDesc ? 'sort-descending' : 'sort-ascending'"></a-icon>
+                </a-button>
+              </a-col>
+            </a-row>
+            <a-table
+              :columns="activityIpColumns"
+              :data-source="filteredActivityIPs()"
+              row-key="ip"
+              size="small"
+              bordered
+              :pagination="{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10','20','50'] }"
+              :scroll="{ x: 1350 }">
+              <template slot="ip" slot-scope="text, record">
+                <a-space :size="6">
+                  <span>[[ record.ip ]]</span>
+                  <a-button size="small"
+                    :type="record.blocked ? 'default' : 'danger'"
+                    @click="openSourceIPBlacklist(record)">
+                    [[ record.blocked ? '解除' : '拉黑' ]]
+                  </a-button>
+                  <a-tag v-if="record.blocked" color="red">已拒绝入站</a-tag>
+                </a-space>
+              </template>
+              <template slot="location" slot-scope="text, record">
+                <div>[[ activityLocationText(record) ]]</div>
+              </template>
+              <template slot="carrier" slot-scope="text, record">
+                <div>[[ record.isp || record.org || '-' ]]</div>
+                <div :style="{ opacity:.68, fontSize:'12px' }">
+                  <template v-if="record.asn">AS[[ record.asn ]]</template>
+                  <template v-if="record.org && record.org !== record.isp"> · [[ record.org ]]</template>
+                </div>
+              </template>
+              <template slot="firstSeen" slot-scope="text, record">
+                [[ formatActivityTime(record.firstSeen) ]]
+              </template>
+              <template slot="lastSeen" slot-scope="text, record">
+                [[ formatActivityTime(record.lastSeen) ]]
+              </template>
+              <template slot="duration" slot-scope="text, record">
+                [[ formatActivityDuration(record.durationSeconds) ]]
+              </template>
+            </a-table>
+          </a-tab-pane>
+
+          <a-tab-pane key="2" tab="连接 / 网站">
+            <a-row :gutter="[8,8]" :style="{ marginBottom:'10px' }">
+              <a-col :xs="24" :md="12">
+                <a-input-search v-model.trim="activityDestinationSearch"
+                  allow-clear
+                  placeholder="模糊搜索 域名 / IP / 端口 / 协议 / 出站">
+                </a-input-search>
+              </a-col>
+              <a-col :xs="18" :md="8">
+                <a-select v-model="activityDestinationSort" :style="{ width:'100%' }">
+                  <a-select-option value="active">按当前连接</a-select-option>
+                  <a-select-option value="count">按日志次数</a-select-option>
+                  <a-select-option value="last">按最近访问</a-select-option>
+                  <a-select-option value="host">按网址/IP</a-select-option>
+                </a-select>
+              </a-col>
+              <a-col :xs="6" :md="4">
+                <a-button block @click="activityDestinationSortDesc=!activityDestinationSortDesc">
+                  <a-icon :type="activityDestinationSortDesc ? 'sort-descending' : 'sort-ascending'"></a-icon>
+                </a-button>
+              </a-col>
+            </a-row>
+            <a-table
+              :columns="activityDestinationColumns"
+              :data-source="filteredActivityDestinations()"
+              :row-key="record => record.network + '|' + record.host + '|' + record.port + '|' + record.outbound"
+              size="small"
+              bordered
+              :pagination="{ pageSize: 15, showSizeChanger: true, pageSizeOptions: ['15','30','50'] }"
+              :scroll="{ x: 1150 }">
+              <template slot="host" slot-scope="text, record">
+                <a-space :size="6" wrap>
+                  <span :style="{ wordBreak:'break-all' }">[[ record.host ]]</span>
+                  <a-button size="small"
+                    :type="(record.globalBlocked || record.clientBlocked) ? 'default' : 'danger'"
+                    @click="openDestinationBlacklist(record)">
+                    [[ (record.globalBlocked || record.clientBlocked) ? '管理' : '拉黑' ]]
+                  </a-button>
+                  <a-tag v-if="record.globalBlocked" color="red">全局</a-tag>
+                  <a-tag v-if="record.clientBlocked" color="orange">当前用户</a-tag>
+                </a-space>
+              </template>
+              <template slot="lastSeen" slot-scope="text, record">
+                [[ formatActivityTime(record.lastSeen) ]]
+              </template>
+            </a-table>
+          </a-tab-pane>
+        </a-tabs>
+      </a-spin>
+    </a-modal>
+
+    <a-modal
+      v-model="activityBlockVisible"
+      :title="activityBlockKind === 'sourceIP' ? '来源 IP 拉黑管理' : '网站 / 目标拉黑管理'"
+      :class="themeSwitcher.currentTheme"
+      :confirm-loading="activityBlockBusy"
+      :mask-closable="false"
+      :footer="null"
+      width="520px">
+      <a-alert v-if="activityBlockKind === 'sourceIP'"
+        type="warning"
+        show-icon
+        :style="{ marginBottom:'14px' }"
+        message="来源 IP 拉黑会直接拒绝该 IP 的整机入站请求。"
+        description="这会影响 SSH、面板和所有节点端口，请确认不是你自己的管理 IP。">
+      </a-alert>
+      <a-alert v-else
+        type="info"
+        show-icon
+        :style="{ marginBottom:'14px' }"
+        message="网站/IP 拉黑会自动写入 Xray 路由规则并立即重载。"
+        description="全局范围影响所有入站；当前用户范围只匹配当前入站 + 当前客户端 Email。">
+      </a-alert>
+
+      <a-descriptions bordered size="small" :column="1" :style="{ marginBottom:'14px' }">
+        <a-descriptions-item :label="activityBlockKind === 'sourceIP' ? '来源 IP' : '目标'">
+          [[ activityBlockValue ]]
+        </a-descriptions-item>
+        <a-descriptions-item label="当前入站">
+          [[ activityDetail.protocol ]] / [[ activityDetail.remark ]] - [[ activityDetail.port ]]
+        </a-descriptions-item>
+        <a-descriptions-item v-if="activityBlockKind !== 'sourceIP'" label="当前用户">
+          [[ activityDetail.email || '未填写 Email' ]]
+        </a-descriptions-item>
+      </a-descriptions>
+
+      <template v-if="activityBlockKind === 'destination'">
+        <a-form layout="vertical">
+          <a-form-item label="拉黑范围">
+            <a-radio-group v-model="activityBlockScope">
+              <a-radio value="global">全局拉黑</a-radio>
+              <a-radio value="client" :disabled="!activityDetail.email">仅当前端口下这个用户</a-radio>
+            </a-radio-group>
+            <div v-if="!activityDetail.email" :style="{ marginTop:'6px', opacity:.68 }">
+              当前客户端未填写 Email，无法使用“仅当前用户”匹配。
+            </div>
+          </a-form-item>
+          <a-form-item label="当前状态">
+            <a-space wrap>
+              <a-tag :color="activityBlockRecord && activityBlockRecord.globalBlocked ? 'red' : 'default'">
+                全局：[[ activityBlockRecord && activityBlockRecord.globalBlocked ? '已拉黑' : '未拉黑' ]]
+              </a-tag>
+              <a-tag :color="activityBlockRecord && activityBlockRecord.clientBlocked ? 'orange' : 'default'">
+                当前用户：[[ activityBlockRecord && activityBlockRecord.clientBlocked ? '已拉黑' : '未拉黑' ]]
+              </a-tag>
+            </a-space>
+          </a-form-item>
+          <a-space wrap>
+            <a-button type="danger"
+              :loading="activityBlockBusy"
+              v-if="!isSelectedDestinationBlocked()"
+              @click="applyDestinationBlacklist('add')">
+              拉黑
+            </a-button>
+            <a-button
+              :loading="activityBlockBusy"
+              v-else
+              @click="applyDestinationBlacklist('remove')">
+              解除当前范围拉黑
+            </a-button>
+            <a-button @click="activityBlockVisible=false">关闭</a-button>
+          </a-space>
+        </a-form>
+      </template>
+
+      <template v-else>
+        <a-space wrap>
+          <a-button type="danger"
+            :loading="activityBlockBusy"
+            v-if="!(activityBlockRecord && activityBlockRecord.blocked)"
+            @click="applySourceIPBlacklist('add')">
+            整机拒绝该 IP
+          </a-button>
+          <a-button
+            :loading="activityBlockBusy"
+            v-else
+            @click="applySourceIPBlacklist('remove')">
+            解除来源 IP 拉黑
+          </a-button>
+          <a-button @click="activityBlockVisible=false">关闭</a-button>
+        </a-space>
+      </template>
+    </a-modal>
+
+    <a-modal
       :title="`{{ i18n "pages.inbounds.oneClick.title" }}`"
       :visible="oneClickModalVisible"
       :cancel-text="`{{ i18n "cancel" }}`"
@@ -877,6 +1256,11 @@
        // 【中文注释】: 将错误的 customRender 改为 scopedSlots
         scopedSlots: { customRender: 'deviceLimit' },
     }, {
+        title: '来源IP | 在线连接',
+        align: 'center',
+        width: 62,
+        scopedSlots: { customRender: 'activity' },
+    }, {
         title: '{{ i18n "pages.inbounds.traffic" }}',
         align: 'center',
         width: 50,
@@ -918,6 +1302,7 @@
         { title: '{{ i18n "pages.inbounds.client" }}', width: 80, scopedSlots: { customRender: 'client' } },
         { title: '{{ i18n "pages.inbounds.traffic" }}', width: 80, align: 'center', scopedSlots: { customRender: 'traffic' } },
         { title: '{{ i18n "pages.inbounds.allTimeTraffic" }}', width: 80, align: 'center', scopedSlots: { customRender: 'allTime' } },
+        { title: '来源IP | 在线连接', width: 70, align: 'center', scopedSlots: { customRender: 'activity' } },
 
 		// 中文注释: 在子表格中新增“限速”列
         {
@@ -961,6 +1346,52 @@
             clientCount: [],
             onlineClients: [],
             lastOnlineMap: {},
+            activityStats: {},
+            activityDetailVisible: false,
+            activityDetailLoading: false,
+            activityIpSearch: '',
+            activityIpSort: 'online',
+            activityIpSortDesc: true,
+            activityDestinationSearch: '',
+            activityDestinationSort: 'active',
+            activityDestinationSortDesc: true,
+            activityBlockVisible: false,
+            activityBlockBusy: false,
+            activityBlockKind: 'destination',
+            activityBlockScope: 'client',
+            activityBlockRecord: null,
+            activityBlockValue: '',
+            activityDetail: {
+                inboundId: 0,
+                remark: '',
+                port: 0,
+                protocol: '',
+                email: '',
+                sourceIps: 0,
+                onlineConnections: 0,
+                ips: [],
+                destinations: [],
+                note: '',
+            },
+            activityIpColumns: [
+                { title: 'IP', dataIndex: 'ip', key: 'ip', width: 220, scopedSlots: { customRender: 'ip' } },
+                { title: '归属', key: 'location', width: 210, scopedSlots: { customRender: 'location' } },
+                { title: '运营商 / ASN', key: 'carrier', width: 260, scopedSlots: { customRender: 'carrier' } },
+                { title: '次数', dataIndex: 'count', key: 'count', width: 80, align: 'center' },
+                { title: '当前连接', dataIndex: 'onlineConnections', key: 'onlineConnections', width: 95, align: 'center' },
+                { title: '首次出现', key: 'firstSeen', width: 170, scopedSlots: { customRender: 'firstSeen' } },
+                { title: '最近出现', key: 'lastSeen', width: 170, scopedSlots: { customRender: 'lastSeen' } },
+                { title: '活跃时长', key: 'duration', width: 120, scopedSlots: { customRender: 'duration' } },
+            ],
+            activityDestinationColumns: [
+                { title: '网站 / 目标', dataIndex: 'host', key: 'host', width: 390, scopedSlots: { customRender: 'host' } },
+                { title: '协议', dataIndex: 'network', key: 'network', width: 80, align: 'center' },
+                { title: '端口', dataIndex: 'port', key: 'port', width: 80, align: 'center' },
+                { title: '实际出站', dataIndex: 'outbound', key: 'outbound', width: 180, ellipsis: true },
+                { title: '日志次数', dataIndex: 'count', key: 'count', width: 90, align: 'center' },
+                { title: '当前连接', dataIndex: 'activeConnections', key: 'activeConnections', width: 95, align: 'center' },
+                { title: '最近访问', key: 'lastSeen', width: 170, scopedSlots: { customRender: 'lastSeen' } },
+            ],
             isRefreshEnabled: localStorage.getItem("isRefreshEnabled") === "true" ? true : false,
             refreshing: false,
             refreshInterval: Number(localStorage.getItem("refreshInterval")) || 5000,
@@ -1042,11 +1473,272 @@
             
             // 【核心修改】: 从后端加载历史记录，而不是从 localStorage
             this.loadHistoryFromServer();
+
+            // 来源 IP / 在线连接数独立后台刷新，不阻塞入站列表首屏。
+            this.startActivityRefreshLoop();
         },
 		
         methods: {
             loading(spinning = true) {
                 this.loadingStates.spinning = spinning;
+            },
+            async getActivityStats() {
+                try {
+                    const msg = await HttpUtil.get('/panel/api/inbounds/activity');
+                    if (msg.success && msg.obj) {
+                        this.activityStats = msg.obj;
+                    }
+                } catch (e) {
+                    console.error('Failed to get inbound activity stats:', e);
+                }
+            },
+            getInboundActivity(inboundId) {
+                return this.activityStats[String(inboundId)] || this.activityStats[inboundId] || { sourceIps: 0, onlineConnections: 0, clients: {} };
+            },
+            getClientActivity(inboundId, email) {
+                const inbound = this.getInboundActivity(inboundId);
+                const clients = inbound.clients || {};
+                return clients[email] || { sourceIps: 0, onlineConnections: 0 };
+            },
+            activityLevelClass(scope, metric, value) {
+                const n = Math.max(0, Number(value) || 0);
+                if (n === 0) return 'activity-level-idle';
+
+                if (scope === 'inbound') {
+                    if (metric === 'ip') {
+                        if (n <= 3) return 'activity-level-ok';
+                        if (n <= 10) return 'activity-level-info';
+                        if (n <= 20) return 'activity-level-warn';
+                        return 'activity-level-danger';
+                    }
+                    if (n <= 50) return 'activity-level-ok';
+                    if (n <= 100) return 'activity-level-info';
+                    if (n <= 200) return 'activity-level-warn';
+                    return 'activity-level-danger';
+                }
+
+                if (metric === 'ip') {
+                    if (n <= 1) return 'activity-level-ok';
+                    if (n <= 3) return 'activity-level-info';
+                    if (n <= 5) return 'activity-level-warn';
+                    return 'activity-level-danger';
+                }
+                if (n <= 5) return 'activity-level-ok';
+                if (n <= 15) return 'activity-level-info';
+                if (n <= 30) return 'activity-level-warn';
+                return 'activity-level-danger';
+            },
+            formatActivityTime(ts) {
+                if (!ts) return '-';
+                return moment.unix(Number(ts)).format('YYYY-MM-DD HH:mm:ss');
+            },
+            formatActivityDuration(seconds) {
+                seconds = Math.max(0, Number(seconds) || 0);
+                if (seconds <= 0) return '<1 分钟';
+                const days = Math.floor(seconds / 86400);
+                seconds %= 86400;
+                const hours = Math.floor(seconds / 3600);
+                seconds %= 3600;
+                const minutes = Math.floor(seconds / 60);
+                const parts = [];
+                if (days) parts.push(days + '天');
+                if (hours) parts.push(hours + '小时');
+                if (minutes) parts.push(minutes + '分钟');
+                return parts.length ? parts.join(' ') : '<1 分钟';
+            },
+            activityLocationText(record) {
+                const parts = [record.country, record.region, record.city].filter(Boolean);
+                return parts.length ? parts.join(' / ') : '-';
+            },
+            filteredActivityIPs() {
+                const keyword = String(this.activityIpSearch || '').trim().toLowerCase();
+                let rows = Array.isArray(this.activityDetail.ips) ? [...this.activityDetail.ips] : [];
+                if (keyword) {
+                    rows = rows.filter(row => {
+                        const haystack = [
+                            row.ip, row.country, row.region, row.city,
+                            row.isp, row.org, row.asn ? 'as' + row.asn : ''
+                        ].filter(Boolean).join(' ').toLowerCase();
+                        return haystack.includes(keyword);
+                    });
+                }
+                const key = this.activityIpSort;
+                const desc = this.activityIpSortDesc ? -1 : 1;
+                rows.sort((a, b) => {
+                    let av, bv;
+                    if (key === 'count') {
+                        av = Number(a.count || 0); bv = Number(b.count || 0);
+                    } else if (key === 'last') {
+                        av = Number(a.lastSeen || 0); bv = Number(b.lastSeen || 0);
+                    } else if (key === 'first') {
+                        av = Number(a.firstSeen || 0); bv = Number(b.firstSeen || 0);
+                    } else if (key === 'duration') {
+                        av = Number(a.durationSeconds || 0); bv = Number(b.durationSeconds || 0);
+                    } else {
+                        av = Number(a.onlineConnections || 0); bv = Number(b.onlineConnections || 0);
+                    }
+                    if (av === bv) return String(a.ip || '').localeCompare(String(b.ip || ''));
+                    return (av > bv ? 1 : -1) * desc;
+                });
+                return rows;
+            },
+            filteredActivityDestinations() {
+                const keyword = String(this.activityDestinationSearch || '').trim().toLowerCase();
+                let rows = Array.isArray(this.activityDetail.destinations) ? [...this.activityDetail.destinations] : [];
+                if (keyword) {
+                    rows = rows.filter(row => {
+                        const haystack = [
+                            row.host, row.port, row.network, row.outbound
+                        ].filter(v => v !== undefined && v !== null).join(' ').toLowerCase();
+                        return haystack.includes(keyword);
+                    });
+                }
+                const key = this.activityDestinationSort;
+                const desc = this.activityDestinationSortDesc ? -1 : 1;
+                rows.sort((a, b) => {
+                    if (key === 'host') {
+                        const cmp = String(a.host || '').localeCompare(String(b.host || ''));
+                        return cmp * desc;
+                    }
+                    let av, bv;
+                    if (key === 'count') {
+                        av = Number(a.count || 0); bv = Number(b.count || 0);
+                    } else if (key === 'last') {
+                        av = Number(a.lastSeen || 0); bv = Number(b.lastSeen || 0);
+                    } else {
+                        av = Number(a.activeConnections || 0); bv = Number(b.activeConnections || 0);
+                    }
+                    if (av === bv) return String(a.host || '').localeCompare(String(b.host || ''));
+                    return (av > bv ? 1 : -1) * desc;
+                });
+                return rows;
+            },
+            openDestinationBlacklist(record) {
+                this.activityBlockKind = 'destination';
+                this.activityBlockValue = record.host || '';
+                this.activityBlockRecord = record;
+                this.activityBlockScope = this.activityDetail.email ? 'client' : 'global';
+                this.activityBlockVisible = true;
+            },
+            openSourceIPBlacklist(record) {
+                this.activityBlockKind = 'sourceIP';
+                this.activityBlockValue = record.ip || '';
+                this.activityBlockRecord = record;
+                this.activityBlockVisible = true;
+            },
+            isSelectedDestinationBlocked() {
+                if (!this.activityBlockRecord) return false;
+                return this.activityBlockScope === 'global'
+                    ? !!this.activityBlockRecord.globalBlocked
+                    : !!this.activityBlockRecord.clientBlocked;
+            },
+            async applyDestinationBlacklist(action) {
+                if (!this.activityBlockValue) return;
+                if (this.activityBlockScope === 'client' && !this.activityDetail.email) {
+                    this.$message.warning('当前客户端未填写 Email，无法只对这个用户生效');
+                    return;
+                }
+                this.activityBlockBusy = true;
+                try {
+                    const msg = await HttpUtil.post('/panel/api/inbounds/blacklist/destination', {
+                        action,
+                        scope: this.activityBlockScope,
+                        inboundId: Number(this.activityDetail.inboundId),
+                        email: this.activityDetail.email || '',
+                        value: this.activityBlockValue,
+                    });
+                    if (msg.success) {
+                        this.$message.success(action === 'add' ? '黑名单已生效' : '已解除黑名单');
+                        this.activityBlockVisible = false;
+                        await this.refreshClientActivityDetail();
+                    } else {
+                        this.$message.error(msg.msg || '黑名单操作失败');
+                    }
+                } finally {
+                    this.activityBlockBusy = false;
+                }
+            },
+            async applySourceIPBlacklist(action) {
+                if (!this.activityBlockValue) return;
+                this.activityBlockBusy = true;
+                try {
+                    const msg = await HttpUtil.post('/panel/api/inbounds/blacklist/sourceIP', {
+                        action,
+                        ip: this.activityBlockValue,
+                    });
+                    if (msg.success) {
+                        this.$message.success(action === 'add'
+                            ? '来源 IP 已加入整机入站黑名单'
+                            : '来源 IP 已解除拉黑');
+                        this.activityBlockVisible = false;
+                        await this.refreshClientActivityDetail();
+                    } else {
+                        this.$message.error(msg.msg || '来源 IP 黑名单操作失败');
+                    }
+                } finally {
+                    this.activityBlockBusy = false;
+                }
+            },
+            async loadClientActivityDetail(inboundId, email) {
+                this.activityDetailLoading = true;
+                try {
+                    const msg = await HttpUtil.post('/panel/api/inbounds/activity/details', {
+                        inboundId: Number(inboundId),
+                        email: email || '',
+                        withGeo: true,
+                    });
+                    if (msg.success && msg.obj) {
+                        this.activityDetail = Object.assign({
+                            inboundId: Number(inboundId),
+                            remark: '',
+                            port: 0,
+                            protocol: '',
+                            email: email || '',
+                            sourceIps: 0,
+                            onlineConnections: 0,
+                            ips: [],
+                            destinations: [],
+                            note: '',
+                        }, msg.obj);
+                    } else {
+                        this.$message.error(msg.msg || '读取用户连接详情失败');
+                    }
+                } catch (e) {
+                    console.error('Failed to load client activity detail:', e);
+                    this.$message.error('读取用户连接详情失败');
+                } finally {
+                    this.activityDetailLoading = false;
+                }
+            },
+            async openClientActivityDetail(record, client) {
+                this.activityDetailVisible = true;
+                this.activityDetail = {
+                    inboundId: Number(record.id),
+                    remark: record.remark || '',
+                    port: Number(record.port) || 0,
+                    protocol: String(record.protocol || '').toUpperCase(),
+                    email: client.email || '',
+                    sourceIps: 0,
+                    onlineConnections: 0,
+                    ips: [],
+                    destinations: [],
+                    note: '',
+                };
+                await this.loadClientActivityDetail(record.id, client.email || '');
+            },
+            async refreshClientActivityDetail() {
+                if (!this.activityDetail.inboundId) return;
+                await this.loadClientActivityDetail(
+                    this.activityDetail.inboundId,
+                    this.activityDetail.email || ''
+                );
+            },
+            async startActivityRefreshLoop() {
+                await this.getActivityStats();
+                while (true) {
+                    await PromiseUtil.sleep(5000);
+                    await this.getActivityStats();
+                }
             },
             async getDBInbounds() {
                 this.refreshing = true;

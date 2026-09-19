@@ -3,7 +3,6 @@ package controller
 import (
 	"net/http"
 	"text/template"
-	"time"
 
 	"x-ui/logger"
 	"x-ui/web/service"
@@ -14,9 +13,9 @@ import (
 )
 
 type LoginForm struct {
-	Username    	string `json:"username" form:"username"`
-	Password    	string `json:"password" form:"password"`
-	TwoFactorCode	string `json:"twoFactorCode" form:"twoFactorCode"`
+	Username      string `json:"username" form:"username"`
+	Password      string `json:"password" form:"password"`
+	TwoFactorCode string `json:"twoFactorCode" form:"twoFactorCode"`
 }
 
 type IndexController struct {
@@ -65,19 +64,20 @@ func (a *IndexController) login(c *gin.Context) {
 	}
 
 	user := a.userService.CheckUser(form.Username, form.Password, form.TwoFactorCode)
-	timeStr := time.Now().Format("2006-01-02 15:04:05")
 	safeUser := template.HTMLEscapeString(form.Username)
-	safePass := template.HTMLEscapeString(form.Password)
+	remoteIP := getRemoteIp(c)
+	userAgent := c.Request.UserAgent()
+	host := c.Request.Host
 
 	if user == nil {
-		logger.Warningf("wrong username: \"%s\", password: \"%s\", IP: \"%s\"", safeUser, safePass, getRemoteIp(c))
-		a.tgbot.UserLoginNotify(safeUser, safePass, getRemoteIp(c), timeStr, 0)
+		logger.Warningf("wrong username: \"%s\", IP: \"%s\"", safeUser, remoteIP)
+		service.NotifyPanelLoginFailure(safeUser, remoteIP, userAgent, host)
 		pureJsonMsg(c, http.StatusOK, false, I18nWeb(c, "pages.login.toasts.wrongUsernameOrPassword"))
 		return
 	}
 
-	logger.Infof("%s logged in successfully, Ip Address: %s\n", safeUser, getRemoteIp(c))
-	a.tgbot.UserLoginNotify(safeUser, ``, getRemoteIp(c), timeStr, 1)
+	logger.Infof("%s logged in successfully, Ip Address: %s\n", safeUser, remoteIP)
+	service.NotifyPanelLoginSuccess(safeUser, remoteIP, userAgent, host)
 
 	sessionMaxAge, err := a.settingService.GetSessionMaxAge()
 	if err != nil {
