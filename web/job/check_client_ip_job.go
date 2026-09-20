@@ -112,7 +112,7 @@ var activityGeoCache = struct {
 	Items map[string]activityGeoCacheEntry
 }{Items: map[string]activityGeoCacheEntry{}}
 
-var activityDetailLineRegex = regexp.MustCompile(`^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?) from (?:tcp:|udp:)?(\[[^\]]+\]|[^ :]+):(\d+) accepted (tcp|udp):(.+):(\d+) \[([^\]]+)\](?: email: ([^ ]+))?`)
+var activityDetailLineRegex = regexp.MustCompile(`^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?) from (?:(tcp|udp):)?(\[[^\]]+\]|[^ :]+):(\d+) accepted (?:(tcp|udp):)?(.+):(\d+) \[([^\]]+)\](?: email: ([^ ]+))?`)
 
 // ClientStatus 中文注释: 用于跟踪每个用户的状态（是否因为设备超限而被禁用）
 // 结构: map[用户email] -> 是否被禁用(true/false)
@@ -459,11 +459,11 @@ func GetClientActivityDetails(inboundID int, email string, withGeo bool) (*Clien
 			continue
 		}
 		m := activityDetailLineRegex.FindStringSubmatch(line)
-		if len(m) < 9 {
+		if len(m) < 10 {
 			continue
 		}
 
-		logEmail := strings.TrimSpace(m[8])
+		logEmail := strings.TrimSpace(m[9])
 		if !singleClient && !strings.EqualFold(logEmail, email) {
 			continue
 		}
@@ -472,12 +472,19 @@ func GetClientActivityDetails(inboundID int, email string, withGeo bool) (*Clien
 		if seen.IsZero() {
 			continue
 		}
-		sourceIP := normalizeActivityIP(strings.Trim(m[2], "[]"))
-		sourcePort := m[3]
-		network := strings.ToLower(m[4])
-		destHost := strings.Trim(strings.TrimSpace(m[5]), "[]")
-		destPort, _ := strconv.Atoi(m[6])
-		outbound := activityOutbound(m[7])
+		sourceNetwork := strings.ToLower(strings.TrimSpace(m[2]))
+		sourceIP := normalizeActivityIP(strings.Trim(m[3], "[]"))
+		sourcePort := m[4]
+		network := strings.ToLower(strings.TrimSpace(m[5]))
+		if network == "" {
+			network = sourceNetwork
+		}
+		if network == "" {
+			network = "tcp"
+		}
+		destHost := strings.Trim(strings.TrimSpace(m[6]), "[]")
+		destPort, _ := strconv.Atoi(m[7])
+		outbound := activityOutbound(m[8])
 
 		ipAgg := ipMap[sourceIP]
 		if ipAgg == nil {
