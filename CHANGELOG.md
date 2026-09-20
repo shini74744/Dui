@@ -1,5 +1,28 @@
 # Changelog
 
+## v26.9.23 - 2026-09-20
+
+### 覆盖升级兼容
+
+- 覆盖升级已有 Dui/x-ui 时，自动识别旧安装，不再进入重新设置账号、端口和访问路径的交互流程。
+- 在替换旧二进制前读取并规范化原 `webBasePath`，升级后显式恢复。
+- 原路径为 `/` 时继续使用 IP/域名 + 端口直接访问，不会被新版默认 `/shlii/` 覆盖。
+- 原路径为 `/abc/` 等自定义路径时继续原样保留。
+- `/shlii/` 只作为全新安装的默认访问路径。
+- 修复读取 CLI 设置时 ANSI 颜色码可能混入端口/路径的问题。
+- 恢复旧访问路径失败会触发完整回滚，包括二进制、数据库目录、菜单脚本、systemd service 和已有 fb5。
+
+### 连接详情兼容
+
+- 修复旧版 Shadowsocks / Xray access.log 使用 `accepted host:port` 格式时，“连接 / 网站”为空的问题。
+- 同时兼容：
+  - `accepted host:port`
+  - `accepted tcp:host:port`
+  - `accepted udp:host:port`
+- 保持来源 IP 与当前连接由系统 socket 实时统计。
+- 新增日志解析回归测试，覆盖旧 Shadowsocks、新 TCP 和 UDP 三种格式。
+- 已在旧面板升级实机 44569 入站验证：当前连接 33–34 条，真实 access.log 解析 847 条目标记录，Xray Configuration OK。
+
 ## v26.9.22 - 2026-09-19
 
 ### Telegram 与通知

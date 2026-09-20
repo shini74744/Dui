@@ -177,11 +177,50 @@ gen_random_string() {
     echo "$random_string"
 }
 
+# 去除面板 CLI 输出中的 ANSI 颜色码，避免读取路径时混入转义字符。
+strip_ansi() {
+    sed $'s/\033\\[[0-9;]*[[:alpha:]]//g'
+}
+
+# 覆盖旧程序前读取当前面板访问路径。
+# "/" 表示直接使用 IP/域名 + 端口；只有真正读取失败时才不输出内容。
+get_existing_web_base_path() {
+    [[ -x /usr/local/x-ui/x-ui ]] || return 1
+
+    local line base_path
+    line=$(/usr/local/x-ui/x-ui setting -show true 2>/dev/null \
+        | strip_ansi \
+        | grep -m1 'webBasePath（访问路径）:' || true)
+    [[ -n "$line" ]] || return 1
+
+    base_path="${line#*webBasePath（访问路径）:}"
+    base_path="${base_path#"${base_path%%[![:space:]]*}"}"
+    base_path="${base_path%"${base_path##*[![:space:]]}"}"
+
+    # 老版本若显示空路径，其实际含义就是根路径。
+    [[ -n "$base_path" ]] || base_path="/"
+    [[ "$base_path" == /* ]] || base_path="/$base_path"
+    [[ "$base_path" == */ ]] || base_path="$base_path/"
+    printf '%s' "$base_path"
+}
+
 # 安装/更新后配置
 config_after_install() {
-    echo -e "${yellow}安装/更新完成！ 为了您的面板安全，建议修改面板设置 ${plain}"
+    local is_upgrade="${1:-false}"
+
+    # 覆盖升级不再进入重新设置路径流程，所有旧设置原样保留。
+    if [[ "$is_upgrade" == "true" ]]; then
+        echo ""
+        echo -e "${green}检测到已有 Dui/x-ui 数据库：本次为覆盖升级。${plain}"
+        echo -e "${green}保留原账号、密码、端口、证书和面板访问路径，不添加 /shlii/。${plain}"
+        echo ""
+        /usr/local/x-ui/x-ui migrate
+        return
+    fi
+
+    echo -e "${yellow}全新安装完成！ 为了您的面板安全，建议修改面板设置 ${plain}"
     echo ""
-    read -p "$(echo -e "${green}想继续修改吗？${red}选择“n”以保留旧设置${plain} [y/n]？--->>请输入：")" config_confirm
+    read -p "$(echo -e "${green}想继续修改吗？${plain} [y/n]？--->>请输入：")" config_confirm
     if [[ "${config_confirm}" == "y" || "${config_confirm}" == "Y" ]]; then
         read -p "请设置您的用户名: " config_account
         echo -e "${yellow}您的用户名将是: ${config_account}${plain}"
@@ -193,59 +232,51 @@ config_after_install() {
         [[ -n "${config_webBasePath}" ]] || config_webBasePath="shlii"
         echo -e "${yellow}您的面板访问路径为: ${config_webBasePath}${plain}"
         echo -e "${yellow}正在初始化，请稍候...${plain}"
-        /usr/local/x-ui/x-ui setting -username ${config_account} -password ${config_password}
+        /usr/local/x-ui/x-ui setting -username "${config_account}" -password "${config_password}"
         echo -e "${yellow}用户名和密码设置成功!${plain}"
-        /usr/local/x-ui/x-ui setting -port ${config_port}
+        /usr/local/x-ui/x-ui setting -port "${config_port}"
         echo -e "${yellow}面板端口号设置成功!${plain}"
-        /usr/local/x-ui/x-ui setting -webBasePath ${config_webBasePath}
+        /usr/local/x-ui/x-ui setting -webBasePath "${config_webBasePath}"
         echo -e "${yellow}面板登录访问路径设置成功!${plain}"
         echo ""
     else
         echo ""
         sleep 1
-        echo -e "${red}--------------->>>>Cancel...--------------->>>>>>>取消修改...${plain}"
+        local usernameTemp=$(head -c 10 /dev/urandom | base64)
+        local passwordTemp=$(head -c 10 /dev/urandom | base64)
+        local webBasePathTemp="shlii"
+        /usr/local/x-ui/x-ui setting -username "${usernameTemp}" -password "${passwordTemp}" -webBasePath "${webBasePathTemp}"
         echo ""
-        if [[ ! -f "/etc/x-ui/x-ui.db" ]]; then
-            local usernameTemp=$(head -c 10 /dev/urandom | base64)
-            local passwordTemp=$(head -c 10 /dev/urandom | base64)
-            local webBasePathTemp="shlii"
-            /usr/local/x-ui/x-ui setting -username ${usernameTemp} -password ${passwordTemp} -webBasePath ${webBasePathTemp}
-            echo ""
-            echo -e "${yellow}检测到为全新安装：用户名和密码随机生成，默认访问路径使用 shlii:${plain}"
-            echo -e "###############################################"
-            echo -e "${green}用户名: ${usernameTemp}${plain}"
-            echo -e "${green}密  码: ${passwordTemp}${plain}"
-            echo -e "${green}访问路径: ${webBasePathTemp}${plain}"
-            echo -e "###############################################"
-            echo -e "${green}如果您忘记了登录信息，可以在安装后通过 x-ui 命令然后输入${red}数字 10 选项${green}进行查看${plain}"
-        else
-            echo -e "${green}此次操作属于版本升级，保留之前旧设置项，登录方式保持不变${plain}"
-            echo ""
-            echo -e "${green}如果您忘记了登录信息，您可以通过 x-ui 命令然后输入${red}数字 10 选项${green}进行查看${plain}"
-            echo ""
-            echo ""
-        fi
+        echo -e "${yellow}检测到为全新安装：用户名和密码随机生成，默认访问路径使用 shlii:${plain}"
+        echo -e "###############################################"
+        echo -e "${green}用户名: ${usernameTemp}${plain}"
+        echo -e "${green}密  码: ${passwordTemp}${plain}"
+        echo -e "${green}访问路径: ${webBasePathTemp}${plain}"
+        echo -e "###############################################"
+        echo -e "${green}如果您忘记了登录信息，可以在安装后通过 x-ui 命令然后输入${red}数字 10 选项${green}进行查看${plain}"
     fi
     sleep 1
-    echo -e ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+    echo -e ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
     echo ""
     /usr/local/x-ui/x-ui migrate
 }
-
 # ssh 转发提示
 ssh_forwarding() {
     # 获取 IPv4 和 IPv6 地址
     v4=$(curl -s4m8 http://ip.sb -k)
     v6=$(curl -s6m8 http://ip.sb -k)
-    local existing_webBasePath=$(/usr/local/x-ui/x-ui setting -show true | grep -Eo 'webBasePath（访问路径）: .+' | awk '{print $2}')
-    local existing_port=$(/usr/local/x-ui/x-ui setting -show true | grep -Eo 'port（端口号）: .+' | awk '{print $2}')
-    local existing_cert=$(/usr/local/x-ui/x-ui setting -getCert true | grep -Eo 'cert: .+' | awk '{print $2}')
-    local existing_key=$(/usr/local/x-ui/x-ui setting -getCert true | grep -Eo 'key: .+' | awk '{print $2}')
+    local setting_output cert_output existing_webBasePath existing_port existing_cert existing_key
+    setting_output=$(/usr/local/x-ui/x-ui setting -show true 2>/dev/null | strip_ansi)
+    cert_output=$(/usr/local/x-ui/x-ui setting -getCert true 2>/dev/null | strip_ansi)
+    existing_webBasePath=$(printf '%s\n' "$setting_output" | sed -n 's/.*webBasePath（访问路径）:[[:space:]]*//p' | head -n1)
+    existing_port=$(printf '%s\n' "$setting_output" | sed -n 's/.*port（端口号）:[[:space:]]*//p' | head -n1)
+    existing_cert=$(printf '%s\n' "$cert_output" | sed -n 's/.*cert:[[:space:]]*//p' | head -n1)
+    existing_key=$(printf '%s\n' "$cert_output" | sed -n 's/.*key:[[:space:]]*//p' | head -n1)
+    [[ -n "$existing_webBasePath" ]] || existing_webBasePath="/"
 
     if [[ -n "$existing_cert" && -n "$existing_key" ]]; then
         echo -e "${green}面板已安装证书采用SSL保护${plain}"
         echo ""
-        local existing_cert=$(/usr/local/x-ui/x-ui setting -getCert true | grep -Eo 'cert: .+' | awk '{print $2}')
         domain=$(basename "$(dirname "$existing_cert")")
         echo -e "${green}登录访问面板URL: https://${domain}:${existing_port}${green}${existing_webBasePath}${plain}"
     fi
@@ -291,7 +322,20 @@ install_x-ui() {
         [[ "$last_version" != v* ]] && last_version="v${last_version}"
     fi
 
-    local platform asset package_url tmpdir staged backup_dir="" etc_backup="" release_mode="指定"
+    local platform asset package_url tmpdir staged backup_dir="" etc_backup="" release_mode="指定" is_upgrade=false preserved_web_base_path=""
+
+    # 必须在覆盖旧二进制之前判断是否为升级，并读取旧面板真实访问路径。
+    # 旧面板若使用根路径 /，升级后仍保持 IP/域名 + 端口直接访问。
+    if [[ -f /etc/x-ui/x-ui.db ]]; then
+        is_upgrade=true
+        preserved_web_base_path=$(get_existing_web_base_path || true)
+        if [[ -n "$preserved_web_base_path" ]]; then
+            echo -e "${green}检测到已有面板，升级后将保留访问路径：${yellow}${preserved_web_base_path}${plain}"
+        else
+            echo -e "${yellow}检测到已有面板；未能从旧程序读取访问路径，将保留数据库现有值。${plain}"
+        fi
+    fi
+
     platform=$(arch)
     asset="x-ui-linux-${platform}.tar.gz"
     package_url="${XUI_RELEASE_BASE}/download/${last_version}/${asset}"
@@ -375,8 +419,37 @@ install_x-ui() {
     fi
     install -m 0644 "$staged/x-ui.service" /etc/systemd/system/x-ui.service
 
-    # 保留原项目的交互配置/数据库迁移逻辑。
-    config_after_install
+    # 覆盖升级时，在新程序首次读取默认值前明确恢复旧 webBasePath。
+    # 这样旧面板使用根路径 / 时，绝不会被新版默认 /shlii/ 覆盖。
+    if [[ "$is_upgrade" == "true" && -n "$preserved_web_base_path" ]]; then
+        if ! /usr/local/x-ui/x-ui setting -webBasePath "$preserved_web_base_path" >/dev/null 2>&1; then
+            echo -e "${red}恢复原面板访问路径失败，正在自动回滚。${plain}"
+            systemctl stop x-ui 2>/dev/null || true
+            rm -rf /usr/local/x-ui
+            [[ -n "$backup_dir" && -d "$backup_dir" ]] && mv "$backup_dir" /usr/local/x-ui
+            if [[ -f "${tmpdir}/x-ui-menu.bak" ]]; then
+                install -m 0755 "${tmpdir}/x-ui-menu.bak" /usr/bin/x-ui
+            else
+                rm -f /usr/bin/x-ui
+            fi
+            if [[ -f "${tmpdir}/x-ui.service.bak" ]]; then
+                install -m 0644 "${tmpdir}/x-ui.service.bak" /etc/systemd/system/x-ui.service
+            else
+                rm -f /etc/systemd/system/x-ui.service
+            fi
+            if [[ -f "${tmpdir}/fb5.bak" ]]; then
+                install -m 0755 "${tmpdir}/fb5.bak" /usr/local/bin/fb5
+            fi
+            rm -rf /etc/x-ui
+            [[ -n "$etc_backup" && -d "$etc_backup" ]] && cp -a "$etc_backup" /etc/x-ui
+            systemctl daemon-reload
+            systemctl restart x-ui 2>/dev/null || true
+            rm -rf "$tmpdir"
+            return 1
+        fi
+    fi
+
+    config_after_install "$is_upgrade"
 
     systemctl daemon-reload
     systemctl enable x-ui >/dev/null 2>&1 || true

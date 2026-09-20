@@ -30,6 +30,15 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - 来源 IP 入站黑名单与集中黑名单管理
 - 星空主题、侧边栏动画与移动端适配
 
+## v26.9.23 升级兼容修复
+
+- 覆盖升级旧面板时，原账号、密码、端口、证书和 `webBasePath` 全部原样保留。
+- 旧面板如果使用根路径 `/`，升级后继续使用 `IP/域名 + 端口` 直接访问，不会自动追加 `/shlii/`。
+- 只有全新安装才默认使用 `/shlii/`。
+- 修复旧版 Shadowsocks/Xray access.log 使用 `accepted host:port` 格式时，“连接 / 网站”显示 No Data 的问题。
+- 同时兼容 `accepted host:port`、`accepted tcp:host:port`、`accepted udp:host:port`。
+- 已在旧面板升级实机上验证：来源 IP、当前连接、连接/网站、日志次数继续正常。
+
 ## v26.9.22 重点更新
 
 - Telegram：事件通知中心、资源阈值报警、客户端独立机器人、客户端专属状态查询与手动通知历史。
@@ -77,10 +86,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v26.9.22`：
+例如安装 `v26.9.23`：
 
 ```bash
-VERSION=v26.9.22 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v26.9.23 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令
