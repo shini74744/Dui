@@ -1,5 +1,20 @@
 # Changelog
 
+## v26.9.24 - 2026-09-20
+
+### URL 路由品牌统一
+
+- 页面路由前缀从 `/panel/` 全面改为 `/dui/`。
+- 新页面地址包括 `/dui/`、`/dui/inbounds`、`/dui/settings`、`/dui/xray` 和 `/dui/navigation`。
+- API 统一改为 `/dui/api/...`；设置和 Xray 管理接口统一使用 `/dui/setting/...`、`/dui/xray/...`。
+- 登录成功跳转、侧边栏、数据库下载、入站管理、Xray 管理和设置页请求全部同步切换。
+- `/dui/setting/restartPanel` 同步更名为 `/dui/setting/restartDui`。
+- 旧 `/panel/...` 不再注册，也不提供重定向，旧地址直接返回 404。
+- 保持自定义 `webBasePath` 兼容，例如 `/abc/dui/inbounds`。
+- 修复 `HttpUtil.postForm()` 使用原生 fetch 时没有继承 `webBasePath` 的问题。
+- 隔离实例验证：`/dui/`、`/dui/inbounds`、`/dui/settings`、`/dui/xray`、`/dui/api/server/status` 均正常；旧 `/panel/inbounds` 返回 404。
+- 自定义 `/abc/` 环境验证：`/abc/dui/inbounds` 正确注册，`/abc/panel/inbounds` 返回 404。
+
 ## v26.9.23 - 2026-09-20
 
 ### 覆盖升级兼容

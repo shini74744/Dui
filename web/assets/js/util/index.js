@@ -34,7 +34,15 @@ class HttpUtil {
     for (const key in data) {
         formData.append(key, data[key]);
     }
-    const res = await fetch(url, {
+
+    // fetch() does not honor axios.defaults.baseURL. Keep native form requests
+    // under the configured Dui webBasePath as well.
+    const configuredBase = (axios.defaults.baseURL || '/').replace(/\/$/, '');
+    const requestURL = url.startsWith('/')
+        ? configuredBase + url
+        : configuredBase + '/' + url.replace(/^\//, '');
+
+    const res = await fetch(requestURL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded'

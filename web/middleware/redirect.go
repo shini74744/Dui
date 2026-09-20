@@ -9,11 +9,11 @@ import (
 
 func RedirectMiddleware(basePath string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Redirect from old '/xui' path to '/panel'
+		// Keep only the historical /xui alias and point it to the new /dui route.
+		// The former route prefix is intentionally not registered or redirected.
 		redirects := map[string]string{
-			"panel/API": "panel/api",
-			"xui/API":   "panel/api",
-			"xui":       "panel",
+			"xui/API": "dui/api",
+			"xui":     "dui",
 		}
 
 		path := c.Request.URL.Path

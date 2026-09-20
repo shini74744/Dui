@@ -693,7 +693,7 @@
       this.catalogLoading = true;
       this.lastError = '';
       try {
-        const msg = await HttpUtil.get('/panel/xray/ruleSet/apps' + (force ? '?refresh=1' : ''));
+        const msg = await HttpUtil.get('/dui/xray/ruleSet/apps' + (force ? '?refresh=1' : ''));
         if (msg.success && Array.isArray(msg.obj)) {
           this.apps = msg.obj;
           if (force) app.$message.success(this.uiText('refreshList') + ' ✓');
@@ -809,7 +809,7 @@
       this.lastMessage = '';
       this.lastError = '';
       try {
-        const msg = await HttpUtil.post('/panel/xray/ruleSet/resolve', { path: selectedPath });
+        const msg = await HttpUtil.post('/dui/xray/ruleSet/resolve', { path: selectedPath });
         if (!msg.success || !msg.obj) {
           this.lastError = (msg && msg.msg) ? msg.msg : '规则识别失败';
           app.$message.error(this.lastError);
@@ -851,7 +851,7 @@
       this.lastMessage = '';
       this.lastError = '';
       try {
-        const msg = await HttpUtil.post('/panel/xray/ruleSet/resolveURL', { url: rawURL });
+        const msg = await HttpUtil.post('/dui/xray/ruleSet/resolveURL', { url: rawURL });
         if (!msg.success || !msg.obj) {
           this.lastError = (msg && msg.msg) ? msg.msg : '自定义 List 识别失败';
           app.$message.error(this.lastError);
@@ -895,7 +895,7 @@
       this.lastMessage = '';
       this.lastError = '';
       try {
-        const msg = await HttpUtil.post('/panel/xray/ruleSet/resolveMany', { paths });
+        const msg = await HttpUtil.post('/dui/xray/ruleSet/resolveMany', { paths });
         if (!msg.success || !msg.obj) {
           this.lastError = (msg && msg.msg) ? msg.msg : '分类规则识别失败';
           app.$message.error(this.lastError);

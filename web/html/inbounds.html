@@ -1484,7 +1484,7 @@
             },
             async getActivityStats() {
                 try {
-                    const msg = await HttpUtil.get('/panel/api/inbounds/activity');
+                    const msg = await HttpUtil.get('/dui/api/inbounds/activity');
                     if (msg.success && msg.obj) {
                         this.activityStats = msg.obj;
                     }
@@ -1640,7 +1640,7 @@
                 }
                 this.activityBlockBusy = true;
                 try {
-                    const msg = await HttpUtil.post('/panel/api/inbounds/blacklist/destination', {
+                    const msg = await HttpUtil.post('/dui/api/inbounds/blacklist/destination', {
                         action,
                         scope: this.activityBlockScope,
                         inboundId: Number(this.activityDetail.inboundId),
@@ -1662,7 +1662,7 @@
                 if (!this.activityBlockValue) return;
                 this.activityBlockBusy = true;
                 try {
-                    const msg = await HttpUtil.post('/panel/api/inbounds/blacklist/sourceIP', {
+                    const msg = await HttpUtil.post('/dui/api/inbounds/blacklist/sourceIP', {
                         action,
                         ip: this.activityBlockValue,
                     });
@@ -1682,7 +1682,7 @@
             async loadClientActivityDetail(inboundId, email) {
                 this.activityDetailLoading = true;
                 try {
-                    const msg = await HttpUtil.post('/panel/api/inbounds/activity/details', {
+                    const msg = await HttpUtil.post('/dui/api/inbounds/activity/details', {
                         inboundId: Number(inboundId),
                         email: email || '',
                         withGeo: true,
@@ -1744,9 +1744,9 @@
                 this.refreshing = true;
                 try {
                     const [msg, lastOnlineMsg, onlineMsg] = await Promise.all([
-                        HttpUtil.get('/panel/api/inbounds/list'),
-                        HttpUtil.post('/panel/api/inbounds/lastOnline'),
-                        HttpUtil.post('panel/api/inbounds/onlines'),
+                        HttpUtil.get('/dui/api/inbounds/list'),
+                        HttpUtil.post('/dui/api/inbounds/lastOnline'),
+                        HttpUtil.post('dui/api/inbounds/onlines'),
                     ]);
                     if (!msg.success) return;
                     if (lastOnlineMsg.success && lastOnlineMsg.obj) {
@@ -1761,19 +1761,19 @@
                 }
             },
             async getOnlineUsers() {
-                const msg = await HttpUtil.post('panel/api/inbounds/onlines');
+                const msg = await HttpUtil.post('dui/api/inbounds/onlines');
                 if (!msg.success) {
                     return;
                 }
                 this.onlineClients = msg.obj != null ? msg.obj : [];
             },
             async getLastOnlineMap() {
-                const msg = await HttpUtil.post('/panel/api/inbounds/lastOnline');
+                const msg = await HttpUtil.post('/dui/api/inbounds/lastOnline');
                 if (!msg.success || !msg.obj) return;
                 this.lastOnlineMap = msg.obj || {}
             },
             async getDefaultSettings() {
-                const msg = await HttpUtil.post('/panel/setting/defaultSettings');
+                const msg = await HttpUtil.post('/dui/setting/defaultSettings');
                 if (!msg.success) {
                     return;
                 }
@@ -1986,7 +1986,7 @@
                     };
                     
                     // 【中文注释】: 6. 调用后端 update 接口
-                    const msg = await HttpUtil.post(`/panel/api/inbounds/update/${this.oneClickInboundId}`, data);
+                    const msg = await HttpUtil.post(`/dui/api/inbounds/update/${this.oneClickInboundId}`, data);
                     
                     if (msg.success) {
                         // 【中文注释】: 7. 更新成功!
@@ -2077,7 +2077,7 @@ async openPort(port) {
     
     try {
         // 〔中文注释〕: 调用后端API，它现在会立刻返回一个表示“指令已发送”的JSON。
-        const msg = await HttpUtil.postForm('/panel/api/server/openPort', { port: port });
+        const msg = await HttpUtil.postForm('/dui/api/server/openPort', { port: port });
         
         if (msg.success) {
             // 〔中文注释〕: 将提示信息修改为更准确的“指令已发送”，因为任务正在后台运行。
@@ -2132,7 +2132,7 @@ async openPort(port) {
 
          // 【中文注释】: 添加这个新函数
             async loadHistoryFromServer() {
-               const msg = await HttpUtil.get('/panel/api/server/history/load');
+               const msg = await HttpUtil.get('/dui/api/server/history/load');
                   if (msg.success && Array.isArray(msg.obj)) {
                  // 后端返回的是标准对象，我们需要转换成前端需要的格式
                      this.linkHistory = msg.obj.map(item => ({
@@ -2153,7 +2153,7 @@ async openPort(port) {
                 }
 
             // 2. 发送数据到后端进行持久化保存，发送表单格式，而不是 JSON
-             await HttpUtil.postForm('/panel/api/server/history/save', { type: type, link: link });
+             await HttpUtil.postForm('/dui/api/server/history/save', { type: type, link: link });
             },
 
             // 【中文注释】: 以下是新增和修改后的方法，用于处理“一键配置”和“订阅转换”
@@ -2210,8 +2210,8 @@ async openPort(port) {
                      // 【中文注释】: 使用 Promise.all 并行请求后端的两个接口，以获取密钥对和UUID
 	    // 【重要】: 这里调用的都是项目中已经存在的后端接口
                     const [keyPairMsg, uuidMsg] = await Promise.all([
-                        HttpUtil.get('/panel/api/server/getNewX25519Cert'),
-                        HttpUtil.get('/panel/api/server/getNewUUID')
+                        HttpUtil.get('/dui/api/server/getNewX25519Cert'),
+                        HttpUtil.get('/dui/api/server/getNewUUID')
                     ]);
 
                     if (!keyPairMsg.success || !keyPairMsg.obj || !uuidMsg.success || !uuidMsg.obj) {
@@ -2305,7 +2305,7 @@ async openPort(port) {
                         }),
                     };
                     
-                    const msg = await HttpUtil.post('/panel/api/inbounds/add', data);
+                    const msg = await HttpUtil.post('/dui/api/inbounds/add', data);
 
                     if (msg.success) {
                         const link = `vless://${uuid}@${window.location.hostname}:${port}?type=tcp&encryption=none&security=reality&pbk=${publicKey}&fp=chrome&sni=${randomSni}&sid=${linkSid}&spx=%2F&flow=xtls-rprx-vision#${remark}-${remark}`;
@@ -2357,8 +2357,8 @@ async openPort(port) {
             async createVlessTlsEncryptionInbound() {
                 try {
                     const [encMsg, uuidMsg] = await Promise.all([
-                        HttpUtil.get('/panel/api/server/getNewVlessEnc'),
-                        HttpUtil.get('/panel/api/server/getNewUUID')
+                        HttpUtil.get('/dui/api/server/getNewVlessEnc'),
+                        HttpUtil.get('/dui/api/server/getNewUUID')
                     ]);
 
                     // 【修正】: 增加对 API 返回数据的严格检查
@@ -2473,7 +2473,7 @@ async openPort(port) {
                         }),
                     };
                     
-                    const msg = await HttpUtil.post('/panel/api/inbounds/add', data);
+                    const msg = await HttpUtil.post('/dui/api/inbounds/add', data);
 
                     if (msg.success) {
                         // 【重要】: 分享链接格式，添加 encryption 和 flow
@@ -2516,8 +2516,8 @@ async openPort(port) {
                 try {
                     // 【中文注释】: 并行请求 Reality 密钥对和 UUID
                     const [keyPairMsg, uuidMsg] = await Promise.all([
-                        HttpUtil.get('/panel/api/server/getNewX25519Cert'),
-                        HttpUtil.get('/panel/api/server/getNewUUID')
+                        HttpUtil.get('/dui/api/server/getNewX25519Cert'),
+                        HttpUtil.get('/dui/api/server/getNewUUID')
                     ]);
 
                     if (!keyPairMsg.success || !keyPairMsg.obj || !uuidMsg.success || !uuidMsg.obj) {
@@ -2611,7 +2611,7 @@ async openPort(port) {
                     };
                     
                     // 【中文注释】: 发送创建请求
-                    const msg = await HttpUtil.post('/panel/api/inbounds/add', data);
+                    const msg = await HttpUtil.post('/dui/api/inbounds/add', data);
 
                     if (msg.success) {
                         // 【中文注释】: 创建成功后，生成正确的分享链接，注意包含 type=xhttp 和 path 参数
@@ -2796,7 +2796,7 @@ async openPort(port) {
                                     // 1. 先向后端发送安装指令
                                     const installLoading = this.$message.loading('正在向后端发送安装指令...', 0);
                                     try {
-                                        const msg = await HttpUtil.post('/panel/api/server/install/subconverter');
+                                        const msg = await HttpUtil.post('/dui/api/server/install/subconverter');
                                         installLoading(); // 指令发送成功后，关闭这个短暂的加载提示
                                         if (!msg.success) {
                                             this.$error({
@@ -2960,7 +2960,7 @@ async openPort(port) {
                                     const installLoading = this.$message.loading('正在向后端发送安装指令...', 0);
                                     try {
                                         // 【核心】: 这是您需要后端实现的 API 接口
-                                        const msg = await HttpUtil.post('/panel/api/server/install/sshwifty');
+                                        const msg = await HttpUtil.post('/dui/api/server/install/sshwifty');
                                         installLoading(); // 指令发送成功后，关闭这个短暂的加载提示
                                         if (!msg.success) {
                                             this.$error({
@@ -3133,7 +3133,7 @@ async openPort(port) {
                     streamSettings: baseInbound.stream.toString(),
                     sniffing: baseInbound.sniffing.toString(),
                 };
-                await this.submit('/panel/api/inbounds/add', data, inModal);
+                await this.submit('/dui/api/inbounds/add', data, inModal);
             },
             openAddInbound() {
                 inModal.show({
@@ -3188,7 +3188,7 @@ async openPort(port) {
                 }
                 data.sniffing = inbound.sniffing.toString();
 
-                await this.submit('/panel/api/inbounds/add', data, inModal);
+                await this.submit('/dui/api/inbounds/add', data, inModal);
             },
             async updateInbound(inbound, dbInbound) {
                 const data = {
@@ -3216,7 +3216,7 @@ async openPort(port) {
                 }
                 data.sniffing = inbound.sniffing.toString();
 
-                await this.submit(`/panel/api/inbounds/update/${dbInbound.id}`, data, inModal);
+                await this.submit(`/dui/api/inbounds/update/${dbInbound.id}`, data, inModal);
             },
             openAddClient(dbInboundId) {
                 dbInbound = this.dbInbounds.find(row => row.id === dbInboundId);
@@ -3271,14 +3271,14 @@ async openPort(port) {
                     id: dbInboundId,
                     settings: '{"clients": [' + clients.toString() + ']}',
                 };
-                await this.submit(`/panel/api/inbounds/addClient`, data, modal);
+                await this.submit(`/dui/api/inbounds/addClient`, data, modal);
             },
             async updateClient(client, dbInboundId, clientId) {
                 const data = {
                     id: dbInboundId,
                     settings: '{"clients": [' + client.toString() + ']}',
                 };
-                await this.submit(`/panel/api/inbounds/updateClient/${clientId}`, data, clientModal);
+                await this.submit(`/dui/api/inbounds/updateClient/${clientId}`, data, clientModal);
             },
             resetTraffic(dbInboundId) {
                 dbInbound = this.dbInbounds.find(row => row.id === dbInboundId);
@@ -3303,7 +3303,7 @@ async openPort(port) {
                     class: themeSwitcher.currentTheme,
                     okText: '{{ i18n "delete"}}',
                     cancelText: '{{ i18n "cancel"}}',
-                    onOk: () => this.submit('/panel/api/inbounds/del/' + dbInboundId),
+                    onOk: () => this.submit('/dui/api/inbounds/del/' + dbInboundId),
                 });
             },
             delClient(dbInboundId, client,confirmation = true) {
@@ -3316,10 +3316,10 @@ async openPort(port) {
                         class: themeSwitcher.currentTheme,
                         okText: '{{ i18n "delete"}}',
                         cancelText: '{{ i18n "cancel"}}',
-                        onOk: () => this.submit(`/panel/api/inbounds/${dbInboundId}/delClient/${clientId}`),
+                        onOk: () => this.submit(`/dui/api/inbounds/${dbInboundId}/delClient/${clientId}`),
                     });
                 } else {
-                    this.submit(`/panel/api/inbounds/${dbInboundId}/delClient/${clientId}`);
+                    this.submit(`/dui/api/inbounds/${dbInboundId}/delClient/${clientId}`);
                 }
             },
             getSubGroupClients(dbInbounds, currentClient) {
@@ -3398,7 +3398,7 @@ async openPort(port) {
             switchEnable(dbInboundId,state) {
               dbInbound = this.dbInbounds.find(row => row.id === dbInboundId);
               dbInbound.enable = state;
-              this.submit(`/panel/api/inbounds/update/${dbInboundId}`, dbInbound);
+              this.submit(`/dui/api/inbounds/update/${dbInboundId}`, dbInbound);
             },
             async switchEnableClient(dbInboundId, client) {
                 this.loading()
@@ -3430,10 +3430,10 @@ async openPort(port) {
                         class: themeSwitcher.currentTheme,
                         okText: '{{ i18n "reset"}}',
                         cancelText: '{{ i18n "cancel"}}',
-                        onOk: () => this.submit('/panel/api/inbounds/' + dbInboundId + '/resetClientTraffic/' + client.email),
+                        onOk: () => this.submit('/dui/api/inbounds/' + dbInboundId + '/resetClientTraffic/' + client.email),
                     })
                 } else {
-                    this.submit('/panel/api/inbounds/' + dbInboundId + '/resetClientTraffic/' + client.email);
+                    this.submit('/dui/api/inbounds/' + dbInboundId + '/resetClientTraffic/' + client.email);
                 }
             },
             resetAllTraffic() {
@@ -3443,7 +3443,7 @@ async openPort(port) {
                     class: themeSwitcher.currentTheme,
                     okText: '{{ i18n "reset"}}',
                     cancelText: '{{ i18n "cancel"}}',
-                    onOk: () => this.submit('/panel/api/inbounds/resetAllTraffics'),
+                    onOk: () => this.submit('/dui/api/inbounds/resetAllTraffics'),
                 });
             },
             resetAllClientTraffics(dbInboundId) {
@@ -3453,7 +3453,7 @@ async openPort(port) {
                     class: themeSwitcher.currentTheme,
                     okText: '{{ i18n "reset"}}',
                     cancelText: '{{ i18n "cancel"}}',
-                    onOk: () => this.submit('/panel/api/inbounds/resetAllClientTraffics/' + dbInboundId),
+                    onOk: () => this.submit('/dui/api/inbounds/resetAllClientTraffics/' + dbInboundId),
                 })
             },
             delDepletedClients(dbInboundId) {
@@ -3463,7 +3463,7 @@ async openPort(port) {
                     class: themeSwitcher.currentTheme,
                     okText: '{{ i18n "delete"}}',
                     cancelText: '{{ i18n "cancel"}}',
-                    onOk: () => this.submit('/panel/api/inbounds/delDepletedClients/' + dbInboundId),
+                    onOk: () => this.submit('/dui/api/inbounds/delDepletedClients/' + dbInboundId),
                 })
             },
             isExpiry(dbInbound, index) {
@@ -3589,7 +3589,7 @@ async openPort(port) {
                     value: '',
                     okText: '{{ i18n "pages.inbounds.import" }}',
                     confirm: async (dbInboundText) => {
-                        await this.submit('/panel/api/inbounds/import', {data: dbInboundText}, promptModal);
+                        await this.submit('/dui/api/inbounds/import', {data: dbInboundText}, promptModal);
                     },
                 });
             },

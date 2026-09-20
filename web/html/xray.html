@@ -714,13 +714,13 @@
         this.loadingStates.spinning = spinning;
       },
       async getOutboundsTraffic() {
-        const msg = await HttpUtil.get("/panel/xray/getOutboundsTraffic");
+        const msg = await HttpUtil.get("/dui/xray/getOutboundsTraffic");
         if (msg.success) {
           this.outboundsTraffic = msg.obj;
         }
       },
       async getXraySetting() {
-        const msg = await HttpUtil.post("/panel/xray/");
+        const msg = await HttpUtil.post("/dui/xray/");
 
         if (msg.success) {
           if (!this.loadingStates.fetched) {
@@ -738,7 +738,7 @@
       async updateXraySetting() {
         this.loading(true);
         try {
-          const msg = await HttpUtil.post("/panel/xray/update", { xraySetting: this.xraySetting });
+          const msg = await HttpUtil.post("/dui/xray/update", { xraySetting: this.xraySetting });
           if (msg.success) {
             await this.getXraySetting();
             await PromiseUtil.sleep(300);
@@ -750,7 +750,7 @@
       },
       async restartXray() {
         this.loading(true);
-        const msg = await HttpUtil.post("/panel/api/server/restartXrayService");
+        const msg = await HttpUtil.post("/dui/api/server/restartXrayService");
         this.loading(false);
         if (msg.success) {
           await PromiseUtil.sleep(500);
@@ -759,7 +759,7 @@
         this.loading(false);
       },
       async getXrayResult() {
-        const msg = await HttpUtil.get("/panel/xray/getXrayResult");
+        const msg = await HttpUtil.get("/dui/xray/getXrayResult");
         if (msg.success) {
           this.restartResult = msg.obj;
           if (msg.obj.length > 1) Vue.prototype.$message.error(msg.obj);
@@ -767,7 +767,7 @@
       },
       async resetXrayConfigToDefault() {
         this.loading(true);
-        const msg = await HttpUtil.get("/panel/setting/getDefaultJsonConfig");
+        const msg = await HttpUtil.get("/dui/setting/getDefaultJsonConfig");
         this.loading(false);
         if (msg.success) {
           this.templateSettings = JSON.parse(JSON.stringify(msg.obj, null, 2));
@@ -777,7 +777,7 @@
       async loadManagedBlacklist() {
         this.managedBlacklistLoading = true;
         try {
-          const msg = await HttpUtil.post('/panel/xray/blacklist/list');
+          const msg = await HttpUtil.post('/dui/xray/blacklist/list');
           if (msg.success) {
             this.managedBlacklistRows = Array.isArray(msg.obj) ? msg.obj : [];
           } else {
@@ -819,7 +819,7 @@
           onOk: async () => {
             this.managedBlacklistLoading = true;
             try {
-              const msg = await HttpUtil.post('/panel/xray/blacklist/remove', { id: Number(row.id) });
+              const msg = await HttpUtil.post('/dui/xray/blacklist/remove', { id: Number(row.id) });
               if (msg.success) {
                 this.$message.success('黑名单已解除');
                 await this.loadManagedBlacklist();
@@ -850,7 +850,7 @@
           onOk: async () => {
             this.managedBlacklistLoading = true;
             try {
-              const msg = await HttpUtil.post('/panel/xray/blacklist/clear', { kind });
+              const msg = await HttpUtil.post('/dui/xray/blacklist/clear', { kind });
               if (msg.success) {
                 this.$message.success('黑名单已清空');
                 await this.loadManagedBlacklist();
@@ -1160,7 +1160,7 @@
         if (index >= 0) {
           tag = this.outboundData[index].tag ? this.outboundData[index].tag : ""
         }
-        const msg = await HttpUtil.post("/panel/xray/resetOutboundsTraffic", { tag: tag });
+        const msg = await HttpUtil.post("/dui/xray/resetOutboundsTraffic", { tag: tag });
         if (msg.success) {
           await this.refreshOutboundTraffic();
         }

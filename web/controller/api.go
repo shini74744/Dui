@@ -22,7 +22,7 @@ func NewAPIController(g *gin.RouterGroup) *APIController {
 
 func (a *APIController) initRouter(g *gin.RouterGroup) {
 	// Main API group
-	api := g.Group("/panel/api")
+	api := g.Group("/dui/api")
 	api.Use(a.checkLogin)
 
 	// Inbounds API

@@ -607,7 +607,7 @@
         const msg = await HttpUtil.post('/login', this.user);
 
         if (msg.success) {
-          location.href = basePath + 'panel/';
+          location.href = basePath + 'dui/';
         }
 
         this.loadingStates.spinning = false;

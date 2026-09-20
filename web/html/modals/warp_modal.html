@@ -114,7 +114,7 @@
         },
         async getData() {
             this.loading(true);
-            const msg = await HttpUtil.post('/panel/xray/warp/data');
+            const msg = await HttpUtil.post('/dui/xray/warp/data');
             this.loading(false);
             if (msg.success) {
                 this.warpData = msg.obj.length > 0 ? JSON.parse(msg.obj) : null;
@@ -177,7 +177,7 @@
             async register() {
                 warpModal.loading(true);
                 const keys = Wireguard.generateKeypair();
-                const msg = await HttpUtil.post('/panel/xray/warp/reg', keys);
+                const msg = await HttpUtil.post('/dui/xray/warp/reg', keys);
                 if (msg.success) {
                     const resp = JSON.parse(msg.obj);
                     warpModal.warpData = resp.data;
@@ -188,7 +188,7 @@
             },
             async updateLicense(l) {
                 warpModal.loading(true);
-                const msg = await HttpUtil.post('/panel/xray/warp/license', { license: l });
+                const msg = await HttpUtil.post('/dui/xray/warp/license', { license: l });
                 if (msg.success) {
                     warpModal.warpData = JSON.parse(msg.obj);
                     warpModal.warpConfig = null;
@@ -198,7 +198,7 @@
             },
             async getConfig() {
                 warpModal.loading(true);
-                const msg = await HttpUtil.post('/panel/xray/warp/config');
+                const msg = await HttpUtil.post('/dui/xray/warp/config');
                 warpModal.loading(false);
                 if (msg.success) {
                     warpModal.warpConfig = JSON.parse(msg.obj);
@@ -207,7 +207,7 @@
             },
             async delConfig() {
                 warpModal.loading(true);
-                const msg = await HttpUtil.post('/panel/xray/warp/del');
+                const msg = await HttpUtil.post('/dui/xray/warp/del');
                 warpModal.loading(false);
                 if (msg.success) {
                     warpModal.warpData = null;

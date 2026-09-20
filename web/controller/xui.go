@@ -2,7 +2,7 @@ package controller
 
 import (
 	"x-ui/web/service"
-	
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,7 +13,7 @@ type XUIController struct {
 	serverController      *ServerController
 	settingController     *SettingController
 	xraySettingController *XraySettingController
-	serverService  service.ServerService
+	serverService         service.ServerService
 }
 
 func NewXUIController(g *gin.RouterGroup) *XUIController {
@@ -23,7 +23,7 @@ func NewXUIController(g *gin.RouterGroup) *XUIController {
 }
 
 func (a *XUIController) initRouter(g *gin.RouterGroup) {
-	g = g.Group("/panel")
+	g = g.Group("/dui")
 	g.Use(a.checkLogin)
 
 	g.GET("/", a.index)
