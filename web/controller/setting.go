@@ -113,7 +113,7 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/defaultSettings", a.getDefaultSettings)
 	g.POST("/update", a.updateSetting)
 	g.POST("/updateUser", a.updateUser)
-	g.POST("/restartPanel", a.restartPanel)
+	g.POST("/restartDui", a.restartPanel)
 	g.GET("/getDefaultJsonConfig", a.getDefaultXrayConfig)
 	g.POST("/fail2ban/status", a.getFail2banStatus)
 	g.POST("/fail2ban/apply", a.applyFail2ban)

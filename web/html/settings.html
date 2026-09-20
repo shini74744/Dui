@@ -536,7 +536,7 @@
       async getCertManagerStatus() {
         this.certManagerBusy = true;
         try {
-          const msg = await HttpUtil.post('/panel/setting/certManager/status');
+          const msg = await HttpUtil.post('/dui/setting/certManager/status');
           if (msg.success && msg.obj) {
             this.certManagerStatus = msg.obj;
             const meta = msg.obj.metadata || {};
@@ -554,7 +554,7 @@
       async saveCertManager() {
         this.certManagerBusy = true;
         try {
-          const msg = await HttpUtil.post('/panel/setting/certManager/update', this.certManagerForm);
+          const msg = await HttpUtil.post('/dui/setting/certManager/update', this.certManagerForm);
           if (msg.success) {
             this.$message.success(msg.msg || '证书强制更新设置已保存');
             await this.getCertManagerStatus();
@@ -573,7 +573,7 @@
           onOk: async () => {
             this.certManagerBusy = true;
             try {
-              const msg = await HttpUtil.post('/panel/setting/certManager/renew');
+              const msg = await HttpUtil.post('/dui/setting/certManager/renew');
               if (msg.success) {
                 this.certManagerLastOutput = msg.obj || '';
                 this.$message.success(msg.msg || '证书强制更新完成');
@@ -593,7 +593,7 @@
         return this.telegramNotificationTargets.find(item => Number(item.bindingId) === Number(bindingId)) || null;
       },
       async loadTelegramNotificationTargets() {
-        const msg = await HttpUtil.post('/panel/setting/telegram/notification/targets');
+        const msg = await HttpUtil.post('/dui/setting/telegram/notification/targets');
         if (msg.success) {
           this.telegramNotificationTargets = Array.isArray(msg.obj) ? msg.obj : [];
           if (this.telegramNotificationForm.bindingId &&
@@ -605,7 +605,7 @@
         return false;
       },
       async loadTelegramNotificationHistory() {
-        const msg = await HttpUtil.post('/panel/setting/telegram/notification/history', { limit: 200 });
+        const msg = await HttpUtil.post('/dui/setting/telegram/notification/history', { limit: 200 });
         if (msg.success) {
           this.telegramNotificationHistory = Array.isArray(msg.obj) ? msg.obj : [];
           return true;
@@ -641,7 +641,7 @@
 
         this.telegramNotificationBusy = true;
         try {
-          const msg = await HttpUtil.post('/panel/setting/telegram/notification/send', {
+          const msg = await HttpUtil.post('/dui/setting/telegram/notification/send', {
             bindingId: Number(form.bindingId),
             subject: String(form.subject || '').trim(),
             content: String(form.content || '').trim(),
@@ -746,7 +746,7 @@
         this.loadingStates.spinning = spinning;
       },
       async getAllSetting() {
-        const msg = await HttpUtil.post("/panel/setting/all");
+        const msg = await HttpUtil.post("/dui/setting/all");
 
         if (msg.success) {
           if (!this.loadingStates.fetched) {
@@ -769,7 +769,7 @@
           return;
         }
         this.loading(true);
-        const msg = await HttpUtil.post("/panel/setting/update", this.allSetting);
+        const msg = await HttpUtil.post("/dui/setting/update", this.allSetting);
         this.loading(false);
         if (msg.success) {
           await this.getAllSetting();
@@ -797,7 +797,7 @@
       async getFail2banStatus() {
         this.fail2banBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/fail2ban/status");
+          const msg = await HttpUtil.post("/dui/setting/fail2ban/status");
           if (msg.success && msg.obj) {
             this.fail2banStatus = msg.obj;
             this.syncFail2banForms(msg.obj);
@@ -812,7 +812,7 @@
         const key = target === 'sshd' ? 'sshd' : (target === '3xui-tls' ? 'xuiTls' : 'xuiLogin');
         this.fail2banBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/fail2ban/apply", this.fail2banForms[key]);
+          const msg = await HttpUtil.post("/dui/setting/fail2ban/apply", this.fail2banForms[key]);
           if (msg.success) {
             this.$message.success(msg.msg || '配置已应用');
             await this.getFail2banStatus();
@@ -824,7 +824,7 @@
       async unbanFail2ban(jail, ip) {
         this.fail2banBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/fail2ban/unban", { jail, ip });
+          const msg = await HttpUtil.post("/dui/setting/fail2ban/unban", { jail, ip });
           if (msg.success) {
             this.$message.success('已取消拉黑 ' + ip);
             await this.getFail2banStatus();
@@ -864,7 +864,7 @@
       async syncFail2banScript() {
         this.fail2banBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/fail2ban/syncScript");
+          const msg = await HttpUtil.post("/dui/setting/fail2ban/syncScript");
           if (msg.success) {
             this.$message.success(msg.msg || 'fb5 已同步');
             await this.getFail2banStatus();
@@ -884,7 +884,7 @@
           onOk: async () => {
             this.fail2banBusy = true;
             try {
-              const msg = await HttpUtil.post("/panel/setting/fail2ban/remove", { target });
+              const msg = await HttpUtil.post("/dui/setting/fail2ban/remove", { target });
               if (msg.success) {
                 this.$message.success(msg.msg || '操作完成');
                 await this.getFail2banStatus();
@@ -908,7 +908,7 @@
         }
         const seq = ++this.timeSyncSearchSeq;
         this.timeSyncSearchTimer = setTimeout(async () => {
-          const msg = await HttpUtil.post("/panel/setting/timeSync/resolve", { query });
+          const msg = await HttpUtil.post("/dui/setting/timeSync/resolve", { query });
           if (seq !== this.timeSyncSearchSeq) return;
           if (msg.success && Array.isArray(msg.obj)) {
             this.timeSyncSearchOptions = msg.obj;
@@ -919,7 +919,7 @@
       async getTimeSyncStatus() {
         this.timeSyncBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/timeSync/status");
+          const msg = await HttpUtil.post("/dui/setting/timeSync/status");
           if (msg.success && msg.obj) {
             this.timeSyncStatus = msg.obj;
             if (msg.obj.configuredTimezone) this.timeSyncForm.timezone = msg.obj.configuredTimezone;
@@ -929,14 +929,14 @@
         } finally { this.timeSyncBusy = false; }
       },
       async getTimezones() {
-        const msg = await HttpUtil.post("/panel/setting/timeSync/timezones");
+        const msg = await HttpUtil.post("/dui/setting/timeSync/timezones");
         if (msg.success && Array.isArray(msg.obj)) this.timeSyncSearchOptions = msg.obj;
       },
       async installTimeSync() {
         if (!this.timeSyncForm.timezone) return this.$message.warning('请选择时区');
         this.timeSyncBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/timeSync/install", this.timeSyncForm);
+          const msg = await HttpUtil.post("/dui/setting/timeSync/install", this.timeSyncForm);
           if (msg.success) {
             this.timeSyncLastOutput = msg.obj || '';
             this.$message.success(msg.msg || '时间同步已安装/更新');
@@ -949,7 +949,7 @@
         if (!this.timeSyncForm.timezone) return this.$message.warning('请选择时区');
         this.timeSyncBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/timeSync/timezone", this.timeSyncForm);
+          const msg = await HttpUtil.post("/dui/setting/timeSync/timezone", this.timeSyncForm);
           if (msg.success) {
             this.timeSyncLastOutput = msg.obj || '';
             this.$message.success(msg.msg || '时区已修改');
@@ -960,7 +960,7 @@
       async syncTimeNow() {
         this.timeSyncBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/timeSync/sync");
+          const msg = await HttpUtil.post("/dui/setting/timeSync/sync");
           if (msg.success) {
             this.timeSyncLastOutput = msg.obj || '';
             this.$message.success(msg.msg || '同步完成');
@@ -970,7 +970,7 @@
         } finally { this.timeSyncBusy = false; }
       },
       async getTimeSyncLogs() {
-        const msg = await HttpUtil.post("/panel/setting/timeSync/logs");
+        const msg = await HttpUtil.post("/dui/setting/timeSync/logs");
         if (msg.success && msg.obj) this.timeSyncLogs = msg.obj;
       },
       uninstallTimeSync() {
@@ -981,7 +981,7 @@
           onOk: async () => {
             this.timeSyncBusy = true;
             try {
-              const msg = await HttpUtil.post("/panel/setting/timeSync/uninstall");
+              const msg = await HttpUtil.post("/dui/setting/timeSync/uninstall");
               if (msg.success) {
                 this.$message.success(msg.msg || '已卸载');
                 this.timeSyncLastOutput = '';
@@ -994,7 +994,7 @@
       async getDDNSStatus() {
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/status");
+          const msg = await HttpUtil.post("/dui/setting/ddns/status");
           if (msg.success && msg.obj) {
             this.ddnsStatus = msg.obj;
             this.ddnsInterval = msg.obj.interval || 30;
@@ -1006,7 +1006,7 @@
       async installDDNS() {
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/install");
+          const msg = await HttpUtil.post("/dui/setting/ddns/install");
           if (msg.success) {
             this.ddnsLastOutput = msg.obj || '';
             this.$message.success(msg.msg || 'DDNS 已安装/更新');
@@ -1019,7 +1019,7 @@
         if (!f.zone || !f.name || !f.token) return this.$message.warning('请填写 Zone、完整域名和 API Token');
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/add", f);
+          const msg = await HttpUtil.post("/dui/setting/ddns/add", f);
           if (msg.success) {
             this.ddnsLastOutput = msg.obj || '';
             this.$message.success(msg.msg || '域名已添加');
@@ -1035,7 +1035,7 @@
           onOk: async () => {
             this.ddnsBusy = true;
             try {
-              const msg = await HttpUtil.post("/panel/setting/ddns/delete", { name });
+              const msg = await HttpUtil.post("/dui/setting/ddns/delete", { name });
               if (msg.success) { this.$message.success(msg.msg || '已移除'); await this.getDDNSStatus(); }
             } finally { this.ddnsBusy = false; }
           }
@@ -1044,7 +1044,7 @@
       async setDDNSRecordEnabled(name, enabled) {
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/enabled", { name, enabled });
+          const msg = await HttpUtil.post("/dui/setting/ddns/enabled", { name, enabled });
           if (msg.success) { this.$message.success(enabled ? '已启用' : '已停用'); await this.getDDNSStatus(); }
         } finally { this.ddnsBusy = false; }
       },
@@ -1055,7 +1055,7 @@
         if (!this.ddnsTokenModal.token) return this.$message.warning('请输入新的 Token');
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/token", { name: this.ddnsTokenModal.name, token: this.ddnsTokenModal.token });
+          const msg = await HttpUtil.post("/dui/setting/ddns/token", { name: this.ddnsTokenModal.name, token: this.ddnsTokenModal.token });
           if (msg.success) {
             this.$message.success(msg.msg || 'Token 已更新');
             this.ddnsTokenModal = { visible: false, name: '', token: '' };
@@ -1066,21 +1066,21 @@
       async setDDNSInterval() {
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/interval", { interval: this.ddnsInterval });
+          const msg = await HttpUtil.post("/dui/setting/ddns/interval", { interval: this.ddnsInterval });
           if (msg.success) { this.$message.success(msg.msg || '间隔已修改'); await this.getDDNSStatus(); }
         } finally { this.ddnsBusy = false; }
       },
       async setDDNSSchedule(enabled) {
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/schedule", { enabled });
+          const msg = await HttpUtil.post("/dui/setting/ddns/schedule", { enabled });
           if (msg.success) { this.$message.success(msg.msg || '自动同步状态已修改'); await this.getDDNSStatus(); }
         } finally { this.ddnsBusy = false; }
       },
       async runDDNSNow() {
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/run");
+          const msg = await HttpUtil.post("/dui/setting/ddns/run");
           if (msg.success) {
             this.ddnsLastOutput = msg.obj || '';
             this.$message.success(msg.msg || '手动同步完成');
@@ -1089,13 +1089,13 @@
         } finally { this.ddnsBusy = false; }
       },
       async getDDNSLogs() {
-        const msg = await HttpUtil.post("/panel/setting/ddns/logs");
+        const msg = await HttpUtil.post("/dui/setting/ddns/logs");
         if (msg.success) this.ddnsLogs = msg.obj || '';
       },
       async updateDDNSScript() {
         this.ddnsBusy = true;
         try {
-          const msg = await HttpUtil.post("/panel/setting/ddns/updateScript");
+          const msg = await HttpUtil.post("/dui/setting/ddns/updateScript");
           if (msg.success) {
             this.ddnsLastOutput = msg.obj || '';
             this.$message.success(msg.msg || '在线更新完成');
@@ -1117,7 +1117,7 @@
           onOk: async () => {
             this.ddnsBusy = true;
             try {
-              const msg = await HttpUtil.post("/panel/setting/ddns/uninstall");
+              const msg = await HttpUtil.post("/dui/setting/ddns/uninstall");
               if (msg.success) {
                 this.ddnsLastOutput = msg.obj || '';
                 this.ddnsLogs = '';
@@ -1131,7 +1131,7 @@
       async updateUser() {
         const sendUpdateUserRequest = async () => {
           this.loading(true);
-          const msg = await HttpUtil.post("/panel/setting/updateUser", this.user);
+          const msg = await HttpUtil.post("/dui/setting/updateUser", this.user);
           this.loading(false);
           if (msg.success) {
             this.user = {};
@@ -1167,7 +1167,7 @@
           });
         });
         this.loading(true);
-        const msg = await HttpUtil.post("/panel/setting/restartPanel");
+        const msg = await HttpUtil.post("/dui/setting/restartDui");
         this.loading(false);
         if (msg.success) {
           this.loading(true);
@@ -1176,7 +1176,7 @@
           if (host == this.oldAllSetting.webDomain) host = null;
           if (port == this.oldAllSetting.webPort) port = null;
           const isTLS = webCertFile !== "" || webKeyFile !== "";
-          const url = URLBuilder.buildURL({ host, port, isTLS, base, path: "panel/settings" });
+          const url = URLBuilder.buildURL({ host, port, isTLS, base, path: "dui/settings" });
           window.location.replace(url);
         }
       },

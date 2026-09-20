@@ -265,7 +265,7 @@
                 }
                 this.clientBot.loading = true;
                 try {
-                    const msg = await HttpUtil.post('/panel/api/inbounds/clientBot/get', {
+                    const msg = await HttpUtil.post('/dui/api/inbounds/clientBot/get', {
                         inboundId: this.clientModal.dbInbound.id,
                         email: email,
                     });
@@ -300,7 +300,7 @@
                 }
                 this.clientBot.testing = true;
                 try {
-                    const msg = await HttpUtil.post('/panel/api/inbounds/clientBot/test', payload);
+                    const msg = await HttpUtil.post('/dui/api/inbounds/clientBot/test', payload);
                     if (msg.success) {
                         const username = msg.obj && msg.obj.username ? msg.obj.username : '';
                         this.$message.success('测试成功' + (username ? '：@' + username : ''));
@@ -327,7 +327,7 @@
                 }
                 this.clientBot.saving = true;
                 try {
-                    const msg = await HttpUtil.post('/panel/api/inbounds/clientBot/save', payload);
+                    const msg = await HttpUtil.post('/dui/api/inbounds/clientBot/save', payload);
                     if (msg.success) {
                         this.applyClientBotView(msg.obj);
                         this.clientBot.modalVisible = false;
@@ -349,7 +349,7 @@
                     onOk: async () => {
                         this.clientBot.unbinding = true;
                         try {
-                            const msg = await HttpUtil.post('/panel/api/inbounds/clientBot/unbind', {
+                            const msg = await HttpUtil.post('/dui/api/inbounds/clientBot/unbind', {
                                 inboundId: this.clientModal.dbInbound.id,
                                 email: this.clientModal.originalEmail || (this.client ? this.client.email : ''),
                             });
@@ -367,7 +367,7 @@
                 });
             },
             async getDBClientIps(email) {
-                const msg = await HttpUtil.post(`/panel/api/inbounds/clientIps/${email}`);
+                const msg = await HttpUtil.post(`/dui/api/inbounds/clientIps/${email}`);
                 if (!msg.success) {
                     document.getElementById("clientIPs").value = msg.obj;
                     return;
@@ -385,7 +385,7 @@
             },
             async clearDBClientIps(email) {
                 try {
-                    const msg = await HttpUtil.post(`/panel/api/inbounds/clearClientIps/${email}`);
+                    const msg = await HttpUtil.post(`/dui/api/inbounds/clearClientIps/${email}`);
                     if (!msg.success) {
                         return;
                     }
@@ -402,7 +402,7 @@
                     cancelText: '{{ i18n "cancel"}}',
                     onOk: async () => {
                         iconElement.disabled = true;
-                        const msg = await HttpUtil.postWithModal('/panel/api/inbounds/' + dbInboundId + '/resetClientTraffic/' + email);
+                        const msg = await HttpUtil.postWithModal('/dui/api/inbounds/' + dbInboundId + '/resetClientTraffic/' + email);
                         if (msg.success) {
                             this.clientModal.clientStats.up = 0;
                             this.clientModal.clientStats.down = 0;

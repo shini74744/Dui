@@ -30,6 +30,16 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - 来源 IP 入站黑名单与集中黑名单管理
 - 星空主题、侧边栏动画与移动端适配
 
+## v26.9.24 URL 路由品牌统一
+
+- 面板页面路由前缀从 `/panel/` 全面改为 `/dui/`。
+- 新地址示例：`/dui/`、`/dui/inbounds`、`/dui/settings`、`/dui/xray`。
+- API 同步改为 `/dui/api/...`，设置与 Xray 接口也统一到 `/dui/...`。
+- 登录成功跳转、侧边栏、数据库下载、重启、入站管理等前端请求全部同步修改。
+- 旧 `/panel/...` 不再注册，也不做重定向；访问旧地址会返回 404。
+- 保持自定义 `webBasePath` 兼容，例如 `/abc/dui/inbounds`。
+- 修复原生 `fetch` 表单请求未继承 `webBasePath` 的问题。
+
 ## v26.9.23 升级兼容修复
 
 - 覆盖升级旧面板时，原账号、密码、端口、证书和 `webBasePath` 全部原样保留。
@@ -86,10 +96,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v26.9.23`：
+例如安装 `v26.9.24`：
 
 ```bash
-VERSION=v26.9.23 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v26.9.24 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令

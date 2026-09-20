@@ -12,7 +12,7 @@
             padding: 12px .5rem;
         }
     }
-    
+
     /* 其他您提供的通用样式 */
     .ant-tabs-bar { margin: 0; }
     .ant-list-item { display: block; }
@@ -55,7 +55,7 @@
     .glass-card .ant-card-actions {
         border-top: none !important;
     }
-    
+
     .glass-card:hover {
         transform: translateY(-5px);
         transition: transform 0.3s ease;
@@ -112,16 +112,16 @@
     /* ==================================================================
        ★★★★★  最终对齐方案：实现底部严格对齐  ★★★★★
        ================================================================== */
-   
+
     /* 外层容器：确保内层 Ant-Row 可以被拉伸 (保持不变) */
     .main-content-row {
         display: flex;
-        flex-direction: column; 
+        flex-direction: column;
         flex-grow: 1;
     }
 
     /* 内层容器：包含两列的 Ant-Row，强制其为 flex 布局并拉伸子项 */
-    .main-content-row > .ant-row { 
+    .main-content-row > .ant-row {
         display: flex !important;
         align-items: stretch !important; /* 核心：使所有列（Ant-Col）等高 */
         flex-grow: 1;
@@ -131,12 +131,12 @@
     /* 目标列（Ant-Col）：设置为 flex 布局，以便控制其内部卡片的排列 */
     .main-content-row > .ant-row > .ant-col {
         display: flex;
-        flex-direction: column; 
+        flex-direction: column;
     }
 
     /* 让【右侧】列的最后一个卡片（即 Ant-Col:nth-child(2)）自动伸长，以填补剩余的垂直空间 */
     .main-content-row > .ant-row > .ant-col:nth-child(2) > .glass-card:last-child {
-        flex-grow: 1; 
+        flex-grow: 1;
     }
 
     /* 移除两个主列中，所有卡片或组件的最后一个元素的底部边距，以实现完美对齐 */
@@ -159,7 +159,7 @@
 
     /* === Dui LOGO 标准样式 (无动画) === */
     .dui-logo-text {
-        font-size: 3rem; 
+        font-size: 3rem;
         font-weight: 900;
         margin: 0;
         text-transform: capitalize;
@@ -320,7 +320,7 @@
 
 								<a-col :xs="24" :sm="24" :lg="16">
 									<a-tooltip title="点击切换首页 UI 主题">
-										<a-card hoverable :bordered="true" class="glass-card" 
+										<a-card hoverable :bordered="true" class="glass-card"
 											:style="{ marginBottom: '16px', paddingBottom: '16px', cursor: 'pointer' }"
 											@click="openThemeModal()">
 											<div class="dui-logo-text">DUI-PRO</div>
@@ -511,7 +511,7 @@
 									</a-card>
 
 									<a-card title='{{ i18n "pages.index.systemLoad" }}' hoverable :bordered="true" class="glass-card" :style="{ marginBottom: '16px' }">
-										<div style="white-space: nowrap; overflow-x: auto;"> 
+										<div style="white-space: nowrap; overflow-x: auto;">
 											<a-tag color="green">
 												<a-tooltip>
 													[[ status.loads[0] ]] | [[ status.loads[1] ]] | [[ status.loads[2] ]]
@@ -813,7 +813,7 @@
 		</a-list>
 	</a-modal>
 </a-layout>
-  
+
 {{template "page/body_scripts" .}}
 {{template "component/aSidebar" .}}
 {{template "component/aThemeSwitch" .}}
@@ -931,7 +931,7 @@
         loading: false,
         show(logs) {
             this.visible = true;
-            this.logs = logs; 
+            this.logs = logs;
             this.formattedLogs = this.logs?.length > 0 ? this.formatLogs(this.logs) : "No Record...";
         },
         formatLogs(logs) {
@@ -1060,13 +1060,13 @@ ${dateTime}
                 sources: [], note: '',
             },
             swapSwappinessMarks: { 0: '0', 10: '10', 30: '30', 60: '60', 100: '100' },
-			
+
 			// ★★★ 新增：主题模态框数据 ★★★
             themeModal: {
                 visible: false,
                 currentTheme: 'default', // 默认主题
             },
-			
+
             loadingTip: '{{ i18n "loading"}}',
             showAlert: false,
             showIp: false,
@@ -1092,7 +1092,7 @@ ${dateTime}
                 this.swapModal.visible = true;
                 this.swapModal.loading = true;
                 try {
-                    const msg = await HttpUtil.get('/panel/api/server/swap/status');
+                    const msg = await HttpUtil.get('/dui/api/server/swap/status');
                     if (msg.success && msg.obj) {
                         const st = msg.obj;
                         this.swapModal.total = st.total || 0;
@@ -1119,7 +1119,7 @@ ${dateTime}
                 }
                 this.swapModal.loading = true;
                 try {
-                    const msg = await HttpUtil.post('/panel/api/server/swap/apply', { totalMB, swappiness });
+                    const msg = await HttpUtil.post('/dui/api/server/swap/apply', { totalMB, swappiness });
                     if (msg.success) {
                         this.$message.success(msg.msg || 'Swap 设置已应用');
                         await this.getStatus();
@@ -1152,7 +1152,7 @@ ${dateTime}
 
             async getStatus() {
                 try {
-                    const msg = await HttpUtil.get('/panel/api/server/status');
+                    const msg = await HttpUtil.get('/dui/api/server/status');
                     if (msg.success) {
                         if (!this.loadingStates.fetched) {
                             this.loadingStates.fetched = true;
@@ -1166,7 +1166,7 @@ ${dateTime}
             },
             async getDailyTrafficRanking() {
                 try {
-                    const msg = await HttpUtil.get('/panel/api/server/dailyTrafficRanking?limit=5');
+                    const msg = await HttpUtil.get('/dui/api/server/dailyTrafficRanking?limit=5');
                     if (msg.success) {
                         this.dailyTrafficRanking = Array.isArray(msg.obj) ? msg.obj : [];
                     }
@@ -1176,7 +1176,7 @@ ${dateTime}
             },
             async getNetworkExitPolicy() {
                 try {
-                    const msg = await HttpUtil.get('/panel/api/server/network/egress');
+                    const msg = await HttpUtil.get('/dui/api/server/network/egress');
                     if (msg.success && msg.obj) {
                         this.networkExitPolicy = msg.obj;
                     }
@@ -1208,7 +1208,7 @@ ${dateTime}
                 if (this.networkPolicyLoading) return;
                 this.networkPolicyLoading = true;
                 try {
-                    const msg = await HttpUtil.post('/panel/api/server/network/egress', { family, action });
+                    const msg = await HttpUtil.post('/dui/api/server/network/egress', { family, action });
                     if (msg.success && msg.obj) {
                         this.networkExitPolicy = msg.obj;
                         const label = family === 'ipv4' ? 'V4' : 'V6';
@@ -1224,7 +1224,7 @@ ${dateTime}
             },
             async openSelectV2rayVersion() {
                 this.loading(true);
-                const msg = await HttpUtil.get('/panel/api/server/getXrayVersion');
+                const msg = await HttpUtil.get('/dui/api/server/getXrayVersion');
                 this.loading(false);
                 if (!msg.success) {
                     return;
@@ -1241,7 +1241,7 @@ ${dateTime}
                     onOk: async () => {
                         versionModal.hide();
                         this.loading(true, '{{ i18n "pages.index.dontRefresh"}}');
-                        await HttpUtil.post(`/panel/api/server/installXray/${version}`);
+                        await HttpUtil.post(`/dui/api/server/installXray/${version}`);
                         this.loading(false);
                     },
                 });
@@ -1259,9 +1259,9 @@ ${dateTime}
                     onOk: async () => {
                         versionModal.hide();
                         this.loading(true, '{{ i18n "pages.index.dontRefresh"}}');
-                        const url = isSingleFile 
-                            ? `/panel/api/server/updateGeofile/${fileName}` 
-                            : `/panel/api/server/updateGeofile`;
+                        const url = isSingleFile
+                            ? `/dui/api/server/updateGeofile/${fileName}`
+                            : `/dui/api/server/updateGeofile`;
                         await HttpUtil.post(url);
                         this.loading(false);
                     },
@@ -1269,7 +1269,7 @@ ${dateTime}
             },
             async stopXrayService() {
                 this.loading(true);
-                const msg = await HttpUtil.post('/panel/api/server/stopXrayService');
+                const msg = await HttpUtil.post('/dui/api/server/stopXrayService');
                 this.loading(false);
                 if (!msg.success) {
                     return;
@@ -1277,7 +1277,7 @@ ${dateTime}
             },
             async restartXrayService() {
                 this.loading(true);
-                const msg = await HttpUtil.post('/panel/api/server/restartXrayService');
+                const msg = await HttpUtil.post('/dui/api/server/restartXrayService');
                 this.loading(false);
                 if (!msg.success) {
                     return;
@@ -1285,7 +1285,7 @@ ${dateTime}
             },
             async openLogs(){
                 logModal.loading = true;
-                const msg = await HttpUtil.post('/panel/api/server/logs/'+logModal.rows,{level: logModal.level, syslog: logModal.syslog});
+                const msg = await HttpUtil.post('/dui/api/server/logs/'+logModal.rows,{level: logModal.level, syslog: logModal.syslog});
                 if (!msg.success) {
                     return;
                 }
@@ -1295,7 +1295,7 @@ ${dateTime}
             },
             async openXrayLogs(){
               xraylogModal.loading = true;
-                const msg = await HttpUtil.post('/panel/api/server/xraylogs/'+xraylogModal.rows,{filter: xraylogModal.filter, showDirect: xraylogModal.showDirect, showBlocked: xraylogModal.showBlocked, showProxy: xraylogModal.showProxy});
+                const msg = await HttpUtil.post('/dui/api/server/xraylogs/'+xraylogModal.rows,{filter: xraylogModal.filter, showDirect: xraylogModal.showDirect, showBlocked: xraylogModal.showBlocked, showProxy: xraylogModal.showProxy});
                 if (!msg.success) {
                     return;
                 }
@@ -1305,7 +1305,7 @@ ${dateTime}
             },
             async openConfig() {
                 this.loading(true);
-                const msg = await HttpUtil.get('/panel/api/server/getConfigJson');
+                const msg = await HttpUtil.get('/dui/api/server/getConfigJson');
                 this.loading(false);
                 if (!msg.success) {
                     return;
@@ -1316,7 +1316,7 @@ ${dateTime}
               backupModal.show();
             },
             exportDatabase() {
-                window.location = basePath.replace(/\/$/, '') + '/panel/api/server/getDb';
+                window.location = basePath.replace(/\/$/, '') + '/dui/api/server/getDb';
             },
             importDatabase() {
                 const fileInput = document.createElement('input');
@@ -1329,7 +1329,7 @@ ${dateTime}
                         formData.append('db', dbFile);
                         backupModal.hide();
                         this.loading(true);
-                        const uploadMsg = await HttpUtil.post('/panel/api/server/importDB', formData, {
+                        const uploadMsg = await HttpUtil.post('/dui/api/server/importDB', formData, {
                             headers: {
                                 'Content-Type': 'multipart/form-data',
                             }
@@ -1339,7 +1339,7 @@ ${dateTime}
                             return;
                         }
                         this.loading(true);
-                        const restartMsg = await HttpUtil.post("/panel/setting/restartPanel");
+                        const restartMsg = await HttpUtil.post("/dui/setting/restartDui");
                         this.loading(false);
                         if (restartMsg.success) {
                             this.loading(true);
@@ -1365,7 +1365,7 @@ ${dateTime}
                 console.error('无法加载保存的主题:', e);
                 this.switchTheme('default'); // 加载失败时使用标准布局
             }
-			
+
             if (window.location.protocol !== "https:") {
                 this.showAlert = true;
             }
@@ -1375,7 +1375,7 @@ ${dateTime}
 
             const loadSupplemental = () => {
                 Promise.allSettled([
-                    HttpUtil.post('/panel/setting/defaultSettings').then(msg => {
+                    HttpUtil.post('/dui/setting/defaultSettings').then(msg => {
                         if (msg.success) this.ipLimitEnable = msg.obj.ipLimitEnable;
                     }),
                     this.getDailyTrafficRanking(),
