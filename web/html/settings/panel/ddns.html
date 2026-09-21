@@ -79,7 +79,7 @@
       </a-col>
       <a-col :xs="24" :md="16">
         <a-space>
-          <a-button type="primary" @click="setDDNSInterval" :disabled="!ddnsStatus.configured" :loading="ddnsBusy">保存检查间隔</a-button>
+          <a-button :type="ddnsIntervalSaved() ? 'default' : 'primary'" @click="setDDNSInterval" :disabled="!ddnsStatus.configured || ddnsIntervalSaved()" :loading="ddnsBusy"><a-icon v-if="ddnsIntervalSaved()" type="check"></a-icon> [[ ddnsIntervalSaved() ? '已保存检查间隔' : '保存检查间隔' ]]</a-button>
           <span class="panel-tool-hint">范围 30–86400 秒；systemd 定时器会按原脚本逻辑刷新，暂停状态保持不变。</span>
         </a-space>
       </a-col>

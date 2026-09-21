@@ -150,7 +150,7 @@
                     </template>
                 </a-setting-list-item>
                 <a-space wrap :style="{ marginTop:'12px' }">
-                    <a-button type="primary" @click="saveCertManager" :loading="certManagerBusy">保存续期设置</a-button>
+                    <a-button :type="certManagerFormSaved() ? 'default' : 'primary'" @click="saveCertManager" :loading="certManagerBusy" :disabled="certManagerFormSaved()"><a-icon v-if="certManagerFormSaved()" type="check"></a-icon> [[ certManagerFormSaved() ? '已保存续期设置' : '保存续期设置' ]]</a-button>
                     <a-button icon="sync" @click="renewCertManagerNow" :loading="certManagerBusy">立即强制更新当前证书</a-button>
                     <a-button icon="reload" @click="getCertManagerStatus" :loading="certManagerBusy">刷新状态</a-button>
                 </a-space>

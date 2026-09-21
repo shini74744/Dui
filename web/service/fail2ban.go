@@ -180,6 +180,44 @@ func parseIntDefault(value string, fallback int) int {
 	return n
 }
 
+func parseFail2banDuration(value string) (time.Duration, bool) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	m := fail2banDurationRe.FindStringSubmatch(value)
+	if len(m) == 0 {
+		return 0, false
+	}
+
+	numberPart := value
+	unit := byte('s')
+	last := value[len(value)-1]
+	if last < '0' || last > '9' {
+		unit = last
+		numberPart = value[:len(value)-1]
+	}
+
+	n, err := strconv.ParseInt(numberPart, 10, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+
+	multiplier := time.Second
+	switch unit {
+	case 's':
+		multiplier = time.Second
+	case 'm':
+		multiplier = time.Minute
+	case 'h':
+		multiplier = time.Hour
+	case 'd':
+		multiplier = 24 * time.Hour
+	case 'w':
+		multiplier = 7 * 24 * time.Hour
+	default:
+		return 0, false
+	}
+	return time.Duration(n) * multiplier, true
+}
+
 func normalizeIPList(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	result := make([]string, 0, len(values))
@@ -222,11 +260,16 @@ func (s *Fail2banService) bannedIPs(jail string) []string {
 	return parseBannedIPsFromStatus(out)
 }
 
-func readRecentFail2banLogs(jail string, limit int) []Fail2banLogEntry {
+func readFail2banLogsFromPaths(jail string, limit int, findTime string, now time.Time, paths []string) []Fail2banLogEntry {
 	if limit <= 0 {
 		limit = 100
 	}
-	paths := []string{"/var/log/fail2ban.log", "/var/log/fail2ban.log.1"}
+
+	var cutoff time.Time
+	if window, ok := parseFail2banDuration(findTime); ok && window > 0 {
+		cutoff = now.Add(-window)
+	}
+
 	entries := make([]Fail2banLogEntry, 0, limit)
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
@@ -243,6 +286,11 @@ func readRecentFail2banLogs(jail string, limit int) []Fail2banLogEntry {
 			if len(m) != 5 || m[2] != jail {
 				continue
 			}
+			if !cutoff.IsZero() {
+				if eventTime, err := time.ParseInLocation("2006-01-02 15:04:05", m[1], time.Local); err == nil && eventTime.Before(cutoff) {
+					continue
+				}
+			}
 			entries = append(entries, Fail2banLogEntry{Time: m[1], Jail: m[2], Event: m[3], IP: m[4], Raw: line})
 		}
 		if len(entries) >= limit {
@@ -250,6 +298,16 @@ func readRecentFail2banLogs(jail string, limit int) []Fail2banLogEntry {
 		}
 	}
 	return entries
+}
+
+func readRecentFail2banLogs(jail string, limit int, findTime string) []Fail2banLogEntry {
+	return readFail2banLogsFromPaths(
+		jail,
+		limit,
+		findTime,
+		time.Now(),
+		[]string{"/var/log/fail2ban.log", "/var/log/fail2ban.log.1"},
+	)
 }
 
 func (s *Fail2banService) jailActive(jail string) bool {
@@ -322,9 +380,9 @@ func (s *Fail2banService) Status() (*Fail2banStatus, error) {
 	status.SSHD.BannedCount = len(status.SSHD.BannedIPs)
 	status.XUITLS.BannedCount = len(status.XUITLS.BannedIPs)
 	status.XUILogin.BannedCount = len(status.XUILogin.BannedIPs)
-	status.SSHD.RecentLogs = readRecentFail2banLogs("sshd", 120)
-	status.XUITLS.RecentLogs = readRecentFail2banLogs("3xui-tls", 120)
-	status.XUILogin.RecentLogs = readRecentFail2banLogs("3xui-login", 120)
+	status.SSHD.RecentLogs = readRecentFail2banLogs("sshd", 120, status.SSHD.FindTime)
+	status.XUITLS.RecentLogs = readRecentFail2banLogs("3xui-tls", 120, status.XUITLS.FindTime)
+	status.XUILogin.RecentLogs = readRecentFail2banLogs("3xui-login", 120, status.XUILogin.FindTime)
 	return status, nil
 }
 

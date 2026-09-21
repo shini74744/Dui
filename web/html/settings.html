@@ -232,6 +232,7 @@
       certManagerBusy: false,
       certManagerStatus: { managed: false, sourceLabel: '', currentCertFile: '', currentKeyFile: '', notBefore: 0, notAfter: 0, daysRemaining: 0, nextForcedRenewAt: 0, timerActive: false, timerEnabled: false, credentialNote: '', metadata: null },
       certManagerForm: { enabled: true, months: 6 },
+      certManagerSavedForm: null,
       certManagerLastOutput: '',
       fail2banBusy: false,
       fail2banStatus: {
@@ -249,6 +250,10 @@
         xuiTls: { target: '3xui-tls', port: 2053, maxretry: 5, findtime: '1d', bantime: '1h', ignoreip: '127.0.0.1/8 ::1' },
         xuiLogin: { target: '3xui-login', port: 2053, maxretry: 3, findtime: '1d', bantime: '-1', ignoreip: '127.0.0.1/8 ::1' },
       },
+      // 保存成功后记录服务端返回的实际配置；只有再次修改时保存按钮才重新高亮。
+      fail2banSavedForms: {},
+      fail2banNow: Date.now(),
+      fail2banClockTimer: null,
       fail2banSearch: { sshd: '', xuiTls: '', xuiLogin: '' },
       fail2banBanColumns: [
         { title: 'IP 地址', dataIndex: 'ip', key: 'ip' },
@@ -278,6 +283,7 @@
       ddnsStatus: { installed: false, configured: false, legacyDetected: false, version: '', interval: 30, init: '', scheduleActive: false, scheduleEnabled: false, records: [], lastRun: null },
       ddnsAddForm: { zone: '', name: '', token: '', createMissing: false },
       ddnsInterval: 30,
+      ddnsSavedInterval: null,
       ddnsLogs: '',
       ddnsLastOutput: '',
       ddnsTokenModal: { visible: false, name: '', token: '' },
@@ -533,6 +539,17 @@
         if (!ts) return '-';
         return moment.unix(Number(ts)).format('YYYY-MM-DD HH:mm:ss');
       },
+      normalizeCertManagerForm(form) {
+        form = form || {};
+        return {
+          enabled: !!form.enabled,
+          months: Math.max(1, Math.min(24, Number(form.months) || 6)),
+        };
+      },
+      certManagerFormSaved() {
+        if (!this.certManagerSavedForm) return false;
+        return JSON.stringify(this.normalizeCertManagerForm(this.certManagerForm)) === JSON.stringify(this.certManagerSavedForm);
+      },
       async getCertManagerStatus() {
         this.certManagerBusy = true;
         try {
@@ -540,10 +557,12 @@
           if (msg.success && msg.obj) {
             this.certManagerStatus = msg.obj;
             const meta = msg.obj.metadata || {};
-            this.certManagerForm = {
+            const nextForm = {
               enabled: meta.forceRenewEnabled !== false,
               months: (meta.forceRenewMonths >= 1 && meta.forceRenewMonths <= 24) ? meta.forceRenewMonths : 6,
             };
+            this.certManagerForm = nextForm;
+            this.certManagerSavedForm = this.normalizeCertManagerForm(nextForm);
             return true;
           }
           return false;
@@ -775,6 +794,33 @@
           await this.getAllSetting();
         }
       },
+      normalizeFail2banForm(form) {
+        form = form || {};
+        return {
+          target: String(form.target || ''),
+          port: Number(form.port || 0),
+          maxretry: Number(form.maxretry || 0),
+          findtime: String(form.findtime || '').trim(),
+          bantime: String(form.bantime || '').trim(),
+          ignoreip: String(form.ignoreip || '').trim().replace(/\s+/g, ' '),
+        };
+      },
+      fail2banFormDirty(key) {
+        const saved = this.fail2banSavedForms[key];
+        if (!saved) return true;
+        return JSON.stringify(this.normalizeFail2banForm(this.fail2banForms[key])) !== JSON.stringify(saved);
+      },
+      fail2banRuleActive(key) {
+        const jail = this.fail2banStatus[key] || {};
+        return !!(jail.configured && jail.active);
+      },
+      fail2banRuleSaved(key) {
+        const jail = this.fail2banStatus[key] || {};
+        return !!jail.configured && !this.fail2banFormDirty(key);
+      },
+      fail2banSaveButtonText(key, label) {
+        return this.fail2banRuleSaved(key) ? '已保存并启用' : ('保存并启用 ' + label);
+      },
       syncFail2banForms(status) {
         if (!status) return;
         const map = [
@@ -784,7 +830,7 @@
         ];
         map.forEach(([key, src]) => {
           if (!src) return;
-          this.fail2banForms[key] = {
+          const next = {
             target: src.name || this.fail2banForms[key].target,
             port: src.port || (status.panelPort || this.fail2banForms[key].port),
             maxretry: src.maxretry || this.fail2banForms[key].maxretry,
@@ -792,6 +838,8 @@
             bantime: src.bantime || this.fail2banForms[key].bantime,
             ignoreip: src.ignoreip || this.fail2banForms[key].ignoreip,
           };
+          this.$set(this.fail2banForms, key, next);
+          this.$set(this.fail2banSavedForms, key, this.normalizeFail2banForm(next));
         });
       },
       async getFail2banStatus() {
@@ -814,6 +862,10 @@
         try {
           const msg = await HttpUtil.post("/dui/setting/fail2ban/apply", this.fail2banForms[key]);
           if (msg.success) {
+            // apply 接口成功表示后端已经完成写入并重启 Fail2ban；立即锁定当前表单状态。
+            this.$set(this.fail2banSavedForms, key, this.normalizeFail2banForm(this.fail2banForms[key]));
+            const jail = Object.assign({}, this.fail2banStatus[key] || {}, { configured: true });
+            this.$set(this.fail2banStatus, key, jail);
             this.$message.success(msg.msg || '配置已应用');
             await this.getFail2banStatus();
           }
@@ -851,10 +903,31 @@
           .filter(ip => !q || String(ip).toLowerCase().includes(q))
           .map(ip => ({ ip }));
       },
+      parseFail2banDurationMs(value) {
+        const text = String(value || '').trim().toLowerCase();
+        const m = text.match(/^(\d+)([smhdw])?$/);
+        if (!m) return 0;
+        const n = Number(m[1]);
+        const unit = m[2] || 's';
+        const scale = { s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 };
+        return Number.isFinite(n) ? n * scale[unit] : 0;
+      },
+      fail2banActiveFindTime(key) {
+        const jail = this.fail2banStatus[key] || {};
+        return String(jail.findtime || (this.fail2banForms[key] || {}).findtime || '');
+      },
       fail2banLogRows(key) {
         const jail = this.fail2banStatus[key] || {};
         const list = Array.isArray(jail.recentLogs) ? jail.recentLogs : [];
-        return list.map((item, index) => ({ ...item, key: key + '-' + index + '-' + (item.time || '') + '-' + (item.ip || '') }));
+        const windowMs = this.parseFail2banDurationMs(this.fail2banActiveFindTime(key));
+        const cutoff = windowMs > 0 ? this.fail2banNow - windowMs : 0;
+        return list
+          .filter(item => {
+            if (!cutoff || !item.time) return true;
+            const timestamp = new Date(String(item.time).replace(' ', 'T')).getTime();
+            return !Number.isFinite(timestamp) || timestamp >= cutoff;
+          })
+          .map((item, index) => ({ ...item, key: key + '-' + index + '-' + (item.time || '') + '-' + (item.ip || '') }));
       },
       fail2banEventColor(event) {
         if (event === 'Ban' || event === 'Restore Ban') return 'red';
@@ -991,6 +1064,10 @@
           }
         });
       },
+      ddnsIntervalSaved() {
+        if (this.ddnsSavedInterval === null || this.ddnsSavedInterval === undefined) return false;
+        return !!this.ddnsStatus.configured && Number(this.ddnsInterval) === Number(this.ddnsSavedInterval);
+      },
       async getDDNSStatus() {
         this.ddnsBusy = true;
         try {
@@ -998,6 +1075,7 @@
           if (msg.success && msg.obj) {
             this.ddnsStatus = msg.obj;
             this.ddnsInterval = msg.obj.interval || 30;
+            this.ddnsSavedInterval = Number(this.ddnsInterval);
             return true;
           }
           return false;
@@ -1420,6 +1498,15 @@
     async mounted() {
       await this.getAllSetting();
       this.scheduleSettingsPreload();
+      this.fail2banClockTimer = setInterval(() => {
+        this.fail2banNow = Date.now();
+      }, 30000);
+    },
+    beforeDestroy() {
+      if (this.fail2banClockTimer) {
+        clearInterval(this.fail2banClockTimer);
+        this.fail2banClockTimer = null;
+      }
     }
   });
 </script>
