@@ -30,6 +30,13 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - 来源 IP 入站黑名单与集中黑名单管理
 - 星空主题、侧边栏动画与移动端适配
 
+## v26.9.25 防爆破与保存状态修复
+
+- SSH、TLS 异常扫描、登录失败三个 Fail2ban 规则保存成功后按钮会变灰禁用，参数变化后才重新允许保存。
+- 最近爆破日志按每个规则自己的 `findtime` 窗口自动过滤。
+- 证书续期设置与 DDNS 检查间隔的保存按钮采用相同的已保存状态提示。
+- 新增 Fail2ban 检测周期与日志过滤回归测试。
+
 ## v26.9.24 URL 路由品牌统一
 
 - 面板页面路由前缀从 `/panel/` 全面改为 `/dui/`。
@@ -96,10 +103,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v26.9.24`：
+例如安装 `v26.9.25`：
 
 ```bash
-VERSION=v26.9.24 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v26.9.25 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令
