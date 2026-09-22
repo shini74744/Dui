@@ -1,0 +1,330 @@
+{{define "settings/xray/kernel"}}
+<a-space direction="vertical" :style="{ width:'100%' }" size="middle">
+  <a-card title="第一部分：Xray 专用" :bordered="false" :loading="xrayPolicyBusy || xraySocketBusy">
+    <a-alert
+      type="success"
+      show-icon
+      :style="{ marginBottom:'14px' }"
+      message="Xray 专用设置不会修改 Linux 全局 sysctl"
+      description="连接生命周期写入 Xray policy；Socket 设置只注入 Xray 自己的 sockopt。保存时会校验并重载 Xray，启动失败自动回滚。">
+    </a-alert>
+
+    <a-divider orientation="left">推荐设置 · 连接生命周期</a-divider>
+
+    <a-setting-list-item paddings="small">
+      <template #title>握手超时 handshake</template>
+      <template #description>1–120 秒。Xray 建立新连接时，握手阶段超过该时间会中断。数值过小可能导致高延迟网络连接失败。</template>
+      <template #control>
+        <a-input-number v-model="xrayPolicyForm.handshake" :min="1" :max="120" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>空闲连接超时 connIdle</template>
+      <template #description>30–86400 秒。Xray 连接在此时间内没有任何上/下行数据时主动关闭。可减少长期无效连接，但过低会影响需要长时间保持空闲的连接。</template>
+      <template #control>
+        <a-input-number v-model="xrayPolicyForm.connIdle" :min="30" :max="86400" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+    <a-setting-list-item paddings="small">
+      <template #title>下行关闭后等待 uplinkOnly</template>
+      <template #description>0–600 秒。远端/服务器侧下行关闭后，Xray 继续等待上行的时间。HTTP 场景可设为 0 以加快连接关闭。</template>
+      <template #control>
+        <a-input-number v-model="xrayPolicyForm.uplinkOnly" :min="0" :max="600" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>上行关闭后等待 downlinkOnly</template>
+      <template #description>0–600 秒。客户端上行关闭后，Xray 继续等待下行的时间。HTTP 场景可设为 0 以加快连接关闭。</template>
+      <template #control>
+        <a-input-number v-model="xrayPolicyForm.downlinkOnly" :min="0" :max="600" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
+    <a-alert
+      type="info"
+      show-icon
+      :style="{ margin:'12px 0' }"
+      message="兼容现有独立限速"
+      description="handshake / connIdle 会同步到 DUI 动态生成的用户 level；uplinkOnly / downlinkOnly 对默认 level 0 生效，独立限速用户的现有 level 行为保持不变，避免破坏已有功能。">
+    </a-alert>
+
+    <a-button
+      :type="xrayPolicySaved() ? 'default' : 'primary'"
+      :disabled="xrayPolicyBusy || xrayPolicySaved()"
+      :loading="xrayPolicyBusy"
+      @click="applyXrayConnectionPolicy">
+      <a-icon v-if="xrayPolicySaved()" type="check"></a-icon>
+      [[ xrayPolicySaved() ? '连接生命周期已保存' : '保存连接生命周期并重载 Xray' ]]
+    </a-button>
+
+    <a-divider orientation="left">推荐设置 · Xray TCP Socket</a-divider>
+    <a-alert
+      type="info"
+      show-icon
+      :style="{ marginBottom:'14px' }"
+      message="只作用于 Xray 创建的 Socket，不修改系统全局 sysctl"
+      description="数值 0 / 选择“继承”表示保留各入站、出站原本设置。DUI 只在生成 Xray 运行配置时注入这些参数，不改数据库里的单个入站配置。">
+    </a-alert>
+
+    <a-setting-list-item paddings="small">
+      <template #title>启用 Xray Socket 策略</template>
+      <template #description>关闭时完全不注入下面的 Socket 参数，Xray 使用原有配置与系统默认值。</template>
+      <template #control><a-switch v-model="xraySocketForm.enabled"></a-switch></template>
+    </a-setting-list-item>
+    <a-setting-list-item paddings="small">
+      <template #title>应用范围</template>
+      <template #description>可同时作用于 Xray 入站监听 Socket 和出站连接 Socket；API/blackhole 等内部连接自动跳过。</template>
+      <template #control>
+        <a-space>
+          <a-checkbox v-model="xraySocketForm.applyInbound" :disabled="!xraySocketForm.enabled">入站</a-checkbox>
+          <a-checkbox v-model="xraySocketForm.applyOutbound" :disabled="!xraySocketForm.enabled">出站</a-checkbox>
+        </a-space>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>KeepAlive 空闲时间</template>
+      <template #description>tcpKeepAliveIdle，单位秒；0=继承。只给 Xray Socket 设置 KeepAlive 空闲时间，不改 net.ipv4.tcp_keepalive_time。</template>
+      <template #control><a-input-number v-model="xraySocketForm.tcpKeepAliveIdle" :min="0" :max="86400" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}"></a-input-number></template>
+    </a-setting-list-item>
+    <a-setting-list-item paddings="small">
+      <template #title>KeepAlive 探测间隔</template>
+      <template #description>tcpKeepAliveInterval，单位秒；0=继承。控制 Xray Socket 的 KeepAlive 探测间隔。</template>
+      <template #control><a-input-number v-model="xraySocketForm.tcpKeepAliveInterval" :min="0" :max="3600" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}"></a-input-number></template>
+    </a-setting-list-item>
+    <a-setting-list-item paddings="small">
+      <template #title>TCP User Timeout</template>
+      <template #description>tcpUserTimeout，单位毫秒；0=继承。已发送数据长时间未被确认时，Xray Socket 最长等待多久；过低会让弱网连接提前断开。</template>
+      <template #control><a-input-number v-model="xraySocketForm.tcpUserTimeout" :min="0" :max="3600000" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}"></a-input-number></template>
+    </a-setting-list-item>
+    <a-divider orientation="left">性能设置</a-divider>
+    <a-alert
+      type="warning"
+      show-icon
+      :style="{ marginBottom:'12px' }"
+      message="性能设置不是连接回收参数"
+      description="TCP Fast Open 和拥塞算法主要影响建连/吞吐表现；系统能力不满足时不会产生预期效果，DUI 不会自动修改母鸡内核开关。">
+    </a-alert>
+
+    <a-setting-list-item paddings="small">
+      <template #title>TCP Fast Open</template>
+      <template #description>只给 Xray Socket 设置 TFO。系统当前 tcp_fastopen 值：[[ xraySocketStatus.tcpFastOpenKernel ]]；DUI 不会替你打开系统级 TFO。</template>
+      <template #control>
+        <a-select v-model="xraySocketForm.tcpFastOpenMode" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}">
+          <a-select-option value="inherit">继承原设置</a-select-option>
+          <a-select-option value="on">开启</a-select-option>
+          <a-select-option value="off">关闭</a-select-option>
+        </a-select>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>拥塞控制算法</template>
+      <template #description>只对 Xray Socket 指定算法，不修改系统默认拥塞算法；只能选择当前内核已提供的算法。</template>
+      <template #control>
+        <a-select v-model="xraySocketForm.tcpCongestion" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}">
+          <a-select-option value="">继承系统/原设置</a-select-option>
+          <a-select-option v-for="name in xraySocketStatus.availableCongestion" :key="name" :value="name">[[ name ]]</a-select-option>
+        </a-select>
+      </template>
+    </a-setting-list-item>
+
+    <a-collapse :style="{ margin:'12px 0' }">
+      <a-collapse-panel key="socket-advanced" header="高级设置（特殊场景）">
+        <a-alert type="warning" show-icon :style="{ marginBottom:'12px' }"
+          message="普通场景建议保持默认"
+          description="MSS、Window Clamp、MPTCP、网卡绑定、Mark、IPv6 Only 都属于特定网络架构/故障排查参数，错误设置可能导致连接失败。">
+        </a-alert>
+
+        <a-setting-list-item paddings="small">
+          <template #title>TCP MSS</template>
+          <template #description>tcpMaxSeg，单位字节；0=继承。限制 Xray Socket 的 TCP 最大报文段，通常无需修改，只有 MTU/隧道特殊场景才调整。</template>
+          <template #control><a-input-number v-model="xraySocketForm.tcpMaxSeg" :min="0" :max="65535" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}"></a-input-number></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+          <template #title>TCP Window Clamp</template>
+          <template #description>tcpWindowClamp，单位字节；0=继承。限制 Xray Socket TCP 接收窗口上限，普通场景建议保持 0。</template>
+          <template #control><a-input-number v-model="xraySocketForm.tcpWindowClamp" :min="0" :max="16777216" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}"></a-input-number></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+          <template #title>Multipath TCP</template>
+          <template #description>只作用于 Xray Socket。当前系统 MPTCP：[[ xraySocketStatus.mptcpAvailable ? '可用' : '未启用/不可用' ]]；DUI 不修改系统 MPTCP 开关。</template>
+          <template #control>
+            <a-select v-model="xraySocketForm.tcpMptcpMode" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}">
+              <a-select-option value="inherit">继承原设置</a-select-option>
+              <a-select-option value="on" :disabled="!xraySocketStatus.mptcpAvailable">开启</a-select-option>
+              <a-select-option value="off">关闭</a-select-option>
+            </a-select>
+          </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+          <template #title>绑定网卡</template>
+          <template #description>interface；空=继承。当前 Linux Xray Core 只对出站 Socket 执行 BindToDevice；设置错误可能导致 Xray 无法联网。</template>
+          <template #control>
+            <a-select v-model="xraySocketForm.interface" show-search allow-clear :disabled="!xraySocketForm.enabled" :style="{width:'100%'}">
+              <a-select-option value="">不指定</a-select-option>
+              <a-select-option v-for="name in xraySocketStatus.interfaces" :key="name" :value="name">[[ name ]]</a-select-option>
+            </a-select>
+          </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+          <template #title>Socket Mark</template>
+          <template #description>mark；0=继承。仅用于高级策略路由/防火墙场景，没有配套 ip rule/nftables 时不要修改。</template>
+          <template #control><a-input-number v-model="xraySocketForm.mark" :min="0" :max="2147483647" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}"></a-input-number></template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+          <template #title>IPv6 Only</template>
+          <template #description>v6only；当前 Linux Xray Core 只对入站监听 Socket 生效，控制 IPv6 Socket 是否只接收 IPv6。普通双栈场景建议继承。</template>
+          <template #control>
+            <a-select v-model="xraySocketForm.v6OnlyMode" :disabled="!xraySocketForm.enabled" :style="{width:'100%'}">
+              <a-select-option value="inherit">继承原设置</a-select-option>
+              <a-select-option value="on">开启</a-select-option>
+              <a-select-option value="off">关闭</a-select-option>
+            </a-select>
+          </template>
+        </a-setting-list-item>
+      </a-collapse-panel>
+    </a-collapse>
+
+    <a-button
+      :type="xraySocketSaved() ? 'default' : 'primary'"
+      :disabled="xraySocketBusy || xraySocketSaved() || (xraySocketForm.enabled && !xraySocketForm.applyInbound && !xraySocketForm.applyOutbound)"
+      :loading="xraySocketBusy"
+      @click="applyXraySocketPolicy">
+      <a-icon v-if="xraySocketSaved()" type="check"></a-icon>
+      [[ xraySocketSaved() ? 'Xray Socket 设置已保存' : '保存 Socket 设置并重载 Xray' ]]
+    </a-button>
+  </a-card>
+  <a-card title="第二部分：系统内核状态" :bordered="false" :loading="kernelBusy">
+    <a-alert
+      type="warning"
+      show-icon
+      :style="{ marginBottom:'14px' }"
+      message="默认只读；修改会影响整台服务器"
+      description="以下是 Linux 系统级 sysctl。它们会影响 Xray、DUI、SSH、Nginx、Docker 宿主网络及其他程序。CLOSE-WAIT 主要由应用是否及时 close() 决定，tcp_fin_timeout 不是 CLOSE-WAIT 清理开关。">
+    </a-alert>
+
+    <a-space wrap :style="{ marginBottom:'14px' }">
+      <a-tag :color="kernelStatus.isRoot ? 'green' : 'red'">
+        [[ kernelStatus.isRoot ? '具备内核读取/修改权限' : '无 root 修改权限' ]]
+      </a-tag>
+      <a-tag :color="kernelStatus.originalBackup ? 'blue' : 'default'">
+        [[ kernelStatus.originalBackup ? '最初备份已固定保存' : '尚未生成最初备份' ]]
+      </a-tag>
+      <a-tag v-if="kernelStatus.originalBackup" :color="kernelStatus.atOriginal ? 'green' : 'orange'">
+        [[ kernelStatus.atOriginal ? '当前就是最初状态' : '当前已偏离最初状态' ]]
+      </a-tag>
+      <a-tag v-if="kernelStatus.persistent" color="green">DUI 持久化值与运行值一致</a-tag>
+      <a-button icon="reload" @click="loadKernelTuning" :loading="kernelBusy">重新读取实际值</a-button>
+    </a-space>
+
+    <a-alert
+      v-if="kernelStatus.originalBackup"
+      type="info"
+      show-icon
+      :style="{ marginBottom:'12px' }"
+      :message="'最初备份时间：' + kernelBackupTime()"
+      description="这份备份只在第一次修改系统内核前创建，后续无论修改多少次都不会覆盖；“还原最初状态”始终以这份备份为目标。">
+    </a-alert>
+
+    <a-alert v-if="kernelStatus.warning" type="error" show-icon :style="{ marginBottom:'12px' }" :message="kernelStatus.warning"></a-alert>
+    <a-setting-list-item paddings="small">
+      <template #title>TCP Keepalive 空闲时间</template>
+      <template #description>net.ipv4.tcp_keepalive_time（30–86400 秒）。启用 Keepalive 的 TCP 连接空闲多久后开始探测。</template>
+      <template #control>
+        <a-input-number v-model="kernelForm.tcpKeepaliveTime" :min="30" :max="86400" :disabled="!kernelEditMode || !kernelFieldSupported('tcpKeepaliveTime')" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>Keepalive 探测间隔</template>
+      <template #description>net.ipv4.tcp_keepalive_intvl（5–3600 秒）。越小越快判断死连接，但整机探测频率更高。</template>
+      <template #control>
+        <a-input-number v-model="kernelForm.tcpKeepaliveIntvl" :min="5" :max="3600" :disabled="!kernelEditMode || !kernelFieldSupported('tcpKeepaliveIntvl')" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>Keepalive 探测次数</template>
+      <template #description>net.ipv4.tcp_keepalive_probes（1–30 次）。连续探测失败多少次后判定连接失效。</template>
+      <template #control>
+        <a-input-number v-model="kernelForm.tcpKeepaliveProbes" :min="1" :max="30" :disabled="!kernelEditMode || !kernelFieldSupported('tcpKeepaliveProbes')" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>FIN-WAIT-2 超时</template>
+      <template #description>net.ipv4.tcp_fin_timeout（5–300 秒）。主要影响孤立 FIN-WAIT-2，不直接清理 CLOSE-WAIT。</template>
+      <template #control>
+        <a-input-number v-model="kernelForm.tcpFinTimeout" :min="5" :max="300" :disabled="!kernelEditMode || !kernelFieldSupported('tcpFinTimeout')" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+    <a-setting-list-item paddings="small">
+      <template #title>SYN 等待队列</template>
+      <template #description>net.ipv4.tcp_max_syn_backlog（128–1048576）。未完成三次握手的连接队列上限；过大增加内存占用。</template>
+      <template #control>
+        <a-input-number v-model="kernelForm.tcpMaxSynBacklog" :min="128" :max="1048576" :disabled="!kernelEditMode || !kernelFieldSupported('tcpMaxSynBacklog')" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>监听连接队列上限</template>
+      <template #description>net.core.somaxconn（128–1048576）。应用 listen backlog 的系统上限，属于整机级限制。</template>
+      <template #control>
+        <a-input-number v-model="kernelForm.somaxconn" :min="128" :max="1048576" :disabled="!kernelEditMode || !kernelFieldSupported('somaxconn')" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
+    <a-setting-list-item paddings="small">
+      <template #title>网卡接收积压队列</template>
+      <template #description>net.core.netdev_max_backlog（128–1048576）。CPU 来不及处理数据包时的系统级暂存队列；过大可能增加排队延迟和内存占用。</template>
+      <template #control>
+        <a-input-number v-model="kernelForm.netdevMaxBacklog" :min="128" :max="1048576" :disabled="!kernelEditMode || !kernelFieldSupported('netdevMaxBacklog')" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+    <a-collapse v-if="kernelStatus.originalBackup && kernelStatus.originalValues" :style="{ margin:'12px 0' }">
+      <a-collapse-panel key="original" header="查看第一次修改前的最初备份值">
+        <div>tcp_keepalive_time：[[ kernelStatus.originalValues.tcpKeepaliveTime ]]</div>
+        <div>tcp_keepalive_intvl：[[ kernelStatus.originalValues.tcpKeepaliveIntvl ]]</div>
+        <div>tcp_keepalive_probes：[[ kernelStatus.originalValues.tcpKeepaliveProbes ]]</div>
+        <div>tcp_fin_timeout：[[ kernelStatus.originalValues.tcpFinTimeout ]]</div>
+        <div>tcp_max_syn_backlog：[[ kernelStatus.originalValues.tcpMaxSynBacklog ]]</div>
+        <div>somaxconn：[[ kernelStatus.originalValues.somaxconn ]]</div>
+        <div>netdev_max_backlog：[[ kernelStatus.originalValues.netdevMaxBacklog ]]</div>
+      </a-collapse-panel>
+    </a-collapse>
+
+    <a-divider></a-divider>
+    <a-space wrap>
+      <a-button
+        v-if="!kernelEditMode"
+        type="danger"
+        ghost
+        :disabled="kernelBusy || !kernelStatus.isRoot"
+        @click="beginKernelEdit">
+        修改系统内核（高风险）
+      </a-button>
+      <a-button
+        v-if="kernelEditMode"
+        type="danger"
+        :disabled="kernelBusy || kernelFormSaved()"
+        :loading="kernelBusy"
+        @click="confirmApplyKernelTuning">
+        保存系统内核设置
+      </a-button>
+      <a-button v-if="kernelEditMode" :disabled="kernelBusy" @click="cancelKernelEdit">取消修改</a-button>
+      <a-button
+        v-if="kernelStatus.originalBackup"
+        type="danger"
+        ghost
+        :disabled="kernelBusy || kernelStatus.atOriginal"
+        @click="restoreKernelOriginal">
+        还原最初内核状态
+      </a-button>
+      <span :style="{ opacity:.72 }">DUI 持久化文件：[[ kernelStatus.configPath || '/etc/sysctl.d/99-dui-network.conf' ]]</span>
+    </a-space>
+  </a-card>
+</a-space>
+{{end}}

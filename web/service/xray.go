@@ -166,14 +166,16 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		// 〔中文注释〕: 如果模板中不存在，则创建一个全新的 map。
 		level0 = make(map[string]interface{})
 	}
-	// 〔中文注释〕: 无论 level 0 是否存在，都为其补充或覆盖以下关键参数。
-	// handshake 和 connIdle 是激活 Xray 连接统计的前提，
-	// uplinkOnly 和 downlinkOnly 设置为 0 代表不限速，这是 level 0 用户的默认行为。
-	// statsUserUplink 和 statsUserDownlink 确保用户的流量能够被统计。
-	level0["handshake"] = 4
-	level0["connIdle"] = 300
-	level0["uplinkOnly"] = 0
-	level0["downlinkOnly"] = 0
+	// 保留模板中由 DUI“Xray 专用连接设置”写入的 level 0 超时参数。
+	// 仅当旧模板缺少字段时才补默认值，避免运行时再次把用户设置硬覆盖。
+	baseHandshake := xrayPolicyInt(level0, "handshake", 4)
+	baseConnIdle := xrayPolicyInt(level0, "connIdle", 300)
+	baseUplinkOnly := xrayPolicyInt(level0, "uplinkOnly", 0)
+	baseDownlinkOnly := xrayPolicyInt(level0, "downlinkOnly", 0)
+	level0["handshake"] = baseHandshake
+	level0["connIdle"] = baseConnIdle
+	level0["uplinkOnly"] = baseUplinkOnly
+	level0["downlinkOnly"] = baseDownlinkOnly
 	level0["statsUserUplink"] = true
 	level0["statsUserDownlink"] = true
 	// 〔新增〕: 增加此关键选项以启用 Xray-core 的在线 IP 统计功能。
@@ -190,8 +192,8 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		policyLevels[strconv.Itoa(speed)] = map[string]interface{}{
 			"downlinkOnly":      speed,
 			"uplinkOnly":        speed,
-			"handshake":         4,
-			"connIdle":          300,
+			"handshake":         baseHandshake,
+			"connIdle":          baseConnIdle,
 			"statsUserUplink":   true,
 			"statsUserDownlink": true,
 			"statsUserOnline":   true,
@@ -403,6 +405,9 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 	}
 
 	if err := applyNetworkExitPolicyToXrayConfig(xrayConfig); err != nil {
+		return nil, err
+	}
+	if err := applyXraySocketPolicy(xrayConfig); err != nil {
 		return nil, err
 	}
 	return xrayConfig, nil
