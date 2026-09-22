@@ -1,5 +1,30 @@
 # Changelog
 
+## v26.9.26 - 2026-09-22
+
+### Xray 连接与 Socket 设置
+
+- Xray 设置新增“内核设置”页签，并拆分为“Xray 专用”和“系统内核状态”两部分。
+- Xray 专用连接生命周期支持 `handshake`、`connIdle`、`uplinkOnly`、`downlinkOnly`，仅写入 Xray policy，不修改 Linux 全局 sysctl。
+- 新增 Xray Socket 策略，可按入站、出站或两者注入 KeepAlive、TCP User Timeout、TCP Fast Open、拥塞算法等参数。
+- 高级 Socket 支持 TCP MSS、Window Clamp、MPTCP、出站网卡绑定、Socket Mark 和入站 IPv6 Only。
+- Socket 策略只作用于 Xray 最终运行配置，不改各入站/出站数据库原始配置；关闭策略后会恢复原配置行为。
+- 自动检测当前系统可用拥塞算法、网卡、TCP Fast Open 状态和 MPTCP 能力。
+
+### 系统内核状态与安全回滚
+
+- 系统级 sysctl 默认只读，只有用户主动进入高风险修改并二次确认后才允许写入。
+- 第一次修改系统内核前固定保存最初状态到 `/var/lib/dui/kernel-tuning-original.json`，后续修改永不覆盖该备份。
+- 最初备份同时记录相关 sysctl 实际值、原持久化文件是否存在及其完整内容。
+- 支持“一键还原最初内核状态”，恢复第一次修改前的运行时参数和持久化文件状态。
+- 内核修改和还原均执行逐项回读校验；失败时自动回滚，避免部分生效或假成功。
+- 容器或非 root 环境无法修改时明确报错，不伪装成功。
+
+### 验证
+
+- 新增 Xray policy、Socket 注入方向、系统内核首次备份、多次修改不覆盖、原配置恢复和权限校验回归测试。
+- 已验证 Xray Socket 参数可实际注入运行配置，Linux 全局 sysctl 在 Xray 专用设置前后保持不变。
+
 ## v26.9.25 - 2026-09-21
 
 ### 防爆破与保存状态修复

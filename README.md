@@ -30,6 +30,15 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - 来源 IP 入站黑名单与集中黑名单管理
 - 星空主题、侧边栏动画与移动端适配
 
+## v26.9.26 Xray 连接与内核状态管理
+
+- 新增 Xray 专用连接生命周期设置：`handshake`、`connIdle`、`uplinkOnly`、`downlinkOnly`。
+- 新增 Xray Socket 策略：KeepAlive、TCP User Timeout、TCP Fast Open、拥塞算法、MSS、Window Clamp、MPTCP、网卡绑定、Mark、IPv6 Only。
+- Xray 专用设置只作用于 Xray，不修改 Linux 全局 sysctl。
+- 系统内核参数默认只读；用户主动修改时需要高风险提示与二次确认。
+- 第一次系统内核修改前永久保存最初快照，后续无论修改多少次都可一键还原到第一次修改前的状态。
+- 系统内核修改和还原均执行实际回读校验与失败回滚。
+
 ## v26.9.25 防爆破与保存状态修复
 
 - SSH、TLS 异常扫描、登录失败三个 Fail2ban 规则保存成功后按钮会变灰禁用，参数变化后才重新允许保存。
@@ -103,10 +112,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v26.9.25`：
+例如安装 `v26.9.26`：
 
 ```bash
-VERSION=v26.9.25 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v26.9.26 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令

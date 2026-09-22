@@ -298,6 +298,13 @@
                   </template>
                   {{ template "settings/xray/advanced" . }}
                 </a-tab-pane>
+                <a-tab-pane key="tpl-kernel" :style="{ paddingTop: '20px' }" force-render="true">
+                  <template #tab>
+                    <a-icon type="control"></a-icon>
+                    <span>内核设置</span>
+                  </template>
+                  {{ template "settings/xray/kernel" . }}
+                </a-tab-pane>
               </a-tabs>
             </a-col>
           </a-row>
@@ -579,6 +586,37 @@
       managedBlacklistSearch: '',
       managedBlacklistKind: 'all',
       managedBlacklistScope: 'all',
+      xrayPolicyBusy: false,
+      xrayPolicyLoaded: false,
+      xrayPolicyForm: { handshake: 4, connIdle: 300, uplinkOnly: 0, downlinkOnly: 0 },
+      xrayPolicySavedForm: null,
+      xraySocketBusy: false,
+      xraySocketLoaded: false,
+      xraySocketStatus: { availableCongestion: [], interfaces: [], tcpFastOpenKernel: 0, mptcpAvailable: false, path: '' },
+      xraySocketForm: {
+        enabled: false, applyInbound: true, applyOutbound: true,
+        tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 0,
+        tcpFastOpenMode: 'inherit', tcpMaxSeg: 0, tcpWindowClamp: 0, tcpCongestion: '',
+        tcpMptcpMode: 'inherit', interface: '', mark: 0, v6OnlyMode: 'inherit',
+      },
+      xraySocketSavedForm: null,
+      kernelBusy: false,
+      kernelLoaded: false,
+      kernelEditMode: false,
+      kernelStatus: {
+        supported: {}, configured: false, persistent: false, isRoot: false, configPath: '', warning: '',
+        originalBackup: false, originalBackupAt: 0, originalValues: null, atOriginal: false
+      },
+      kernelForm: {
+        tcpKeepaliveTime: 0,
+        tcpKeepaliveIntvl: 0,
+        tcpKeepaliveProbes: 0,
+        tcpFinTimeout: 0,
+        tcpMaxSynBacklog: 0,
+        somaxconn: 0,
+        netdevMaxBacklog: 0,
+      },
+      kernelSavedForm: null,
       managedBlacklistColumns: [
         { title: '类型', key: 'kind', width: 120, scopedSlots: { customRender: 'kind' } },
         { title: '黑名单地址', dataIndex: 'value', key: 'value', width: 260, ellipsis: true },
@@ -865,10 +903,261 @@
           },
         });
       },
+      normalizeXrayPolicy(form) {
+        form = form || {};
+        return {
+          handshake: Number(form.handshake || 0),
+          connIdle: Number(form.connIdle || 0),
+          uplinkOnly: Number(form.uplinkOnly || 0),
+          downlinkOnly: Number(form.downlinkOnly || 0),
+        };
+      },
+      xrayPolicySaved() {
+        if (!this.xrayPolicySavedForm) return false;
+        return JSON.stringify(this.normalizeXrayPolicy(this.xrayPolicyForm)) === JSON.stringify(this.xrayPolicySavedForm);
+      },
+      mergeXrayPolicyText(text, policy) {
+        if (!text) return text;
+        try {
+          const root = JSON.parse(text);
+          if (!root.policy || typeof root.policy !== 'object') root.policy = {};
+          if (!root.policy.levels || typeof root.policy.levels !== 'object') root.policy.levels = {};
+          if (!root.policy.levels['0'] || typeof root.policy.levels['0'] !== 'object') root.policy.levels['0'] = {};
+          const level0 = root.policy.levels['0'];
+          level0.handshake = Number(policy.handshake);
+          level0.connIdle = Number(policy.connIdle);
+          level0.uplinkOnly = Number(policy.uplinkOnly);
+          level0.downlinkOnly = Number(policy.downlinkOnly);
+          level0.statsUserUplink = true;
+          level0.statsUserDownlink = true;
+          level0.statsUserOnline = true;
+          return JSON.stringify(root, null, 2);
+        } catch (e) {
+          return text;
+        }
+      },
+      async loadXrayConnectionPolicy() {
+        this.xrayPolicyBusy = true;
+        try {
+          const msg = await HttpUtil.post('/dui/xray/connection-policy/status');
+          if (msg.success && msg.obj) {
+            const actual = this.normalizeXrayPolicy(msg.obj);
+            this.xrayPolicyForm = actual;
+            this.xrayPolicySavedForm = this.normalizeXrayPolicy(actual);
+            this.xrayPolicyLoaded = true;
+          } else {
+            this.$message.error(msg.msg || '读取 Xray 连接设置失败');
+          }
+        } finally {
+          this.xrayPolicyBusy = false;
+        }
+      },
+      async applyXrayConnectionPolicy() {
+        this.xrayPolicyBusy = true;
+        try {
+          const msg = await HttpUtil.post('/dui/xray/connection-policy/apply', this.normalizeXrayPolicy(this.xrayPolicyForm));
+          if (msg.success && msg.obj) {
+            const actual = this.normalizeXrayPolicy(msg.obj);
+            this.xrayPolicyForm = actual;
+            this.xrayPolicySavedForm = this.normalizeXrayPolicy(actual);
+            this.xrayPolicyLoaded = true;
+            this.xraySetting = this.mergeXrayPolicyText(this.xraySetting, actual);
+            this.oldXraySetting = this.mergeXrayPolicyText(this.oldXraySetting, actual);
+            await this.getXrayResult();
+            this.$message.success('Xray 专用连接策略已保存并重载');
+          } else {
+            this.$message.error(msg.msg || '保存 Xray 连接设置失败');
+          }
+        } finally {
+          this.xrayPolicyBusy = false;
+        }
+      },
+      normalizeXraySocketForm(form) {
+        form = form || {};
+        return {
+          enabled: !!form.enabled,
+          applyInbound: form.applyInbound !== false,
+          applyOutbound: form.applyOutbound !== false,
+          tcpKeepAliveIdle: Number(form.tcpKeepAliveIdle || 0),
+          tcpKeepAliveInterval: Number(form.tcpKeepAliveInterval || 0),
+          tcpUserTimeout: Number(form.tcpUserTimeout || 0),
+          tcpFastOpenMode: String(form.tcpFastOpenMode || 'inherit'),
+          tcpMaxSeg: Number(form.tcpMaxSeg || 0),
+          tcpWindowClamp: Number(form.tcpWindowClamp || 0),
+          tcpCongestion: String(form.tcpCongestion || ''),
+          tcpMptcpMode: String(form.tcpMptcpMode || 'inherit'),
+          interface: String(form.interface || ''),
+          mark: Number(form.mark || 0),
+          v6OnlyMode: String(form.v6OnlyMode || 'inherit'),
+        };
+      },
+      xraySocketSaved() {
+        if (!this.xraySocketSavedForm) return false;
+        return JSON.stringify(this.normalizeXraySocketForm(this.xraySocketForm)) === JSON.stringify(this.xraySocketSavedForm);
+      },
+      async loadXraySocketPolicy() {
+        this.xraySocketBusy = true;
+        try {
+          const msg = await HttpUtil.post('/dui/xray/socket-policy/status');
+          if (msg.success && msg.obj) {
+            this.xraySocketStatus = msg.obj;
+            const actual = this.normalizeXraySocketForm(msg.obj);
+            this.xraySocketForm = actual;
+            this.xraySocketSavedForm = this.normalizeXraySocketForm(actual);
+            this.xraySocketLoaded = true;
+          } else {
+            this.$message.error(msg.msg || '读取 Xray Socket 设置失败');
+          }
+        } finally {
+          this.xraySocketBusy = false;
+        }
+      },
+      async applyXraySocketPolicy() {
+        this.xraySocketBusy = true;
+        try {
+          const msg = await HttpUtil.post('/dui/xray/socket-policy/apply', this.normalizeXraySocketForm(this.xraySocketForm));
+          if (msg.success && msg.obj) {
+            this.xraySocketStatus = msg.obj;
+            const actual = this.normalizeXraySocketForm(msg.obj);
+            this.xraySocketForm = actual;
+            this.xraySocketSavedForm = this.normalizeXraySocketForm(actual);
+            this.xraySocketLoaded = true;
+            await this.getXrayResult();
+            this.$message.success('Xray Socket 设置已保存并重载');
+          } else {
+            this.$message.error(msg.msg || '保存 Xray Socket 设置失败');
+          }
+        } finally {
+          this.xraySocketBusy = false;
+        }
+      },
+      normalizeKernelForm(form) {
+        form = form || {};
+        return {
+          tcpKeepaliveTime: Number(form.tcpKeepaliveTime || 0),
+          tcpKeepaliveIntvl: Number(form.tcpKeepaliveIntvl || 0),
+          tcpKeepaliveProbes: Number(form.tcpKeepaliveProbes || 0),
+          tcpFinTimeout: Number(form.tcpFinTimeout || 0),
+          tcpMaxSynBacklog: Number(form.tcpMaxSynBacklog || 0),
+          somaxconn: Number(form.somaxconn || 0),
+          netdevMaxBacklog: Number(form.netdevMaxBacklog || 0),
+        };
+      },
+      kernelFieldSupported(field) {
+        return !!(this.kernelStatus.supported && this.kernelStatus.supported[field]);
+      },
+      kernelFormSaved() {
+        if (!this.kernelStatus.persistent || !this.kernelSavedForm) return false;
+        return JSON.stringify(this.normalizeKernelForm(this.kernelForm)) === JSON.stringify(this.kernelSavedForm);
+      },
+      kernelBackupTime() {
+        return this.kernelStatus.originalBackupAt ? moment.unix(Number(this.kernelStatus.originalBackupAt)).format('YYYY-MM-DD HH:mm:ss') : '-';
+      },
+      async loadKernelTuning() {
+        this.kernelBusy = true;
+        try {
+          const msg = await HttpUtil.post('/dui/xray/kernel/status');
+          if (msg.success && msg.obj) {
+            this.kernelStatus = msg.obj;
+            const actual = this.normalizeKernelForm(msg.obj.values || {});
+            this.kernelForm = actual;
+            this.kernelSavedForm = this.normalizeKernelForm(actual);
+            this.kernelLoaded = true;
+            this.kernelEditMode = false;
+          } else {
+            this.$message.error(msg.msg || '读取内核状态失败');
+          }
+        } finally {
+          this.kernelBusy = false;
+        }
+      },
+      beginKernelEdit() {
+        this.$confirm({
+          title: '高风险：修改系统内核',
+          content: '这些 sysctl 是整机级设置，会影响 Xray、SSH、Nginx、Docker 宿主网络及其他程序。继续后只会解锁编辑；真正保存时还会再次确认。首次保存前 DUI 会固定备份最初状态，后续修改不会覆盖该备份。',
+          class: themeSwitcher.currentTheme,
+          okType: 'danger',
+          okText: '我了解影响，继续编辑',
+          cancelText: '取消',
+          onOk: () => {
+            this.kernelEditMode = true;
+            this.kernelForm = this.normalizeKernelForm(this.kernelSavedForm || this.kernelStatus.values || {});
+          },
+        });
+      },
+      cancelKernelEdit() {
+        this.kernelForm = this.normalizeKernelForm(this.kernelSavedForm || this.kernelStatus.values || {});
+        this.kernelEditMode = false;
+      },
+      confirmApplyKernelTuning() {
+        this.$confirm({
+          title: '再次确认：应用整机内核修改',
+          content: this.kernelStatus.originalBackup
+            ? '保存后会立即修改 Linux 内核并持久化。最初备份不会被覆盖，之后仍可恢复到第一次修改前的状态。确认继续？'
+            : '这是第一次修改。DUI 会先保存当前实际内核值和原持久化文件作为不可覆盖的最初备份，再修改内核。确认继续？',
+          class: themeSwitcher.currentTheme,
+          okType: 'danger',
+          okText: '确认修改整机内核',
+          cancelText: '取消',
+          onOk: () => this.doApplyKernelTuning(),
+        });
+      },
+      async doApplyKernelTuning() {
+        this.kernelBusy = true;
+        try {
+          const msg = await HttpUtil.post('/dui/xray/kernel/apply', this.normalizeKernelForm(this.kernelForm));
+          if (msg.success && msg.obj) {
+            this.kernelStatus = msg.obj;
+            const actual = this.normalizeKernelForm(msg.obj.values || {});
+            this.kernelForm = actual;
+            this.kernelSavedForm = this.normalizeKernelForm(actual);
+            this.kernelLoaded = true;
+            this.kernelEditMode = false;
+            this.$message.success('系统内核参数已应用并持久化，最初备份已保留');
+          } else {
+            this.$message.error(msg.msg || '应用系统内核设置失败');
+          }
+        } finally {
+          this.kernelBusy = false;
+        }
+      },
+      restoreKernelOriginal() {
+        this.$confirm({
+          title: '还原到第一次修改前的内核状态',
+          content: '将恢复最初备份中的实际 sysctl 值，并恢复第一次修改前的持久化配置文件状态。后续所有修改记录都不会改变这个还原目标。确认继续？',
+          class: themeSwitcher.currentTheme,
+          okType: 'danger',
+          okText: '确认还原最初状态',
+          cancelText: '取消',
+          onOk: async () => {
+            this.kernelBusy = true;
+            try {
+              const msg = await HttpUtil.post('/dui/xray/kernel/restore');
+              if (msg.success && msg.obj) {
+                this.kernelStatus = msg.obj;
+                const actual = this.normalizeKernelForm(msg.obj.values || {});
+                this.kernelForm = actual;
+                this.kernelSavedForm = this.normalizeKernelForm(actual);
+                this.kernelEditMode = false;
+                this.$message.success('已还原到第一次修改前的系统内核状态');
+              } else {
+                this.$message.error(msg.msg || '还原系统内核失败');
+              }
+            } finally {
+              this.kernelBusy = false;
+            }
+          },
+        });
+      },
       changePage(pageKey) {
         if (pageKey == 'tpl-advanced') this.changeCode();
         if (pageKey == 'tpl-balancer') this.changeObsCode();
         if (pageKey == 'tpl-blacklist') this.loadManagedBlacklist();
+        if (pageKey == 'tpl-kernel') {
+          if (!this.xrayPolicyLoaded) this.loadXrayConnectionPolicy();
+          if (!this.xraySocketLoaded) this.loadXraySocketPolicy();
+          if (!this.kernelLoaded) this.loadKernelTuning();
+        }
       },
       syncRulesWithOutbound(tag, setting) {
         const newTemplateSettings = this.templateSettings;

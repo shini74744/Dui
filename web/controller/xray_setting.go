@@ -37,6 +37,13 @@ func (a *XraySettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/blacklist/list", a.getManagedBlacklist)
 	g.POST("/blacklist/remove", a.removeManagedBlacklist)
 	g.POST("/blacklist/clear", a.clearManagedBlacklist)
+	g.POST("/connection-policy/status", a.getXrayConnectionPolicy)
+	g.POST("/connection-policy/apply", a.applyXrayConnectionPolicy)
+	g.POST("/socket-policy/status", a.getXraySocketPolicy)
+	g.POST("/socket-policy/apply", a.applyXraySocketPolicy)
+	g.POST("/kernel/status", a.getKernelTuning)
+	g.POST("/kernel/apply", a.applyKernelTuning)
+	g.POST("/kernel/restore", a.restoreKernelTuning)
 	g.GET("/ruleSet/apps", a.getRuleSetApps)
 	g.POST("/ruleSet/resolve", a.resolveRuleSet)
 	g.POST("/ruleSet/resolveURL", a.resolveRuleSetURL)
@@ -173,6 +180,105 @@ func (a *XraySettingController) clearManagedBlacklist(c *gin.Context) {
 	svc := &service.ManagedBlacklistService{}
 	err := svc.Clear(form.Kind)
 	jsonObj(c, map[string]any{"cleared": err == nil}, err)
+}
+
+func (a *XraySettingController) getXrayConnectionPolicy(c *gin.Context) {
+	template, err := a.SettingService.GetXrayConfigTemplate()
+	if err != nil {
+		jsonMsg(c, "读取 Xray 连接策略失败", err)
+		return
+	}
+	policy, err := service.GetXrayConnectionPolicy(template)
+	jsonObj(c, policy, err)
+}
+
+func (a *XraySettingController) applyXrayConnectionPolicy(c *gin.Context) {
+	form := &service.XrayConnectionPolicy{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "Xray 连接策略参数无效", err)
+		return
+	}
+	oldSetting, err := a.SettingService.GetXrayConfigTemplate()
+	if err != nil {
+		jsonMsg(c, "读取旧 Xray 配置失败，未保存", err)
+		return
+	}
+	newSetting, err := service.UpdateXrayConnectionPolicyTemplate(oldSetting, *form)
+	if err != nil {
+		jsonMsg(c, "Xray 连接策略无效", err)
+		return
+	}
+	if err := a.XraySettingService.SaveXraySetting(newSetting); err != nil {
+		jsonMsg(c, "Xray 配置校验失败，未保存", err)
+		return
+	}
+	if err := a.XrayService.RestartXray(true); err != nil {
+		rollbackErr := a.XraySettingService.SaveXraySetting(oldSetting)
+		if rollbackErr == nil {
+			rollbackErr = a.XrayService.RestartXray(true)
+		}
+		if rollbackErr != nil {
+			jsonMsg(c, "Xray 新策略启动失败；自动回滚也失败", fmt.Errorf("新策略错误: %v；回滚错误: %v", err, rollbackErr))
+			return
+		}
+		jsonMsg(c, "Xray 新策略启动失败，已恢复旧配置", err)
+		return
+	}
+	applied, err := service.GetXrayConnectionPolicy(newSetting)
+	jsonObj(c, applied, err)
+}
+
+func (a *XraySettingController) getXraySocketPolicy(c *gin.Context) {
+	jsonObj(c, service.GetXraySocketPolicyStatus(), nil)
+}
+
+func (a *XraySettingController) applyXraySocketPolicy(c *gin.Context) {
+	form := &service.XraySocketPolicy{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "Xray Socket 参数无效", err)
+		return
+	}
+	oldStatus := service.GetXraySocketPolicyStatus()
+	if err := service.SaveXraySocketPolicy(*form); err != nil {
+		jsonMsg(c, "Xray Socket 参数校验失败，未保存", err)
+		return
+	}
+	if err := a.XrayService.RestartXray(true); err != nil {
+		rollbackErr := service.SaveXraySocketPolicy(oldStatus.XraySocketPolicy)
+		if rollbackErr == nil {
+			rollbackErr = a.XrayService.RestartXray(true)
+		}
+		if rollbackErr != nil {
+			jsonMsg(c, "Xray Socket 新设置启动失败；自动回滚也失败", fmt.Errorf("新设置错误: %v；回滚错误: %v", err, rollbackErr))
+			return
+		}
+		jsonMsg(c, "Xray Socket 新设置启动失败，已恢复旧设置", err)
+		return
+	}
+	jsonObj(c, service.GetXraySocketPolicyStatus(), nil)
+}
+
+func (a *XraySettingController) getKernelTuning(c *gin.Context) {
+	svc := &service.KernelTuningService{}
+	status, err := svc.Status()
+	jsonObj(c, status, err)
+}
+
+func (a *XraySettingController) applyKernelTuning(c *gin.Context) {
+	form := &service.KernelTuningApplyOptions{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "内核参数格式无效", err)
+		return
+	}
+	svc := &service.KernelTuningService{}
+	status, err := svc.Apply(*form)
+	jsonObj(c, status, err)
+}
+
+func (a *XraySettingController) restoreKernelTuning(c *gin.Context) {
+	svc := &service.KernelTuningService{}
+	status, err := svc.RestoreOriginal()
+	jsonObj(c, status, err)
 }
 
 type ruleSetResolveForm struct {
