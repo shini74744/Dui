@@ -13,6 +13,18 @@ XUI_REPO="${XUI_REPO:-shini74744/Dui}"
 XUI_BRANCH="${XUI_BRANCH:-main}"
 XUI_RAW_BASE="https://raw.githubusercontent.com/${XUI_REPO}/${XUI_BRANCH}"
 XUI_RELEASE_BASE="https://github.com/${XUI_REPO}/releases"
+XUI_BIN="${XUI_BIN:-/usr/local/x-ui/x-ui}"
+
+dui_current_version() {
+    local version
+    version=$("${XUI_BIN}" -v 2>/dev/null | head -n1 | tr -d '\r\n')
+    version="${version#v}"
+    if [[ -n "$version" ]]; then
+        printf 'v%s\n' "$version"
+        return 0
+    fi
+    return 1
+}
 
 dui_latest_version() {
     local tag
@@ -70,9 +82,10 @@ fi
 echo -e "——————————————————————"
 echo -e "当前服务器的操作系统为:${red} $release${plain}"
 echo ""
-xui_version=$(/usr/local/x-ui/x-ui -v)
+current_release_version=$(dui_current_version || true)
+xui_version="${current_release_version#v}"
 last_version=$(dui_latest_version || true)
-echo -e "${green}当前 Dui 版本：${red}v${xui_version}${plain}"
+echo -e "${green}当前 Dui 版本：${red}${current_release_version:-未知}${plain}"
 echo ""
 echo -e "${yellow}GitHub 最新 Release 版本：${red}${last_version}${plain}"
 
@@ -194,8 +207,8 @@ update() {
         return 0
     fi
 
-    local xui_bin="/usr/local/x-ui/x-ui"
-    local platform latest_version
+    local xui_bin="${XUI_BIN}"
+    local platform latest_version current_version
     platform=$(dui_arch) || {
         LOGE "不支持的 CPU 架构：$(uname -m)"
         [[ $# == 0 ]] && before_show_menu
@@ -207,6 +220,20 @@ update() {
         [[ $# == 0 ]] && before_show_menu
         return 1
     fi
+
+    current_version=$(dui_current_version || true)
+    if [[ -n "$current_version" && "$current_version" == "$latest_version" ]]; then
+        xui_version="${current_version#v}"
+        last_version="$latest_version"
+        LOGI "当前已是最新版本：${current_version}，无需重复更新"
+        [[ $# == 0 ]] && before_show_menu
+        return 0
+    fi
+
+    if [[ -n "$current_version" ]]; then
+        LOGI "当前版本: ${current_version} -> 最新版本: ${latest_version}"
+    fi
+
     local asset="x-ui-linux-${platform}.tar.gz"
     local package_url="${XUI_RELEASE_BASE}/download/${latest_version}/${asset}"
     local tmpdir
@@ -287,7 +314,11 @@ update() {
     systemctl daemon-reload
 
     if systemctl restart x-ui && sleep 2 && systemctl is-active --quiet x-ui; then
+        current_release_version=$(dui_current_version || true)
+        xui_version="${current_release_version#v}"
+        last_version="$latest_version"
         LOGI "面板、菜单与服务文件已从同一 Release 更新完成，服务运行正常"
+        [[ -n "$current_release_version" ]] && LOGI "当前运行版本：${current_release_version}"
         rm -rf "$tmpdir"
         if [[ $# == 0 ]]; then before_show_menu; else exit 0; fi
         return 0
