@@ -30,6 +30,15 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - 来源 IP 入站黑名单与集中黑名单管理
 - 星空主题、侧边栏动画与移动端适配
 
+## v26.9.32 自定义标签来源识别
+
+- 历史路由可根据当前域名/IP 内容自动反向识别以前使用过的自定义标签。
+- 识别成功后会自动勾选并保存来源映射，后续再次编辑直接恢复。
+- 新建或编辑规则时也会永久记录所选自定义标签。
+- 来源元数据单独保存在 `/etc/x-ui/route_rule_sources.json`，不会写入 Xray JSON。
+- 删除路由或删除自定义标签时会自动清理对应来源记录。
+- 历史识别采用较严格匹配阈值，避免相似 List 被误判。
+
 ## v26.9.31 自定义标签批量选择
 
 - 自定义标签现在像 AI / 游戏等精选分类一样支持复选。
@@ -148,10 +157,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v26.9.31`：
+例如安装 `v26.9.32`：
 
 ```bash
-VERSION=v26.9.31 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v26.9.32 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令

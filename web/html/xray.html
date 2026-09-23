@@ -617,6 +617,8 @@
       managedBlacklistSearch: '',
       managedBlacklistKind: 'all',
       managedBlacklistScope: 'all',
+      routeSourceMap: {},
+      routeSourceLoaded: false,
       xrayPolicyBusy: false,
       xrayPolicyLoaded: false,
       xrayPolicyForm: { handshake: 4, connIdle: 300, uplinkOnly: 0, downlinkOnly: 0 },
@@ -804,11 +806,47 @@
           this.saveBtnDisable = true;
         }
       },
+      async loadRouteSourceMap() {
+        try {
+          const msg = await HttpUtil.get('/dui/xray/ruleSet/sourceMap');
+          if (msg.success && msg.obj && typeof msg.obj === 'object') {
+            this.routeSourceMap = msg.obj;
+            this.routeSourceLoaded = true;
+          }
+        } catch (e) {
+          this.routeSourceMap = {};
+          this.routeSourceLoaded = false;
+        }
+      },
+      prunedRouteSourceMap() {
+        const settings = this.templateSettings || {};
+        const routing = settings.routing || {};
+        const groups = duiBuildRoutingGroups(Array.isArray(routing.rules) ? routing.rules : [], Array.isArray(settings.outbounds) ? settings.outbounds : []);
+        const valid = new Set(groups.map(group => duiRuleSourceFingerprint(group.merged)));
+        const result = {};
+        Object.entries(this.routeSourceMap || {}).forEach(([fingerprint, ids]) => {
+          if (!valid.has(fingerprint) || !Array.isArray(ids) || ids.length === 0) return;
+          result[fingerprint] = Array.from(new Set(ids.map(String).filter(Boolean)));
+        });
+        return result;
+      },
+      async persistRouteSourceMap() {
+        const clean = this.prunedRouteSourceMap();
+        const msg = await HttpUtil.post('/dui/xray/ruleSet/sourceMap/save', { sources: clean });
+        if (msg.success) {
+          this.routeSourceMap = clean;
+          this.routeSourceLoaded = true;
+          return true;
+        }
+        this.$message.warning((msg && msg.msg) ? msg.msg : '路由来源记录保存失败');
+        return false;
+      },
       async updateXraySetting() {
         this.loading(true);
         try {
           const msg = await HttpUtil.post("/dui/xray/update", { xraySetting: this.xraySetting });
           if (msg.success) {
+            await this.persistRouteSourceMap();
             await this.getXraySetting();
             await PromiseUtil.sleep(300);
             await this.getXrayResult();
@@ -1749,6 +1787,8 @@
         const groups = duiBuildRoutingGroups(this.templateSettings.routing.rules, this.templateSettings.outbounds);
         const group = groups[index];
         if (!group) return;
+        const sourceFingerprint = duiRuleSourceFingerprint(group.merged);
+        if (sourceFingerprint) this.$delete(this.routeSourceMap, sourceFingerprint);
         this.templateSettings.routing.rules.splice(group.indexes[0], group.indexes.length);
         duiCleanupHiddenBlacklistOutbounds(this.templateSettings);
         this.routingRuleSettings = JSON.stringify(this.templateSettings.routing.rules);
@@ -1762,6 +1802,7 @@
         this.showAlert = true;
       }
       await this.getXraySetting();
+      await this.loadRouteSourceMap();
       await this.getXrayResult();
       await this.getOutboundsTraffic();
       while (true) {

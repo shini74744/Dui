@@ -48,6 +48,9 @@ func (a *XraySettingController) initRouter(g *gin.RouterGroup) {
 	g.GET("/ruleSet/customLists", a.getCustomRuleLists)
 	g.POST("/ruleSet/customLists/save", a.saveCustomRuleList)
 	g.POST("/ruleSet/customLists/delete", a.deleteCustomRuleList)
+	g.GET("/ruleSet/sourceMap", a.getRouteRuleSources)
+	g.POST("/ruleSet/sourceMap/save", a.saveRouteRuleSources)
+	g.POST("/ruleSet/detectSources", a.detectCustomRuleSources)
 	g.POST("/ruleSet/resolve", a.resolveRuleSet)
 	g.POST("/ruleSet/resolveURL", a.resolveRuleSetURL)
 	g.POST("/ruleSet/resolveURLs", a.resolveRuleSetURLs)
@@ -303,6 +306,40 @@ type ruleSetResolveURLsForm struct {
 
 type customRuleListDeleteForm struct {
 	ID string `json:"id" form:"id"`
+}
+
+type routeRuleSourcesSaveForm struct {
+	Sources map[string][]string `json:"sources" form:"sources"`
+}
+
+type customRuleSourceDetectForm struct {
+	Domains []string `json:"domains" form:"domains"`
+	IPs     []string `json:"ips" form:"ips"`
+}
+
+func (a *XraySettingController) getRouteRuleSources(c *gin.Context) {
+	result, err := a.RuleSetService.RouteRuleSources()
+	jsonObj(c, result, err)
+}
+
+func (a *XraySettingController) saveRouteRuleSources(c *gin.Context) {
+	form := &routeRuleSourcesSaveForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "路由来源映射参数无效", err)
+		return
+	}
+	err := a.RuleSetService.SaveRouteRuleSources(form.Sources)
+	jsonObj(c, map[string]any{"saved": err == nil}, err)
+}
+
+func (a *XraySettingController) detectCustomRuleSources(c *gin.Context) {
+	form := &customRuleSourceDetectForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "历史路由来源识别参数无效", err)
+		return
+	}
+	result, err := a.RuleSetService.DetectCustomRuleSources(form.Domains, form.IPs)
+	jsonObj(c, result, err)
 }
 
 func (a *XraySettingController) getCustomRuleLists(c *gin.Context) {

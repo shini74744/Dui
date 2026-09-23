@@ -24,7 +24,10 @@ const (
 	ruleCatalogCachePath  = "/var/cache/dui/blackmatrix-clash.json"
 )
 
-var customRuleListsPath = "/etc/x-ui/custom_rule_lists.json"
+var (
+	customRuleListsPath  = "/etc/x-ui/custom_rule_lists.json"
+	routeRuleSourcesPath = "/etc/x-ui/route_rule_sources.json"
+)
 
 type RuleSetApp struct {
 	Name     string `json:"name"`
@@ -63,6 +66,22 @@ type CustomRuleList struct {
 	UpdatedAt int64    `json:"updatedAt"`
 }
 
+type CustomRuleSourceMatch struct {
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Matched int     `json:"matched"`
+	Total   int     `json:"total"`
+	Ratio   float64 `json:"ratio"`
+	Mode    string  `json:"mode"`
+}
+
+type CustomRuleSourceDetection struct {
+	MatchedIDs []string                `json:"matchedIds"`
+	Matches    []CustomRuleSourceMatch `json:"matches"`
+	Checked    int                     `json:"checked"`
+	Failed     []string                `json:"failed"`
+}
+
 type RuleSetService struct{}
 
 var (
@@ -70,6 +89,7 @@ var (
 	ruleCatalogMemory   []RuleSetApp
 	ruleCatalogLoadedAt time.Time
 	customRuleListsMu   sync.Mutex
+	routeRuleSourcesMu  sync.Mutex
 	ruleSetPathRe       = regexp.MustCompile(`^[A-Za-z0-9_.@+'-]+/[A-Za-z0-9_.@+'-]+\.list$`)
 	ruleAppNameRe       = regexp.MustCompile(`^[A-Za-z0-9_.@+'-]+$`)
 )
@@ -295,7 +315,285 @@ func (s *RuleSetService) DeleteCustomList(id string) error {
 	if !found {
 		return errors.New("自定义 List 不存在")
 	}
-	return writeCustomRuleListsUnlocked(next)
+	if err := writeCustomRuleListsUnlocked(next); err != nil {
+		return err
+	}
+	return removeCustomListIDFromRouteSources(id)
+}
+
+func readRouteRuleSourcesUnlocked() (map[string][]string, error) {
+	data, err := os.ReadFile(routeRuleSourcesPath)
+	if os.IsNotExist(err) {
+		return map[string][]string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("读取路由来源映射失败: %w", err)
+	}
+	var result map[string][]string
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("解析路由来源映射失败: %w", err)
+	}
+	if result == nil {
+		result = map[string][]string{}
+	}
+	return result, nil
+}
+
+func writeRouteRuleSourcesUnlocked(sourceMap map[string][]string) error {
+	if sourceMap == nil {
+		sourceMap = map[string][]string{}
+	}
+	data, err := json.MarshalIndent(sourceMap, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if err := writeAtomicFile(routeRuleSourcesPath, data, 0600); err != nil {
+		return fmt.Errorf("保存路由来源映射失败: %w", err)
+	}
+	return nil
+}
+
+func (s *RuleSetService) RouteRuleSources() (map[string][]string, error) {
+	routeRuleSourcesMu.Lock()
+	defer routeRuleSourcesMu.Unlock()
+	current, err := readRouteRuleSourcesUnlocked()
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]string, len(current))
+	for key, ids := range current {
+		result[key] = append([]string(nil), ids...)
+	}
+	return result, nil
+}
+
+func (s *RuleSetService) SaveRouteRuleSources(sourceMap map[string][]string) error {
+	if len(sourceMap) > 500 {
+		return errors.New("路由来源映射数量过多")
+	}
+
+	customLists, err := s.CustomLists()
+	if err != nil {
+		return err
+	}
+	validCustomIDs := map[string]struct{}{}
+	for _, item := range customLists {
+		if strings.TrimSpace(item.ID) != "" {
+			validCustomIDs[item.ID] = struct{}{}
+		}
+	}
+
+	clean := map[string][]string{}
+	fingerprintRe := regexp.MustCompile(`^[a-fA-F0-9]{1,64}$`)
+	for rawFingerprint, ids := range sourceMap {
+		fingerprint := strings.TrimSpace(rawFingerprint)
+		if !fingerprintRe.MatchString(fingerprint) {
+			continue
+		}
+		if len(ids) > 50 {
+			return errors.New("单条路由来源标签数量过多")
+		}
+		seen := map[string]struct{}{}
+		for _, rawID := range ids {
+			id := strings.TrimSpace(rawID)
+			if id == "" {
+				continue
+			}
+			if _, ok := validCustomIDs[id]; !ok {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			clean[fingerprint] = append(clean[fingerprint], id)
+		}
+		if len(clean[fingerprint]) == 0 {
+			delete(clean, fingerprint)
+		}
+	}
+
+	routeRuleSourcesMu.Lock()
+	defer routeRuleSourcesMu.Unlock()
+	return writeRouteRuleSourcesUnlocked(clean)
+}
+
+func removeCustomListIDFromRouteSources(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	routeRuleSourcesMu.Lock()
+	defer routeRuleSourcesMu.Unlock()
+	current, err := readRouteRuleSourcesUnlocked()
+	if err != nil {
+		return err
+	}
+	changed := false
+	for fingerprint, ids := range current {
+		next := make([]string, 0, len(ids))
+		for _, existingID := range ids {
+			if existingID == id {
+				changed = true
+				continue
+			}
+			next = append(next, existingID)
+		}
+		if len(next) == 0 {
+			if len(ids) > 0 {
+				delete(current, fingerprint)
+			}
+		} else {
+			current[fingerprint] = next
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writeRouteRuleSourcesUnlocked(current)
+}
+
+func reliableCustomRuleMatch(values []string, current map[string]struct{}) (matched int, ratio float64, ok bool) {
+	if len(values) == 0 || len(current) == 0 {
+		return 0, 0, false
+	}
+	seen := map[string]struct{}{}
+	total := 0
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		total++
+		if _, exists := current[value]; exists {
+			matched++
+		}
+	}
+	if total == 0 {
+		return 0, 0, false
+	}
+	ratio = float64(matched) / float64(total)
+	if total <= 3 {
+		return matched, ratio, matched == total
+	}
+	return matched, ratio, matched >= 3 && ratio >= 0.80
+}
+
+func (s *RuleSetService) DetectCustomRuleSources(domains, ips []string) (*CustomRuleSourceDetection, error) {
+	customLists, err := s.CustomLists()
+	if err != nil {
+		return nil, err
+	}
+	if len(customLists) > 50 {
+		customLists = customLists[:50]
+	}
+
+	domainSet := map[string]struct{}{}
+	ipSet := map[string]struct{}{}
+	for _, value := range domains {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			domainSet[value] = struct{}{}
+		}
+	}
+	for _, value := range ips {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			ipSet[value] = struct{}{}
+		}
+	}
+
+	result := &CustomRuleSourceDetection{
+		MatchedIDs: []string{},
+		Matches:    []CustomRuleSourceMatch{},
+		Failed:     []string{},
+		Checked:    len(customLists),
+	}
+	if len(customLists) == 0 || (len(domainSet) == 0 && len(ipSet) == 0) {
+		return result, nil
+	}
+
+	type detectItem struct {
+		list CustomRuleList
+		res  *RuleSetBatchResult
+		err  error
+	}
+	jobs := make(chan CustomRuleList)
+	out := make(chan detectItem, len(customLists))
+	workerCount := 3
+	if len(customLists) < workerCount {
+		workerCount = len(customLists)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range jobs {
+				res, err := s.ResolveURLs(item.URLs)
+				out <- detectItem{list: item, res: res, err: err}
+			}
+		}()
+	}
+	go func() {
+		for _, item := range customLists {
+			jobs <- item
+		}
+		close(jobs)
+		wg.Wait()
+		close(out)
+	}()
+
+	for item := range out {
+		if item.err != nil || item.res == nil {
+			result.Failed = append(result.Failed, item.list.Name)
+			continue
+		}
+		domainMatched, domainRatio, domainOK := reliableCustomRuleMatch(item.res.Domains, domainSet)
+		ipMatched, ipRatio, ipOK := reliableCustomRuleMatch(item.res.IPs, ipSet)
+		if !domainOK && !ipOK {
+			continue
+		}
+
+		mode := "both"
+		matched := domainMatched + ipMatched
+		total := len(item.res.Domains) + len(item.res.IPs)
+		ratio := 0.0
+		if total > 0 {
+			ratio = float64(matched) / float64(total)
+		}
+		if domainOK && !ipOK {
+			mode = "domain"
+			matched = domainMatched
+			total = len(item.res.Domains)
+			ratio = domainRatio
+		} else if ipOK && !domainOK {
+			mode = "ip"
+			matched = ipMatched
+			total = len(item.res.IPs)
+			ratio = ipRatio
+		}
+		result.MatchedIDs = append(result.MatchedIDs, item.list.ID)
+		result.Matches = append(result.Matches, CustomRuleSourceMatch{
+			ID:      item.list.ID,
+			Name:    item.list.Name,
+			Matched: matched,
+			Total:   total,
+			Ratio:   ratio,
+			Mode:    mode,
+		})
+	}
+	sort.Strings(result.MatchedIDs)
+	sort.Strings(result.Failed)
+	sort.Slice(result.Matches, func(i, j int) bool {
+		return strings.ToLower(result.Matches[i].Name) < strings.ToLower(result.Matches[j].Name)
+	})
+	return result, nil
 }
 
 func dialPublicRuleURL(ctx context.Context, network, address string) (net.Conn, error) {
