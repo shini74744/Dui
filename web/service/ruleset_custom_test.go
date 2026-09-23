@@ -159,3 +159,99 @@ func TestCustomRuleURLLimits(t *testing.T) {
 		t.Fatalf("batch normalize got %d URLs, want 21", len(normalized))
 	}
 }
+
+func TestRouteRuleSourcesPersistenceAndCustomDeleteCleanup(t *testing.T) {
+	oldCustomPath, oldSourcePath := customRuleListsPath, routeRuleSourcesPath
+	defer func() {
+		customRuleListsPath = oldCustomPath
+		routeRuleSourcesPath = oldSourcePath
+	}()
+
+	dir := t.TempDir()
+	customRuleListsPath = filepath.Join(dir, "custom_rule_lists.json")
+	routeRuleSourcesPath = filepath.Join(dir, "route_rule_sources.json")
+	svc := &RuleSetService{}
+
+	first, err := svc.SaveCustomList(CustomRuleList{
+		Name: "A",
+		URLs: []string{"https://example.com/a.list"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.SaveCustomList(CustomRuleList{
+		Name: "B",
+		URLs: []string{"https://example.org/b.list"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.SaveRouteRuleSources(map[string][]string{
+		"abc123":  {first.ID, second.ID, "missing-id", first.ID},
+		"bad key": {first.ID},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sources, err := svc.RouteRuleSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := sources["abc123"]
+	if len(got) != 2 || got[0] != first.ID || got[1] != second.ID {
+		t.Fatalf("unexpected saved route sources: %#v", sources)
+	}
+	if _, ok := sources["bad key"]; ok {
+		t.Fatalf("invalid fingerprint should not persist: %#v", sources)
+	}
+
+	if err := svc.DeleteCustomList(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	sources, err = svc.RouteRuleSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = sources["abc123"]
+	if len(got) != 1 || got[0] != second.ID {
+		t.Fatalf("deleted custom tag was not removed from route sources: %#v", sources)
+	}
+}
+
+func TestReliableCustomRuleMatch(t *testing.T) {
+	current := map[string]struct{}{
+		"domain:a.com": {},
+		"domain:b.com": {},
+		"domain:c.com": {},
+		"domain:d.com": {},
+	}
+
+	if matched, ratio, ok := reliableCustomRuleMatch(
+		[]string{"domain:a.com", "domain:b.com"},
+		current,
+	); !ok || matched != 2 || ratio != 1 {
+		t.Fatalf("small exact match failed: matched=%d ratio=%v ok=%v", matched, ratio, ok)
+	}
+
+	if _, _, ok := reliableCustomRuleMatch(
+		[]string{"domain:a.com", "domain:missing.com"},
+		current,
+	); ok {
+		t.Fatal("small partial match must not auto-detect")
+	}
+
+	if matched, ratio, ok := reliableCustomRuleMatch(
+		[]string{"domain:a.com", "domain:b.com", "domain:c.com", "domain:d.com", "domain:missing.com"},
+		current,
+	); !ok || matched != 4 || ratio < 0.79 {
+		t.Fatalf("80 percent historical match should be accepted: matched=%d ratio=%v ok=%v", matched, ratio, ok)
+	}
+
+	if _, _, ok := reliableCustomRuleMatch(
+		[]string{"domain:a.com", "domain:b.com", "domain:c.com", "domain:missing1.com", "domain:missing2.com"},
+		current,
+	); ok {
+		t.Fatal("60 percent historical match must not be accepted")
+	}
+}

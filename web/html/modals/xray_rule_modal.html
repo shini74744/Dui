@@ -254,6 +254,11 @@
           <a-alert type="info" show-icon :style="{ marginBottom:'10px' }"
             message="可选择具体自定义标签；如果一个都不勾选，默认添加全部。"
             description="所选标签下的全部 List 会实时读取、自动识别、合并并去重。"></a-alert>
+          <a-alert v-if="ruleDomainAdvanced.sourceDetectionLoading" type="info" show-icon
+            :style="{ marginBottom:'10px' }" message="正在识别这条旧路由以前使用的自定义标签..."></a-alert>
+          <a-alert v-else-if="ruleDomainAdvanced.sourceDetectionMessage"
+            :type="ruleModal.sourceSelectionKnown ? 'success' : 'warning'" show-icon
+            :style="{ marginBottom:'10px' }" :message="ruleDomainAdvanced.sourceDetectionMessage"></a-alert>
 
           <a-checkbox-group v-model="ruleDomainAdvanced.selectedCustomListIDs"
             :style="{ width:'100%', marginBottom:'10px' }">
@@ -541,6 +546,59 @@
     return (h >>> 0).toString(16);
   }
 
+
+  function duiRuleSourceValues(value) {
+    const values = Array.isArray(value) ? value : ruleAdvancedSplit(value);
+    return values.map(x => String(x || '').trim()).filter(Boolean).sort();
+  }
+
+  function duiRuleSourceAttrs(value) {
+    let attrs = {};
+    if (Array.isArray(value)) {
+      value.forEach(pair => {
+        if (Array.isArray(pair) && pair.length >= 2 && String(pair[0] || '').trim()) {
+          attrs[String(pair[0]).trim()] = String(pair[1] || '');
+        }
+      });
+    } else if (value && typeof value === 'object') {
+      attrs = { ...value };
+    }
+    const sorted = {};
+    Object.keys(attrs).sort().forEach(key => { sorted[key] = attrs[key]; });
+    return sorted;
+  }
+
+  function duiRuleSourceFingerprint(rule) {
+    const source = rule || {};
+    const domains = duiRuleSourceValues(source.domain);
+    const ips = duiRuleSourceValues(source.ip);
+    const blacklistDomains = duiRuleSourceValues(source._blacklistDomain !== undefined ? source._blacklistDomain : source.blacklistDomain);
+    const blacklistIPs = duiRuleSourceValues(source._blacklistIP !== undefined ? source._blacklistIP : source.blacklistIP);
+    const relation = source._ipDomainRelation || source.ipDomainRelation || ((domains.length && ips.length) ? 'and' : 'or');
+    const normalized = {
+      type: String(source.type || 'field'),
+      domain: domains,
+      ip: ips,
+      ipDomainRelation: String(relation || 'or'),
+      port: String(source.port || ''),
+      sourcePort: String(source.sourcePort || ''),
+      network: String(source.network || ''),
+      sourceIP: duiRuleSourceValues(source.sourceIP),
+      user: duiRuleSourceValues(source.user),
+      inboundTag: duiRuleSourceValues(source.inboundTag),
+      protocol: duiRuleSourceValues(source.protocol),
+      attrs: duiRuleSourceAttrs(source.attrs),
+      outboundTag: String(source.outboundTag || ''),
+      balancerTag: String(source.balancerTag || ''),
+      blacklistDomain: blacklistDomains,
+      blacklistIP: blacklistIPs,
+      blacklistRelation: String(source._blacklistRelation || source.blacklistRelation || 'or'),
+      blacklistAction: String(source._blacklistAction || source.blacklistAction || 'deny'),
+      blacklistRedirect: String(source._blacklistRedirect || source.blacklistRedirect || ''),
+    };
+    return duiBlacklistHash(JSON.stringify(normalized));
+  }
+
   function duiEnsureBlacklistOutbound(action, redirectTarget) {
     let tag;
     let outbound;
@@ -577,6 +635,8 @@
     customListURL: '',
     customLists: [],
     customListsLoading: false,
+    sourceDetectionLoading: false,
+    sourceDetectionMessage: '',
     customListForm: { id:'', name:'', urlsText:'' },
     catalogLoading: false,
     ruleLoading: false,
@@ -757,6 +817,7 @@
       this.selectedPath = undefined;
       this.customListURL = '';
       this.customListForm = { id:'', name:'', urlsText:'' };
+      this.sourceDetectionMessage = '';
       this.selectedCategory = '';
       this.selectedCategoryPaths = [];
       this.selectedCustomListIDs = [];
@@ -775,6 +836,7 @@
       this.lastError = '';
       if (this.apps.length === 0) await this.loadApps(false);
       await this.loadCustomLists();
+      await this.detectHistoricalSources();
     },
     async loadApps(force = false) {
       this.catalogLoading = true;
@@ -808,6 +870,39 @@
         this.lastError = e && e.message ? e.message : '读取自定义 List 收藏失败';
       } finally {
         this.customListsLoading = false;
+      }
+    },
+    async detectHistoricalSources() {
+      if (!ruleModal.isEdit || ruleModal.sourceSelectionKnown || this.customLists.length === 0) return;
+      const domains = ruleAdvancedSplit(ruleModal.rule.domain);
+      const ips = ruleAdvancedSplit(ruleModal.rule.ip);
+      if (domains.length === 0 && ips.length === 0) return;
+
+      this.sourceDetectionLoading = true;
+      this.sourceDetectionMessage = '';
+      try {
+        const msg = await HttpUtil.post('/dui/xray/ruleSet/detectSources', { domains, ips });
+        if (!msg.success || !msg.obj) return;
+        const validIDs = new Set(this.customLists.map(item => String(item.id || '')));
+        const matched = (msg.obj.matchedIds || []).map(String).filter(id => validIDs.has(id));
+        if (matched.length > 0) {
+          this.selectedCustomListIDs = matched;
+          ruleModal.sourceIDs = matched.slice();
+          ruleModal.sourceSelectionKnown = true;
+          const fingerprint = ruleModal.originalSourceFingerprint || ruleModal.currentSourceFingerprint();
+          if (fingerprint) {
+            app.$set(app.routeSourceMap, fingerprint, matched.slice());
+            await app.persistRouteSourceMap();
+          }
+          const names = (msg.obj.matches || []).map(item => item.name).filter(Boolean);
+          this.sourceDetectionMessage = '已从旧路由内容识别并记录来源：' + (names.length ? names.join('、') : matched.length + ' 个自定义标签');
+        } else if ((msg.obj.failed || []).length > 0) {
+          this.sourceDetectionMessage = '旧路由来源识别完成，但有部分标签读取失败：' + msg.obj.failed.join('、');
+        }
+      } catch (e) {
+        this.sourceDetectionMessage = '旧路由来源识别暂时失败，可手动选择自定义标签';
+      } finally {
+        this.sourceDetectionLoading = false;
       }
     },
     selectAllCustomLists() {
@@ -871,7 +966,8 @@
             kind: 'custom-selection',
             label,
             path: urls.join('\n'),
-            description: names.join('、') + ' · ' + urls.length + ' 个 List'
+            description: names.join('、') + ' · ' + urls.length + ' 个 List',
+            sourceIDs: selectedIDs
           }
         };
         this.importMode = 'both';
@@ -1052,6 +1148,15 @@
       const meta = { ...this.pendingImport.meta };
       meta.description = (meta.description || '') + ' · ' + modeText;
       this.mergeIntoCurrentRule(filtered, this.pendingImport.label + '（' + modeText + '）', meta);
+      if (Array.isArray(meta.sourceIDs) && meta.sourceIDs.length > 0) {
+        const mergedSourceIDs = Array.from(new Set([
+          ...(ruleModal.sourceIDs || []).map(String),
+          ...meta.sourceIDs.map(String)
+        ].filter(Boolean)));
+        this.selectedCustomListIDs = mergedSourceIDs.slice();
+        ruleModal.sourceIDs = mergedSourceIDs.slice();
+        ruleModal.sourceSelectionKnown = true;
+      }
       this.importModeVisible = false;
       this.pendingImport = null;
       this.selectedPath = undefined;
@@ -1123,7 +1228,8 @@
             kind: 'custom-group',
             label,
             path: urls.join('\n'),
-            description: '自定义标签 · ' + urls.length + ' 个 List'
+            description: '自定义标签 · ' + urls.length + ' 个 List',
+            sourceIDs: [String(item.id || '')].filter(Boolean)
           }
         };
         this.importMode = 'both';
@@ -1248,6 +1354,9 @@
     okText: '{{ i18n "sure" }}',
     isEdit: false,
     confirm: null,
+    originalSourceFingerprint: '',
+    sourceSelectionKnown: false,
+    sourceIDs: [],
     blacklistVisible: false,
     rule: {
       type: "field",
@@ -1319,6 +1428,31 @@
       this.rule.blacklistRedirect = '';
       app.$message.success('已清空当前规则黑名单');
     },
+    currentSourceRule() {
+      const base = this.getResult();
+      base._ipDomainRelation = this.rule.ipDomainRelation || 'or';
+      base._blacklistDomain = ruleAdvancedSplit(this.rule.blacklistDomain);
+      base._blacklistIP = ruleAdvancedSplit(this.rule.blacklistIP);
+      base._blacklistRelation = this.rule.blacklistRelation || 'or';
+      base._blacklistAction = this.rule.blacklistAction || 'deny';
+      base._blacklistRedirect = this.rule.blacklistRedirect || '';
+      return base;
+    },
+    currentSourceFingerprint() {
+      return duiRuleSourceFingerprint(this.currentSourceRule());
+    },
+    commitSourceMetadata() {
+      if (!this.sourceSelectionKnown) return;
+      const newFingerprint = this.currentSourceFingerprint();
+      const oldFingerprint = String(this.originalSourceFingerprint || '');
+      if (oldFingerprint && oldFingerprint !== newFingerprint) {
+        app.$delete(app.routeSourceMap, oldFingerprint);
+      }
+      const ids = Array.from(new Set((this.sourceIDs || []).map(String).filter(Boolean)));
+      if (ids.length > 0) app.$set(app.routeSourceMap, newFingerprint, ids);
+      else app.$delete(app.routeSourceMap, newFingerprint);
+      this.originalSourceFingerprint = newFingerprint;
+    },
     ok() {
       if (!String(ruleModal.rule.outboundTag || '').trim() && !String(ruleModal.rule.balancerTag || '').trim()) {
         app.$message.warning('请先选择出站 Tag 或负载均衡 Tag');
@@ -1343,6 +1477,7 @@
       }
       const newRules = ruleModal.getResults();
       ObjectUtil.execute(ruleModal.confirm, newRules);
+      ruleModal.commitSourceMetadata();
     },
     show({
       title = '',
@@ -1355,6 +1490,9 @@
       this.okText = okText;
       this.confirm = confirm;
       this.visible = true;
+      this.originalSourceFingerprint = isEdit && rule ? duiRuleSourceFingerprint(rule) : '';
+      this.sourceSelectionKnown = false;
+      this.sourceIDs = [];
       this.blacklistVisible = false;
       if (isEdit) {
         this.rule.domain = rule.domain ? rule.domain.join(',') : [];
@@ -1399,6 +1537,15 @@
       }
       this.isEdit = isEdit;
       ruleDomainAdvanced.resetForRule();
+      if (isEdit && this.originalSourceFingerprint && app.routeSourceMap) {
+        const savedSourceIDs = app.routeSourceMap[this.originalSourceFingerprint];
+        if (Array.isArray(savedSourceIDs) && savedSourceIDs.length > 0) {
+          ruleDomainAdvanced.selectedCustomListIDs = savedSourceIDs.map(String);
+          this.sourceIDs = savedSourceIDs.map(String);
+          this.sourceSelectionKnown = true;
+          ruleDomainAdvanced.sourceDetectionMessage = '已恢复这条路由之前保存的自定义标签来源';
+        }
+      }
       this.inboundTags = app.templateSettings.inbounds.filter((i) => !ObjectUtil.isEmpty(i.tag)).map(obj => obj.tag);
       this.inboundTags.push(...app.inboundTags);
       if (app.enableDNS && !ObjectUtil.isEmpty(app.dnsTag)) this.inboundTags.push(app.dnsTag)
