@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,5 +140,22 @@ func TestCustomRuleListsMigrateLegacySingleURL(t *testing.T) {
 	}
 	if strings.Contains(string(data), `"url":`) || !strings.Contains(string(data), `"urls":`) {
 		t.Fatalf("legacy format was not rewritten: %s", data)
+	}
+}
+
+func TestCustomRuleURLLimits(t *testing.T) {
+	urls := make([]string, 21)
+	for i := range urls {
+		urls[i] = fmt.Sprintf("https://example.com/rule-%d.list", i)
+	}
+	if _, err := normalizeCustomRuleURLsLimit(urls, "", 20); err == nil {
+		t.Fatal("expected single custom tag 20 URL limit")
+	}
+	normalized, err := normalizeCustomRuleURLsLimit(urls, "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(normalized) != 21 {
+		t.Fatalf("batch normalize got %d URLs, want 21", len(normalized))
 	}
 }

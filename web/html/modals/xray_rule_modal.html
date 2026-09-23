@@ -250,10 +250,35 @@
         </div>
 
         <a-card v-if="ruleDomainAdvanced.selectedCategory === 'custom'" size="small" :style="{ marginBottom:'12px' }">
-          <div :style="{ marginBottom:'8px', fontWeight:600 }">自定义标签</div>
+          <div :style="{ marginBottom:'8px', fontWeight:600 }">自定义 将添加以下标签：</div>
+          <a-alert type="info" show-icon :style="{ marginBottom:'10px' }"
+            message="可选择具体自定义标签；如果一个都不勾选，默认添加全部。"
+            description="所选标签下的全部 List 会实时读取、自动识别、合并并去重。"></a-alert>
+
+          <a-checkbox-group v-model="ruleDomainAdvanced.selectedCustomListIDs"
+            :style="{ width:'100%', marginBottom:'10px' }">
+            <a-row :gutter="[8,8]">
+              <a-col v-for="item in ruleDomainAdvanced.customLists" :key="'select-custom-' + item.id" :xs="24" :sm="12" :md="8">
+                <a-checkbox :value="item.id">
+                  [[ item.name ]]
+                  <span :style="{ opacity:.58, marginLeft:'4px', fontSize:'12px' }">([[ (item.urls || []).length ]])</span>
+                </a-checkbox>
+              </a-col>
+            </a-row>
+          </a-checkbox-group>
+
+          <div class="dui-rule-actions" :style="{ marginBottom:'12px' }">
+            <a-button size="small" @click="ruleDomainAdvanced.selectAllCustomLists()">全选</a-button>
+            <a-button size="small" @click="ruleDomainAdvanced.selectedCustomListIDs = []">清空选择（默认全部）</a-button>
+            <a-button type="primary" size="small" :loading="ruleDomainAdvanced.ruleLoading"
+              :disabled="ruleDomainAdvanced.customLists.length === 0"
+              @click="ruleDomainAdvanced.importSelectedCustomLists()">添加 自定义 规则</a-button>
+          </div>
+
+          <a-divider orientation="left">管理自定义标签</a-divider>
           <a-alert type="info" show-icon :style="{ marginBottom:'10px' }"
             message="一个自定义标签可以保存多个 List 地址"
-            description="每个标签最多 20 个公开 http/https Clash List；点击一次“添加到当前规则”会实时读取全部地址、自动去重并合并。"></a-alert>
+            description="每个标签最多 20 个公开 http/https Clash List；可继续创建、编辑或删除标签。"></a-alert>
 
           <a-row :gutter="[8,8]" :style="{ marginBottom:'10px' }">
             <a-col :span="24">
@@ -288,8 +313,6 @@
                 </div>
               </div>
               <div class="dui-rule-actions">
-                <a-button type="primary" size="small" icon="plus" :loading="ruleDomainAdvanced.ruleLoading"
-                  @click="ruleDomainAdvanced.identifyAddCustomGroup(item)">添加到当前规则</a-button>
                 <a-button size="small" icon="edit" @click="ruleDomainAdvanced.editCustomList(item)">编辑</a-button>
                 <a-button size="small" type="danger" ghost icon="delete" @click="ruleDomainAdvanced.deleteCustomList(item)">删除</a-button>
               </div>
@@ -565,6 +588,7 @@
     pendingImport: null,
     selectedCategory: '',
     selectedCategoryPaths: [],
+    selectedCustomListIDs: [],
     baselineDomains: [],
     baselineIPs: [],
     addedImports: [],
@@ -655,6 +679,7 @@
       const next = this.selectedCategory === category ? '' : category;
       this.selectedCategory = next;
       this.selectedCategoryPaths = [];
+      this.selectedCustomListIDs = [];
       this.lastMessage = '';
       this.lastError = '';
     },
@@ -734,6 +759,7 @@
       this.customListForm = { id:'', name:'', urlsText:'' };
       this.selectedCategory = '';
       this.selectedCategoryPaths = [];
+      this.selectedCustomListIDs = [];
       this.preview = null;
       this.importModeVisible = false;
       this.importMode = 'both';
@@ -773,6 +799,8 @@
         const msg = await HttpUtil.get('/dui/xray/ruleSet/customLists');
         if (msg.success && Array.isArray(msg.obj)) {
           this.customLists = msg.obj;
+          const validIDs = new Set(this.customLists.map(item => String(item.id || '')));
+          this.selectedCustomListIDs = (this.selectedCustomListIDs || []).filter(id => validIDs.has(String(id)));
         } else {
           this.lastError = (msg && msg.msg) ? msg.msg : '读取自定义 List 收藏失败';
         }
@@ -780,6 +808,79 @@
         this.lastError = e && e.message ? e.message : '读取自定义 List 收藏失败';
       } finally {
         this.customListsLoading = false;
+      }
+    },
+    selectAllCustomLists() {
+      this.selectedCustomListIDs = this.customLists.map(item => item.id);
+    },
+    async importSelectedCustomLists() {
+      if (!Array.isArray(this.customLists) || this.customLists.length === 0) {
+        app.$message.warning('还没有可用的自定义标签');
+        return;
+      }
+      const selectedSet = new Set((this.selectedCustomListIDs || []).map(String));
+      const selectedItems = selectedSet.size > 0
+        ? this.customLists.filter(item => selectedSet.has(String(item.id)))
+        : this.customLists.slice();
+      if (selectedItems.length === 0) {
+        app.$message.warning('没有找到已选择的自定义标签');
+        return;
+      }
+
+      const urls = [];
+      const seen = new Set();
+      selectedItems.forEach(item => {
+        const itemURLs = Array.isArray(item.urls) ? item.urls : (item.url ? [item.url] : []);
+        itemURLs.forEach(raw => {
+          const value = String(raw || '').trim();
+          if (value && !seen.has(value)) {
+            seen.add(value);
+            urls.push(value);
+          }
+        });
+      });
+      if (urls.length === 0) {
+        app.$message.warning('所选自定义标签没有 List 地址');
+        return;
+      }
+      if (urls.length > 100) {
+        app.$message.warning('一次最多合并 100 个 List 地址，请减少选择');
+        return;
+      }
+
+      this.ruleLoading = true;
+      this.lastMessage = '';
+      this.lastError = '';
+      try {
+        const msg = await HttpUtil.post('/dui/xray/ruleSet/resolveURLs', { urls });
+        if (!msg.success || !msg.obj) {
+          this.lastError = (msg && msg.msg) ? msg.msg : '自定义标签规则识别失败';
+          app.$message.error(this.lastError);
+          return;
+        }
+        const names = selectedItems.map(item => item.name || '未命名');
+        const allSelected = selectedSet.size === 0 || selectedItems.length === this.customLists.length;
+        const label = allSelected ? '自定义全部' : ('自定义：' + names.join('、'));
+        this.preview = { ...msg.obj, name: label };
+        const selectedIDs = selectedItems.map(item => String(item.id || '')).sort();
+        this.pendingImport = {
+          result: msg.obj,
+          label,
+          meta: {
+            id: 'custom-selection:' + duiBlacklistHash(selectedIDs.join('|')),
+            kind: 'custom-selection',
+            label,
+            path: urls.join('\n'),
+            description: names.join('、') + ' · ' + urls.length + ' 个 List'
+          }
+        };
+        this.importMode = 'both';
+        this.importModeVisible = true;
+      } catch (e) {
+        this.lastError = e && e.message ? e.message : '自定义标签规则识别失败';
+        app.$message.error(this.lastError);
+      } finally {
+        this.ruleLoading = false;
       }
     },
     async saveCustomList() {
