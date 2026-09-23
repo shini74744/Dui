@@ -71,7 +71,7 @@ install_menu_script_atomic() {
     local staged="/usr/bin/.x-ui.new.$$.${RANDOM}"
 
     rm -f "$staged"
-    if ! install -m 0755 "$source" "$staged"; then
+    if ! command install -m 0755 "$source" "$staged"; then
         rm -f "$staged"
         return 1
     fi
@@ -206,7 +206,7 @@ before_show_menu() {
     show_menu
 }
 
-install() {
+install_panel() {
     bash <(curl -fsSL "${XUI_RAW_BASE}/install.sh")
     if [[ $? == 0 ]]; then
         if [[ $# == 0 ]]; then
@@ -322,7 +322,7 @@ update() {
     if [[ -d /etc/x-ui ]]; then
         cp -a /etc/x-ui "${tmpdir}/etc-x-ui.bak"
     fi
-    install -m 0755 "${tmpdir}/x-ui/x-ui" "$xui_bin"
+    command install -m 0755 "${tmpdir}/x-ui/x-ui" "$xui_bin"
     if ! install_menu_script_atomic "${tmpdir}/x-ui/x-ui.sh"; then
         LOGE "新菜单脚本安装失败，正在回滚"
         systemctl restart x-ui 2>/dev/null || true
@@ -331,9 +331,9 @@ update() {
     fi
     ln -sfn /usr/bin/x-ui /usr/local/x-ui/x-ui.sh
     if [[ "$had_fb5" == true ]]; then
-        install -m 0755 "${tmpdir}/x-ui/fb5.sh" /usr/local/bin/fb5
+        command install -m 0755 "${tmpdir}/x-ui/fb5.sh" /usr/local/bin/fb5
     fi
-    install -m 0644 "${tmpdir}/x-ui/x-ui.service" /etc/systemd/system/x-ui.service
+    command install -m 0644 "${tmpdir}/x-ui/x-ui.service" /etc/systemd/system/x-ui.service
     systemctl daemon-reload
 
     if systemctl restart x-ui && sleep 2 && systemctl is-active --quiet x-ui; then
@@ -348,13 +348,13 @@ update() {
     fi
 
     LOGE "新版本启动失败，正在自动回滚..."
-    [[ -f "${tmpdir}/x-ui.bak" ]] && install -m 0755 "${tmpdir}/x-ui.bak" "$xui_bin"
+    [[ -f "${tmpdir}/x-ui.bak" ]] && command install -m 0755 "${tmpdir}/x-ui.bak" "$xui_bin"
     [[ -f "${tmpdir}/x-ui.sh.bak" ]] && install_menu_script_atomic "${tmpdir}/x-ui.sh.bak"
     ln -sfn /usr/bin/x-ui /usr/local/x-ui/x-ui.sh
-    [[ -f "${tmpdir}/x-ui.service.bak" ]] && install -m 0644 "${tmpdir}/x-ui.service.bak" /etc/systemd/system/x-ui.service
+    [[ -f "${tmpdir}/x-ui.service.bak" ]] && command install -m 0644 "${tmpdir}/x-ui.service.bak" /etc/systemd/system/x-ui.service
     rm -rf /etc/x-ui
     if [[ -f "${tmpdir}/fb5.bak" ]]; then
-        install -m 0755 "${tmpdir}/fb5.bak" /usr/local/bin/fb5
+        command install -m 0755 "${tmpdir}/fb5.bak" /usr/local/bin/fb5
     fi
     [[ -d "${tmpdir}/etc-x-ui.bak" ]] && cp -a "${tmpdir}/etc-x-ui.bak" /etc/x-ui
     systemctl daemon-reload
@@ -2547,7 +2547,7 @@ show_menu() {
         exit 0
         ;;
     1)
-        check_uninstall && install
+        check_uninstall && install_panel
         ;;
     2)
         check_install && update
@@ -2694,7 +2694,7 @@ if [[ $# > 0 ]]; then
         check_install 0 && custom_version 0
         ;;
     "install")
-        check_uninstall 0 && install 0
+        check_uninstall 0 && install_panel 0
         ;;
     "uninstall")
         check_install 0 && uninstall 0
