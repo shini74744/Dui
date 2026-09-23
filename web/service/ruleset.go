@@ -123,15 +123,15 @@ func validatePublicRuleURL(rawURL string) (*url.URL, error) {
 	return u, nil
 }
 
-func normalizeCustomRuleURLs(urls []string, legacyURL string) ([]string, error) {
+func normalizeCustomRuleURLsLimit(urls []string, legacyURL string, max int) ([]string, error) {
 	if len(urls) == 0 && strings.TrimSpace(legacyURL) != "" {
 		urls = []string{legacyURL}
 	}
 	if len(urls) == 0 {
 		return nil, errors.New("自定义标签至少需要一个 List 地址")
 	}
-	if len(urls) > 20 {
-		return nil, errors.New("一个自定义标签最多保存 20 个 List 地址")
+	if max > 0 && len(urls) > max {
+		return nil, fmt.Errorf("List 地址数量最多 %d 个", max)
 	}
 	result := make([]string, 0, len(urls))
 	seen := map[string]struct{}{}
@@ -215,7 +215,7 @@ func (s *RuleSetService) SaveCustomList(item CustomRuleList) (*CustomRuleList, e
 	if len(item.Name) > 80 {
 		return nil, errors.New("自定义标签名称最多 80 个字符")
 	}
-	urls, err := normalizeCustomRuleURLs(item.URLs, item.URL)
+	urls, err := normalizeCustomRuleURLsLimit(item.URLs, item.URL, 20)
 	if err != nil {
 		return nil, err
 	}
@@ -663,7 +663,7 @@ func (s *RuleSetService) ResolveURL(rawURL string) (*RuleSetImportResult, error)
 }
 
 func (s *RuleSetService) ResolveURLs(urls []string) (*RuleSetBatchResult, error) {
-	normalized, err := normalizeCustomRuleURLs(urls, "")
+	normalized, err := normalizeCustomRuleURLsLimit(urls, "", 100)
 	if err != nil {
 		return nil, err
 	}

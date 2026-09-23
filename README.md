@@ -30,6 +30,14 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - 来源 IP 入站黑名单与集中黑名单管理
 - 星空主题、侧边栏动画与移动端适配
 
+## v26.9.31 自定义标签批量选择
+
+- 自定义标签现在像 AI / 游戏等精选分类一样支持复选。
+- 可同时选择多个已创建的自定义标签，并支持全选、清空。
+- 一个都不勾选时默认添加全部自定义标签。
+- 多个标签下的 List 地址会统一实时读取、合并并去重；一次最多合并 100 个 List 地址。
+- 标签创建、编辑、删除管理仍保留在同一页面下方。
+
 ## v26.9.30 自定义多 List 标签
 
 - 第三方应用分流新增“自定义”标签，可创建多个自定义规则标签。
@@ -140,10 +148,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v26.9.30`：
+例如安装 `v26.9.31`：
 
 ```bash
-VERSION=v26.9.30 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v26.9.31 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令
