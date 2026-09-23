@@ -45,8 +45,12 @@ func (a *XraySettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/kernel/apply", a.applyKernelTuning)
 	g.POST("/kernel/restore", a.restoreKernelTuning)
 	g.GET("/ruleSet/apps", a.getRuleSetApps)
+	g.GET("/ruleSet/customLists", a.getCustomRuleLists)
+	g.POST("/ruleSet/customLists/save", a.saveCustomRuleList)
+	g.POST("/ruleSet/customLists/delete", a.deleteCustomRuleList)
 	g.POST("/ruleSet/resolve", a.resolveRuleSet)
 	g.POST("/ruleSet/resolveURL", a.resolveRuleSetURL)
+	g.POST("/ruleSet/resolveURLs", a.resolveRuleSetURLs)
 	g.POST("/ruleSet/resolveMany", a.resolveRuleSetMany)
 }
 
@@ -293,6 +297,39 @@ type ruleSetResolveManyForm struct {
 	Paths []string `json:"paths" form:"paths"`
 }
 
+type ruleSetResolveURLsForm struct {
+	URLs []string `json:"urls" form:"urls"`
+}
+
+type customRuleListDeleteForm struct {
+	ID string `json:"id" form:"id"`
+}
+
+func (a *XraySettingController) getCustomRuleLists(c *gin.Context) {
+	items, err := a.RuleSetService.CustomLists()
+	jsonObj(c, items, err)
+}
+
+func (a *XraySettingController) saveCustomRuleList(c *gin.Context) {
+	form := &service.CustomRuleList{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "自定义 List 参数无效", err)
+		return
+	}
+	item, err := a.RuleSetService.SaveCustomList(*form)
+	jsonObj(c, item, err)
+}
+
+func (a *XraySettingController) deleteCustomRuleList(c *gin.Context) {
+	form := &customRuleListDeleteForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "自定义 List 参数无效", err)
+		return
+	}
+	err := a.RuleSetService.DeleteCustomList(form.ID)
+	jsonObj(c, map[string]any{"deleted": err == nil}, err)
+}
+
 func (a *XraySettingController) getRuleSetApps(c *gin.Context) {
 	force := c.Query("refresh") == "1" || c.Query("refresh") == "true"
 	apps, err := a.RuleSetService.Apps(force)
@@ -316,6 +353,16 @@ func (a *XraySettingController) resolveRuleSetURL(c *gin.Context) {
 		return
 	}
 	result, err := a.RuleSetService.ResolveURL(form.URL)
+	jsonObj(c, result, err)
+}
+
+func (a *XraySettingController) resolveRuleSetURLs(c *gin.Context) {
+	form := &ruleSetResolveURLsForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, "自定义标签 List 参数无效", err)
+		return
+	}
+	result, err := a.RuleSetService.ResolveURLs(form.URLs)
 	jsonObj(c, result, err)
 }
 

@@ -24,6 +24,8 @@ const (
 	ruleCatalogCachePath  = "/var/cache/dui/blackmatrix-clash.json"
 )
 
+var customRuleListsPath = "/etc/x-ui/custom_rule_lists.json"
+
 type RuleSetApp struct {
 	Name     string `json:"name"`
 	Path     string `json:"path"`
@@ -52,12 +54,22 @@ type RuleSetBatchResult struct {
 	TypeCounts map[string]int `json:"typeCounts"`
 }
 
+type CustomRuleList struct {
+	ID        string   `json:"id" form:"id"`
+	Name      string   `json:"name" form:"name"`
+	URLs      []string `json:"urls" form:"urls"`
+	URL       string   `json:"url,omitempty" form:"url"` // legacy single-address format, migrated on read
+	CreatedAt int64    `json:"createdAt"`
+	UpdatedAt int64    `json:"updatedAt"`
+}
+
 type RuleSetService struct{}
 
 var (
 	ruleCatalogMu       sync.Mutex
 	ruleCatalogMemory   []RuleSetApp
 	ruleCatalogLoadedAt time.Time
+	customRuleListsMu   sync.Mutex
 	ruleSetPathRe       = regexp.MustCompile(`^[A-Za-z0-9_.@+'-]+/[A-Za-z0-9_.@+'-]+\.list$`)
 	ruleAppNameRe       = regexp.MustCompile(`^[A-Za-z0-9_.@+'-]+$`)
 )
@@ -109,6 +121,181 @@ func validatePublicRuleURL(rawURL string) (*url.URL, error) {
 		}
 	}
 	return u, nil
+}
+
+func normalizeCustomRuleURLs(urls []string, legacyURL string) ([]string, error) {
+	if len(urls) == 0 && strings.TrimSpace(legacyURL) != "" {
+		urls = []string{legacyURL}
+	}
+	if len(urls) == 0 {
+		return nil, errors.New("自定义标签至少需要一个 List 地址")
+	}
+	if len(urls) > 20 {
+		return nil, errors.New("一个自定义标签最多保存 20 个 List 地址")
+	}
+	result := make([]string, 0, len(urls))
+	seen := map[string]struct{}{}
+	for _, rawURL := range urls {
+		rawURL = strings.TrimSpace(rawURL)
+		if rawURL == "" {
+			continue
+		}
+		if len(rawURL) > 2048 {
+			return nil, errors.New("自定义 List 地址过长")
+		}
+		u, err := validatePublicRuleURL(rawURL)
+		if err != nil {
+			return nil, err
+		}
+		normalized := u.String()
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	if len(result) == 0 {
+		return nil, errors.New("自定义标签至少需要一个有效 List 地址")
+	}
+	return result, nil
+}
+
+func readCustomRuleListsUnlocked() ([]CustomRuleList, error) {
+	data, err := os.ReadFile(customRuleListsPath)
+	if os.IsNotExist(err) {
+		return []CustomRuleList{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("读取自定义 List 收藏失败: %w", err)
+	}
+	var items []CustomRuleList
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, fmt.Errorf("解析自定义 List 收藏失败: %w", err)
+	}
+	if items == nil {
+		items = []CustomRuleList{}
+	}
+	for i := range items {
+		if len(items[i].URLs) == 0 && strings.TrimSpace(items[i].URL) != "" {
+			items[i].URLs = []string{strings.TrimSpace(items[i].URL)}
+		}
+		items[i].URL = ""
+	}
+	return items, nil
+}
+
+func writeCustomRuleListsUnlocked(items []CustomRuleList) error {
+	data, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if err := writeAtomicFile(customRuleListsPath, data, 0600); err != nil {
+		return fmt.Errorf("保存自定义 List 收藏失败: %w", err)
+	}
+	return nil
+}
+
+func (s *RuleSetService) CustomLists() ([]CustomRuleList, error) {
+	customRuleListsMu.Lock()
+	defer customRuleListsMu.Unlock()
+	items, err := readCustomRuleListsUnlocked()
+	if err != nil {
+		return nil, err
+	}
+	return append([]CustomRuleList(nil), items...), nil
+}
+
+func (s *RuleSetService) SaveCustomList(item CustomRuleList) (*CustomRuleList, error) {
+	item.Name = strings.TrimSpace(item.Name)
+	item.ID = strings.TrimSpace(item.ID)
+	if item.Name == "" {
+		return nil, errors.New("自定义标签名称不能为空")
+	}
+	if len(item.Name) > 80 {
+		return nil, errors.New("自定义标签名称最多 80 个字符")
+	}
+	urls, err := normalizeCustomRuleURLs(item.URLs, item.URL)
+	if err != nil {
+		return nil, err
+	}
+	item.URLs = urls
+	item.URL = ""
+
+	customRuleListsMu.Lock()
+	defer customRuleListsMu.Unlock()
+	items, err := readCustomRuleListsUnlocked()
+	if err != nil {
+		return nil, err
+	}
+
+	index := -1
+	for i := range items {
+		if item.ID != "" && items[i].ID == item.ID {
+			index = i
+			break
+		}
+	}
+	for i := range items {
+		if index >= 0 && i == index {
+			continue
+		}
+		existing := map[string]struct{}{}
+		for _, existingURL := range items[i].URLs {
+			existing[strings.TrimSpace(existingURL)] = struct{}{}
+		}
+		for _, candidate := range item.URLs {
+			if _, ok := existing[candidate]; ok {
+				return nil, fmt.Errorf("List 地址已存在于自定义标签“%s”中", items[i].Name)
+			}
+		}
+	}
+
+	now := time.Now().Unix()
+	if index >= 0 {
+		item.CreatedAt = items[index].CreatedAt
+		if item.CreatedAt == 0 {
+			item.CreatedAt = now
+		}
+		item.UpdatedAt = now
+		items[index] = item
+	} else {
+		item.ID = fmt.Sprintf("custom-%d", time.Now().UnixNano())
+		item.CreatedAt = now
+		item.UpdatedAt = now
+		items = append(items, item)
+	}
+	if err := writeCustomRuleListsUnlocked(items); err != nil {
+		return nil, err
+	}
+	saved := item
+	return &saved, nil
+}
+
+func (s *RuleSetService) DeleteCustomList(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("自定义 List ID 不能为空")
+	}
+	customRuleListsMu.Lock()
+	defer customRuleListsMu.Unlock()
+	items, err := readCustomRuleListsUnlocked()
+	if err != nil {
+		return err
+	}
+	next := make([]CustomRuleList, 0, len(items))
+	found := false
+	for _, item := range items {
+		if item.ID == id {
+			found = true
+			continue
+		}
+		next = append(next, item)
+	}
+	if !found {
+		return errors.New("自定义 List 不存在")
+	}
+	return writeCustomRuleListsUnlocked(next)
 }
 
 func dialPublicRuleURL(ctx context.Context, network, address string) (net.Conn, error) {
@@ -471,6 +658,80 @@ func (s *RuleSetService) ResolveURL(rawURL string) (*RuleSetImportResult, error)
 	result := parseBlackmatrixList(name, u.String(), data)
 	if result.Imported == 0 {
 		return result, errors.New("该自定义 List 没有可转换为 Xray 路由的条目")
+	}
+	return result, nil
+}
+
+func (s *RuleSetService) ResolveURLs(urls []string) (*RuleSetBatchResult, error) {
+	normalized, err := normalizeCustomRuleURLs(urls, "")
+	if err != nil {
+		return nil, err
+	}
+
+	result := &RuleSetBatchResult{
+		Domains:    []string{},
+		IPs:        []string{},
+		Failed:     []string{},
+		TypeCounts: map[string]int{},
+	}
+	domainSeen := map[string]struct{}{}
+	ipSeen := map[string]struct{}{}
+
+	type itemResult struct {
+		rawURL string
+		res    *RuleSetImportResult
+		err    error
+	}
+	jobs := make(chan string)
+	out := make(chan itemResult, len(normalized))
+	workerCount := 6
+	if len(normalized) < workerCount {
+		workerCount = len(normalized)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for rawURL := range jobs {
+				res, err := s.ResolveURL(rawURL)
+				out <- itemResult{rawURL: rawURL, res: res, err: err}
+			}
+		}()
+	}
+	go func() {
+		for _, rawURL := range normalized {
+			jobs <- rawURL
+		}
+		close(jobs)
+		wg.Wait()
+		close(out)
+	}()
+
+	for item := range out {
+		if item.err != nil || item.res == nil {
+			result.Failed = append(result.Failed, item.rawURL)
+			continue
+		}
+		result.Files++
+		result.Skipped += item.res.Skipped
+		for kind, count := range item.res.TypeCounts {
+			result.TypeCounts[kind] += count
+		}
+		for _, domain := range item.res.Domains {
+			if addUnique(&result.Domains, domainSeen, domain) {
+				result.Imported++
+			}
+		}
+		for _, ip := range item.res.IPs {
+			if addUnique(&result.IPs, ipSeen, ip) {
+				result.Imported++
+			}
+		}
+	}
+	sort.Strings(result.Failed)
+	if result.Imported == 0 {
+		return result, errors.New("自定义标签下的 List 没有可导入的 Xray 路由条目")
 	}
 	return result, nil
 }
