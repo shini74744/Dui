@@ -30,6 +30,12 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - 来源 IP 入站黑名单与集中黑名单管理
 - 星空主题、侧边栏动画与移动端适配
 
+## v26.9.28 更新循环彻底修复
+
+- 修复正在运行的 `/usr/bin/x-ui` 被原地覆盖后 Bash 执行流错乱、重复进入安装脚本的问题。
+- 菜单更新、面板更新和安装器中的菜单替换统一改为原子替换。
+- 已是 GitHub Latest 时仍会直接提示，无下载、无覆盖、无重启。
+
 ## v26.9.27 更新菜单热修复
 
 - “更新面板”现在会先比较当前实际版本与 GitHub Latest。
@@ -118,10 +124,10 @@ https://github.com/shini74744/Dui/releases/latest
 
 ## 安装指定版本
 
-例如安装 `v26.9.27`：
+例如安装 `v26.9.28`：
 
 ```bash
-VERSION=v26.9.27 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
+VERSION=v26.9.28 && bash <(curl -Ls "https://raw.githubusercontent.com/shini74744/Dui/${VERSION}/install.sh") ${VERSION}
 ```
 
 ## 常用命令

@@ -64,6 +64,24 @@ function LOGI() {
     echo -e "${green}[INF] $* ${plain}"
 }
 
+# 原子替换菜单脚本，避免当前正在运行的 bash 读取到被原地截断/覆盖的 /usr/bin/x-ui。
+install_menu_script_atomic() {
+    local source="$1"
+    local dest="/usr/bin/x-ui"
+    local staged="/usr/bin/.x-ui.new.$$.${RANDOM}"
+
+    rm -f "$staged"
+    if ! install -m 0755 "$source" "$staged"; then
+        rm -f "$staged"
+        return 1
+    fi
+    if ! mv -f "$staged" "$dest"; then
+        rm -f "$staged"
+        return 1
+    fi
+    return 0
+}
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}致命错误: ${plain} 请使用 root 权限运行此脚本\n" && exit 1
 
@@ -305,7 +323,12 @@ update() {
         cp -a /etc/x-ui "${tmpdir}/etc-x-ui.bak"
     fi
     install -m 0755 "${tmpdir}/x-ui/x-ui" "$xui_bin"
-    install -m 0755 "${tmpdir}/x-ui/x-ui.sh" /usr/bin/x-ui
+    if ! install_menu_script_atomic "${tmpdir}/x-ui/x-ui.sh"; then
+        LOGE "新菜单脚本安装失败，正在回滚"
+        systemctl restart x-ui 2>/dev/null || true
+        rm -rf "$tmpdir"
+        return 1
+    fi
     ln -sfn /usr/bin/x-ui /usr/local/x-ui/x-ui.sh
     if [[ "$had_fb5" == true ]]; then
         install -m 0755 "${tmpdir}/x-ui/fb5.sh" /usr/local/bin/fb5
@@ -326,7 +349,7 @@ update() {
 
     LOGE "新版本启动失败，正在自动回滚..."
     [[ -f "${tmpdir}/x-ui.bak" ]] && install -m 0755 "${tmpdir}/x-ui.bak" "$xui_bin"
-    [[ -f "${tmpdir}/x-ui.sh.bak" ]] && install -m 0755 "${tmpdir}/x-ui.sh.bak" /usr/bin/x-ui
+    [[ -f "${tmpdir}/x-ui.sh.bak" ]] && install_menu_script_atomic "${tmpdir}/x-ui.sh.bak"
     ln -sfn /usr/bin/x-ui /usr/local/x-ui/x-ui.sh
     [[ -f "${tmpdir}/x-ui.service.bak" ]] && install -m 0644 "${tmpdir}/x-ui.service.bak" /etc/systemd/system/x-ui.service
     rm -rf /etc/x-ui
@@ -359,7 +382,12 @@ update_menu() {
         [[ $# == 0 ]] && before_show_menu
         return 1
     fi
-    install -m 0755 "$tmpfile" /usr/bin/x-ui
+    if ! install_menu_script_atomic "$tmpfile"; then
+        LOGE "菜单原子替换失败，旧菜单未改动"
+        rm -f "$tmpfile"
+        [[ $# == 0 ]] && before_show_menu
+        return 1
+    fi
     ln -sfn /usr/bin/x-ui /usr/local/x-ui/x-ui.sh
     rm -f "$tmpfile"
     LOGI "菜单更新成功"
@@ -745,7 +773,7 @@ update_shell() {
         rm -f "$tmpfile"
         return 0
     fi
-    install -m 0755 "$tmpfile" /usr/bin/x-ui || { rm -f "$tmpfile"; return 1; }
+    install_menu_script_atomic "$tmpfile" || { rm -f "$tmpfile"; return 1; }
     ln -sfn /usr/bin/x-ui /usr/local/x-ui/x-ui.sh
     rm -f "$tmpfile"
     LOGI "菜单脚本已自动更新"

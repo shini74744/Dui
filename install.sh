@@ -14,6 +14,25 @@ XUI_RELEASE_BASE="https://github.com/${XUI_REPO}/releases"
 
 cur_dir=$(pwd)
 
+# 原子替换菜单脚本。安装器可能由正在运行的 /usr/bin/x-ui 菜单调用，
+# 不能原地截断该文件，否则当前 bash 可能继续读取到被改写后的内容并发生执行流错乱。
+install_menu_script_atomic() {
+    local source="$1"
+    local dest="/usr/bin/x-ui"
+    local staged="/usr/bin/.x-ui.new.$$.${RANDOM}"
+
+    rm -f "$staged"
+    if ! install -m 0755 "$source" "$staged"; then
+        rm -f "$staged"
+        return 1
+    fi
+    if ! mv -f "$staged" "$dest"; then
+        rm -f "$staged"
+        return 1
+    fi
+    return 0
+}
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}致命错误: ${plain} 请使用 root 权限运行此脚本\n" && exit 1
 
@@ -412,7 +431,18 @@ install_x-ui() {
         had_fb5=true
         cp -aL /usr/local/bin/fb5 "${tmpdir}/fb5.bak"
     fi
-    install -m 0755 /usr/local/x-ui/x-ui.sh /usr/bin/x-ui
+    if ! install_menu_script_atomic /usr/local/x-ui/x-ui.sh; then
+        echo -e "${red}安装菜单脚本失败，正在自动回滚。${plain}"
+        systemctl stop x-ui 2>/dev/null || true
+        rm -rf /usr/local/x-ui
+        [[ -n "$backup_dir" && -d "$backup_dir" ]] && mv "$backup_dir" /usr/local/x-ui
+        rm -rf /etc/x-ui
+        [[ -n "$etc_backup" && -d "$etc_backup" ]] && cp -a "$etc_backup" /etc/x-ui
+        systemctl daemon-reload
+        systemctl restart x-ui 2>/dev/null || true
+        rm -rf "$tmpdir"
+        return 1
+    fi
     ln -sfn /usr/bin/x-ui /usr/local/x-ui/x-ui.sh
     if [[ "$had_fb5" == true ]]; then
         install -m 0755 "$staged/fb5.sh" /usr/local/bin/fb5
@@ -428,7 +458,7 @@ install_x-ui() {
             rm -rf /usr/local/x-ui
             [[ -n "$backup_dir" && -d "$backup_dir" ]] && mv "$backup_dir" /usr/local/x-ui
             if [[ -f "${tmpdir}/x-ui-menu.bak" ]]; then
-                install -m 0755 "${tmpdir}/x-ui-menu.bak" /usr/bin/x-ui
+                install_menu_script_atomic "${tmpdir}/x-ui-menu.bak"
             else
                 rm -f /usr/bin/x-ui
             fi
@@ -461,7 +491,7 @@ install_x-ui() {
             mv "$backup_dir" /usr/local/x-ui
         fi
         if [[ -f "${tmpdir}/x-ui-menu.bak" ]]; then
-            install -m 0755 "${tmpdir}/x-ui-menu.bak" /usr/bin/x-ui
+            install_menu_script_atomic "${tmpdir}/x-ui-menu.bak"
         else
             rm -f /usr/bin/x-ui
         fi
