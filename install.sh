@@ -22,7 +22,7 @@ install_menu_script_atomic() {
     local staged="/usr/bin/.x-ui.new.$$.${RANDOM}"
 
     rm -f "$staged"
-    if ! install -m 0755 "$source" "$staged"; then
+    if ! command install -m 0755 "$source" "$staged"; then
         rm -f "$staged"
         return 1
     fi

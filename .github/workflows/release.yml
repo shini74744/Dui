@@ -34,6 +34,21 @@ jobs:
           bash -n web/service/fb5.sh
           bash -n web/service/ntp.sh
           sh -n web/service/ddns.sh
+      - name: Menu updater regression guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Eq '^install\(\)' x-ui.sh; then
+            echo 'x-ui.sh must not define install(); it shadows the coreutils install command.'
+            exit 1
+          fi
+          grep -Eq '^install_panel\(\)' x-ui.sh
+          grep -Eq '^install_menu_script_atomic\(\)' x-ui.sh
+          grep -Eq '^install_menu_script_atomic\(\)' install.sh
+          if grep -Eq 'install -m .* /usr/bin/x-ui([[:space:]]|$)' x-ui.sh install.sh; then
+            echo 'Direct in-place writes to /usr/bin/x-ui are forbidden; use atomic replacement.'
+            exit 1
+          fi
       - name: Go tests
         run: go test ./...
 

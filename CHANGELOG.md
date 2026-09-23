@@ -1,5 +1,16 @@
 # Changelog
 
+## v26.9.29 - 2026-09-23
+
+### 更新循环根因修复
+
+- 修复菜单脚本定义 `install()` 函数后遮蔽 Linux coreutils `install` 命令的问题。
+- 原更新代码中的 `install -m ...` 实际被 Bash 解析成面板的 `install()` 函数，从而误执行 `install.sh`，造成更新完成后再次安装并形成循环。
+- 面板安装函数更名为 `install_panel()`，菜单项和命令行 `x-ui install` 同步使用新函数名。
+- 更新/回滚链路中的文件安装显式使用 `command install`，防止未来再次被同名函数或别名覆盖。
+- 保留 v26.9.28 的菜单原子替换机制，避免运行中的 `/usr/bin/x-ui` 被原地截断。
+- GitHub Actions 新增菜单更新回归守卫：禁止重新定义 `install()`，并禁止直接原地覆盖 `/usr/bin/x-ui`。
+
 ## v26.9.28 - 2026-09-23
 
 ### 更新循环彻底修复
