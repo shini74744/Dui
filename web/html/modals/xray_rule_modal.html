@@ -242,8 +242,62 @@
             :style="{ cursor:'pointer', marginBottom:'6px' }" @click="ruleDomainAdvanced.selectCategory(category.key)">
             [[ ruleDomainAdvanced.categoryLabel(category.key) ]] ([[ ruleDomainAdvanced.categoryCount(category.key) ]])
           </a-tag>
+          <a-tag color="orange"
+            :style="{ cursor:'pointer', marginBottom:'6px' }"
+            @click="ruleDomainAdvanced.selectCategory('custom')">
+            自定义 ([[ ruleDomainAdvanced.customLists.length ]])
+          </a-tag>
         </div>
-        <a-card v-if="ruleDomainAdvanced.selectedCategory" size="small" :style="{ marginBottom:'12px' }">
+
+        <a-card v-if="ruleDomainAdvanced.selectedCategory === 'custom'" size="small" :style="{ marginBottom:'12px' }">
+          <div :style="{ marginBottom:'8px', fontWeight:600 }">自定义标签</div>
+          <a-alert type="info" show-icon :style="{ marginBottom:'10px' }"
+            message="一个自定义标签可以保存多个 List 地址"
+            description="每个标签最多 20 个公开 http/https Clash List；点击一次“添加到当前规则”会实时读取全部地址、自动去重并合并。"></a-alert>
+
+          <a-row :gutter="[8,8]" :style="{ marginBottom:'10px' }">
+            <a-col :span="24">
+              <a-input v-model.trim="ruleDomainAdvanced.customListForm.name" placeholder="自定义标签名称，例如 AI规则"></a-input>
+            </a-col>
+            <a-col :span="24">
+              <a-textarea v-model="ruleDomainAdvanced.customListForm.urlsText" :rows="5"
+                placeholder="每行一个 List 地址，最多 20 个&#10;https://example.com/openai.list&#10;https://example.com/claude.list"></a-textarea>
+            </a-col>
+          </a-row>
+          <div class="dui-rule-actions" :style="{ marginBottom:'12px' }">
+            <a-button type="primary" icon="save" :loading="ruleDomainAdvanced.customListsLoading"
+              @click="ruleDomainAdvanced.saveCustomList()">
+              [[ ruleDomainAdvanced.customListForm.id ? '保存修改' : '添加标签' ]]
+            </a-button>
+            <a-button v-if="ruleDomainAdvanced.customListForm.id" @click="ruleDomainAdvanced.cancelEditCustomList()">取消编辑</a-button>
+            <a-button icon="reload" :loading="ruleDomainAdvanced.customListsLoading" @click="ruleDomainAdvanced.loadCustomLists()">刷新收藏</a-button>
+          </div>
+
+          <a-empty v-if="!ruleDomainAdvanced.customListsLoading && ruleDomainAdvanced.customLists.length === 0"
+            description="还没有创建自定义标签"></a-empty>
+          <a-card v-for="item in ruleDomainAdvanced.customLists" :key="item.id" size="small" :style="{ marginBottom:'8px' }">
+            <div class="dui-import-card-row">
+              <div class="dui-import-card-content">
+                <div :style="{ fontWeight:600, marginBottom:'4px' }">
+                  [[ item.name ]]
+                  <a-tag color="orange" :style="{ marginLeft:'6px' }">[[ (item.urls || []).length ]] 个地址</a-tag>
+                </div>
+                <div v-for="(url, urlIndex) in (item.urls || [])" :key="item.id + '-url-' + urlIndex"
+                  class="dui-import-card-url" :style="{ opacity:.65, fontSize:'12px', marginTop: urlIndex ? '3px' : '0' }">
+                  [[ (urlIndex + 1) + '. ' + url ]]
+                </div>
+              </div>
+              <div class="dui-rule-actions">
+                <a-button type="primary" size="small" icon="plus" :loading="ruleDomainAdvanced.ruleLoading"
+                  @click="ruleDomainAdvanced.identifyAddCustomGroup(item)">添加到当前规则</a-button>
+                <a-button size="small" icon="edit" @click="ruleDomainAdvanced.editCustomList(item)">编辑</a-button>
+                <a-button size="small" type="danger" ghost icon="delete" @click="ruleDomainAdvanced.deleteCustomList(item)">删除</a-button>
+              </div>
+            </div>
+          </a-card>
+        </a-card>
+
+        <a-card v-if="ruleDomainAdvanced.selectedCategory && ruleDomainAdvanced.selectedCategory !== 'custom'" size="small" :style="{ marginBottom:'12px' }">
           <div :style="{ marginBottom:'8px', fontWeight:600 }">
             [[ ruleDomainAdvanced.categoryLabel(ruleDomainAdvanced.selectedCategory) ]] 将添加以下应用规则：
           </div>
@@ -264,7 +318,7 @@
             </a-button>
           </div>
         </a-card>
-        <a-space direction="vertical" :size="10" :style="{ width:'100%' }">
+        <a-space v-if="ruleDomainAdvanced.selectedCategory !== 'custom'" direction="vertical" :size="10" :style="{ width:'100%' }">
           <a-select v-model="ruleDomainAdvanced.selectedPath"
             show-search
             allow-clear
@@ -285,16 +339,18 @@
           </div>
         </a-space>
 
-        <a-divider orientation="left">自定义 List 地址</a-divider>
-        <a-alert type="info" show-icon :style="{ marginBottom:'10px' }"
-          message="支持公开的 http/https Clash List 地址"
-          description="自动识别 DOMAIN、DOMAIN-SUFFIX、DOMAIN-KEYWORD、DOMAIN-REGEX、IP-CIDR、IP-CIDR6、GEOIP、GEOSITE；localhost 和内网地址会被拒绝。"></a-alert>
-        <a-input-group compact>
-          <a-input :style="{ width:'calc(100% - 110px)' }" v-model.trim="ruleDomainAdvanced.customListURL"
-            placeholder="例如：https://example.com/rules/YouTube.list" @pressEnter="ruleDomainAdvanced.identifyAddCustomURL()"></a-input>
-          <a-button type="primary" icon="plus" :style="{ width:'110px' }"
-            :loading="ruleDomainAdvanced.ruleLoading" @click="ruleDomainAdvanced.identifyAddCustomURL()">识别添加</a-button>
-        </a-input-group>
+        <template v-if="ruleDomainAdvanced.selectedCategory === 'custom'">
+          <a-divider orientation="left">临时 List 地址（不收藏）</a-divider>
+          <a-alert type="info" show-icon :style="{ marginBottom:'10px' }"
+            message="只使用一次时可以直接粘贴地址"
+            description="自动识别 DOMAIN、DOMAIN-SUFFIX、DOMAIN-KEYWORD、DOMAIN-REGEX、IP-CIDR、IP-CIDR6、GEOIP、GEOSITE；localhost 和内网地址会被拒绝。"></a-alert>
+          <a-input-group compact>
+            <a-input :style="{ width:'calc(100% - 110px)' }" v-model.trim="ruleDomainAdvanced.customListURL"
+              placeholder="例如：https://example.com/rules/YouTube.list" @pressEnter="ruleDomainAdvanced.identifyAddCustomURL()"></a-input>
+            <a-button type="primary" icon="plus" :style="{ width:'110px' }"
+              :loading="ruleDomainAdvanced.ruleLoading" @click="ruleDomainAdvanced.identifyAddCustomURL()">识别添加</a-button>
+          </a-input-group>
+        </template>
 
         <a-card v-if="ruleDomainAdvanced.preview" size="small" :style="{ marginTop:'14px' }">
           <a-descriptions size="small" bordered :column="2">
@@ -496,6 +552,9 @@
     apps: [],
     selectedPath: undefined,
     customListURL: '',
+    customLists: [],
+    customListsLoading: false,
+    customListForm: { id:'', name:'', urlsText:'' },
     catalogLoading: false,
     ruleLoading: false,
     preview: null,
@@ -672,6 +731,7 @@
       this.nextImportId = 1;
       this.selectedPath = undefined;
       this.customListURL = '';
+      this.customListForm = { id:'', name:'', urlsText:'' };
       this.selectedCategory = '';
       this.selectedCategoryPaths = [];
       this.preview = null;
@@ -688,6 +748,7 @@
       this.lastMessage = '';
       this.lastError = '';
       if (this.apps.length === 0) await this.loadApps(false);
+      await this.loadCustomLists();
     },
     async loadApps(force = false) {
       this.catalogLoading = true;
@@ -705,6 +766,105 @@
       } finally {
         this.catalogLoading = false;
       }
+    },
+    async loadCustomLists() {
+      this.customListsLoading = true;
+      try {
+        const msg = await HttpUtil.get('/dui/xray/ruleSet/customLists');
+        if (msg.success && Array.isArray(msg.obj)) {
+          this.customLists = msg.obj;
+        } else {
+          this.lastError = (msg && msg.msg) ? msg.msg : '读取自定义 List 收藏失败';
+        }
+      } catch (e) {
+        this.lastError = e && e.message ? e.message : '读取自定义 List 收藏失败';
+      } finally {
+        this.customListsLoading = false;
+      }
+    },
+    async saveCustomList() {
+      const urls = String(this.customListForm.urlsText || '')
+        .split(/\r?\n/)
+        .map(x => x.trim())
+        .filter(Boolean);
+      const payload = {
+        id: String(this.customListForm.id || '').trim(),
+        name: String(this.customListForm.name || '').trim(),
+        urls,
+      };
+      if (!payload.name) {
+        app.$message.warning('请填写自定义标签名称');
+        return;
+      }
+      if (urls.length === 0) {
+        app.$message.warning('请至少填写一个 List 地址');
+        return;
+      }
+      if (urls.length > 20) {
+        app.$message.warning('一个自定义标签最多保存 20 个 List 地址');
+        return;
+      }
+      if (urls.some(url => !/^https?:\/\//i.test(url))) {
+        app.$message.warning('List 仅支持公开的 http/https 地址');
+        return;
+      }
+      this.customListsLoading = true;
+      this.lastError = '';
+      try {
+        const msg = await HttpUtil.post('/dui/xray/ruleSet/customLists/save', payload);
+        if (!msg.success || !msg.obj) {
+          this.lastError = (msg && msg.msg) ? msg.msg : '保存自定义 List 失败';
+          app.$message.error(this.lastError);
+          return;
+        }
+        const editing = !!payload.id;
+        this.customListForm = { id:'', name:'', urlsText:'' };
+        await this.loadCustomLists();
+        app.$message.success(editing ? '自定义标签已更新' : '自定义标签已收藏');
+      } catch (e) {
+        this.lastError = e && e.message ? e.message : '保存自定义 List 失败';
+        app.$message.error(this.lastError);
+      } finally {
+        this.customListsLoading = false;
+      }
+    },
+    editCustomList(item) {
+      if (!item) return;
+      const urls = Array.isArray(item.urls) ? item.urls : (item.url ? [item.url] : []);
+      this.customListForm = {
+        id: String(item.id || ''),
+        name: String(item.name || ''),
+        urlsText: urls.join('\n'),
+      };
+    },
+    cancelEditCustomList() {
+      this.customListForm = { id:'', name:'', urlsText:'' };
+    },
+    deleteCustomList(item) {
+      if (!item || !item.id) return;
+      app.$confirm({
+        title: '删除自定义标签',
+        content: '确定删除自定义标签“' + (item.name || '') + '”吗？已经添加到现有分流规则里的内容不会被删除。',
+        class: themeSwitcher.currentTheme,
+        okText: '删除',
+        okType: 'danger',
+        cancelText: '取消',
+        onOk: async () => {
+          this.customListsLoading = true;
+          try {
+            const msg = await HttpUtil.post('/dui/xray/ruleSet/customLists/delete', { id: item.id });
+            if (!msg.success) {
+              app.$message.error((msg && msg.msg) ? msg.msg : '删除自定义 List 失败');
+              return;
+            }
+            if (this.customListForm.id === item.id) this.cancelEditCustomList();
+            await this.loadCustomLists();
+            app.$message.success('自定义标签已删除');
+          } finally {
+            this.customListsLoading = false;
+          }
+        }
+      });
     },
     onSelectedApp(value) {
       this.selectedPath = value || undefined;
@@ -835,8 +995,47 @@
         this.ruleLoading = false;
       }
     },
-    async identifyAddCustomURL() {
-      const rawURL = String(this.customListURL || '').trim();
+    async identifyAddCustomGroup(item) {
+      if (!item) return;
+      const urls = Array.isArray(item.urls) ? item.urls.filter(Boolean) : (item.url ? [item.url] : []);
+      if (urls.length === 0) {
+        app.$message.warning('该自定义标签没有 List 地址');
+        return;
+      }
+      this.ruleLoading = true;
+      this.lastMessage = '';
+      this.lastError = '';
+      try {
+        const msg = await HttpUtil.post('/dui/xray/ruleSet/resolveURLs', { urls });
+        if (!msg.success || !msg.obj) {
+          this.lastError = (msg && msg.msg) ? msg.msg : '自定义标签规则识别失败';
+          app.$message.error(this.lastError);
+          return;
+        }
+        const label = item.name || '自定义标签';
+        this.preview = { ...msg.obj, name: label };
+        this.pendingImport = {
+          result: msg.obj,
+          label,
+          meta: {
+            id: 'custom-group:' + String(item.id || duiBlacklistHash(urls.join('|'))),
+            kind: 'custom-group',
+            label,
+            path: urls.join('\n'),
+            description: '自定义标签 · ' + urls.length + ' 个 List'
+          }
+        };
+        this.importMode = 'both';
+        this.importModeVisible = true;
+      } catch (e) {
+        this.lastError = e && e.message ? e.message : '自定义标签规则识别失败';
+        app.$message.error(this.lastError);
+      } finally {
+        this.ruleLoading = false;
+      }
+    },
+    async identifyAddCustomURL(savedItem = null) {
+      const rawURL = String(savedItem && savedItem.url ? savedItem.url : (this.customListURL || '')).trim();
       if (!rawURL) {
         this.lastError = '请先填写自定义 List 地址';
         app.$message.warning(this.lastError);
@@ -858,16 +1057,17 @@
           return;
         }
         this.preview = msg.obj;
-        const label = msg.obj.name || 'CustomList';
+        const label = savedItem && savedItem.name ? savedItem.name : (msg.obj.name || 'CustomList');
+        const savedID = savedItem && savedItem.id ? String(savedItem.id) : '';
         this.pendingImport = {
           result: msg.obj,
           label,
           meta: {
-            id: 'custom:' + duiBlacklistHash(rawURL),
+            id: savedID ? ('custom-saved:' + savedID) : ('custom:' + duiBlacklistHash(rawURL)),
             kind: 'custom',
             label,
             path: rawURL,
-            description: '自定义 List · ' + rawURL
+            description: (savedID ? '收藏 List · ' : '临时 List · ') + rawURL
           }
         };
         this.importMode = 'both';
