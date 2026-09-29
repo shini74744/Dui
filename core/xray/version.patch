@@ -1,0 +1,24 @@
+--- a/core/core.go
++++ b/core/core.go
+@@ -29,6 +29,7 @@
+ 	build    = "Custom"
+ 	codename = "Xray, Penetrates Everything."
+ 	intro    = "A unified platform for anti-censorship."
++	releaseVersion = ""
+ )
+ 
+ func init() {
+@@ -71,8 +72,12 @@
+ 
+ // VersionStatement returns a list of strings representing the full version info.
+ func VersionStatement() []string {
++	version := Version()
++	if releaseVersion != "" {
++		version = releaseVersion
++	}
+ 	return []string{
+-		serial.Concat("Xray ", Version(), " (", codename, ") ", build, " (", runtime.Version(), " ", runtime.GOOS, "/", runtime.GOARCH, ")"),
++		serial.Concat("Xray ", version, " (", codename, ") ", build, " (", runtime.Version(), " ", runtime.GOOS, "/", runtime.GOARCH, ")"),
+ 		intro,
+ 	}
+ }

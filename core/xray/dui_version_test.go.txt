@@ -1,0 +1,11 @@
+package core
+import ("strings"; "testing")
+func TestDUIReleaseVersionStatement(t *testing.T) {
+ old:=releaseVersion; defer func(){releaseVersion=old}()
+ upstream:=Version()
+ releaseVersion="vx-26.0"
+ if !strings.HasPrefix(VersionStatement()[0],"Xray vx-26.0 ") {t.Fatal("DUI version missing from version statement")}
+ if Version()!=upstream {t.Fatal("upstream compatibility version changed")}
+ releaseVersion=""
+ if !strings.HasPrefix(VersionStatement()[0],"Xray "+upstream+" ") {t.Fatal("upstream fallback broken")}
+}

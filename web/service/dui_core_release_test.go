@@ -31,7 +31,7 @@ func testCoreRelease(tag, asset string) duiCoreRelease {
 
 func TestDUICoreVersionsOnlyPublishedMatchingAssets(t *testing.T) {
 	asset := "Xray-linux-64.zip"
-	valid := testCoreRelease("xray-v26.3.27-dui.1", asset)
+	valid := testCoreRelease("vx-26.0", asset)
 	draft := testCoreRelease("xray-v26.3.27-dui.2", asset)
 	draft.Draft = true
 	pre := testCoreRelease("xray-v26.3.27-dui.3", asset)
@@ -67,7 +67,7 @@ func TestDUICoreRejectsOfficialAndArbitraryTagsBeforeNetwork(t *testing.T) {
 		t.Fatalf("unexpected network request %s", r.URL)
 		return nil, nil
 	})}}
-	for _, tag := range []string{"v26.3.27", "v26.9.35", "../../other", "https://example.com/core", "xray-v26.3.27-dui.1/extra", ""} {
+	for _, tag := range []string{"v26.3.27", "v26.9.35", "../../other", "vx-26.0/extra", "vx-26.0?source=official", "vx-26", "https://example.com/core", "xray-v26.3.27-dui.1/extra", ""} {
 		if _, err := c.download(tag, "Xray-linux-64.zip"); err == nil {
 			t.Errorf("accepted %q", tag)
 		}
@@ -94,7 +94,7 @@ func TestDUICoreAssetARMVariants(t *testing.T) {
 }
 
 func TestDUICoreDownloadVerificationAndHTTPFailures(t *testing.T) {
-	asset, tag := "Xray-linux-64.zip", "xray-v26.3.27-dui.1"
+	asset, tag := "Xray-linux-64.zip", "vx-26.0"
 	payload := "test core archive"
 	for _, tc := range []struct {
 		name     string

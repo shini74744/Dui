@@ -406,7 +406,7 @@
 												</a-popover>
 											</template>
 										</template>
-										<a-tag v-if="status.xray.version != 'Unknown'" color="green">v[[ status.xray.version ]]</a-tag>
+										<a-tag v-if="status.xray.version != 'Unknown'" color="green">[[ status.xray.version.startsWith('v') ? status.xray.version : 'v' + status.xray.version ]]</a-tag>
 										<template #actions>
 											<a-space v-if="app.ipLimitEnable" direction="horizontal" @click="openXrayLogs()" :style="{ justifyContent: 'center' }">
 												<a-icon type="bars"></a-icon><span v-if="!isMobile">{{ i18n "pages.index.logs" }}</span>

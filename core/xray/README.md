@@ -1,15 +1,16 @@
-# DUI Xray v26.3.27 CLOSE-WAIT 修复核心
+# DUI Xray vx-26.0
 
 上游：XTLS/Xray-core v26.3.27（提交见 manifest.json），许可沿用上游 MPL-2.0。
-构建标识：`dui-closewait-v26327-fix1`；发布标签：`xray-v26.3.27-dui.1`。
+DUI 版本与发布标签：`vx-26.0`；构建标识：`dui-vx-26.0-closewait-fix1`。
+核心版本输出显示 `Xray vx-26.0`；上游兼容版本仍为 v26.3.27，并记录在 BUILD.json。
 
-只修复 `common/singbridge/pipe.go` 的连接关闭语义：Close 中断读取并关闭写入，
+连接行为只修复 `common/singbridge/pipe.go` 的连接关闭语义：Close 中断读取并关闭写入，
 CloseWrite 传递 EOF 并保留反向响应；不改变 300 秒读取超时或其他协议逻辑。
-附带三项回归测试，覆盖半关闭、阻塞读退出和 CopyConn EOF 传递。
+另对版本输出增加独立 DUI 版本号，保留内部协议兼容版本。附带版本输出测试和三项连接回归测试，覆盖半关闭、阻塞读退出和 CopyConn EOF 传递。
 
 ## 下载与安装
 
-DUI v26.9.34 起的七种 Linux 安装包与 Docker 源码构建默认使用本修复核心。
+DUI v26.9.36 起的七种 Linux 安装包与 Docker 源码构建默认使用 vx-26.0。
 DUI v26.9.35 起，面板版本列表和下载接口仅使用 DUI 仓库的正式核心发布，下载前匹配本机架构并验证 SHA-256。
 核心 Release 单独发布并标记 make_latest=false，不影响面板安装脚本的最新版本选择。
 旧版 DUI 安装包仍包含各自原有核心；升级面板会使用新版安装包内置的核心。

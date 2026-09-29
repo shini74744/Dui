@@ -29,9 +29,9 @@ dui_current_version() {
 dui_latest_version() {
     local tag
     tag=$(curl -fsSL --retry 2 --connect-timeout 10 --max-time 20 "${XUI_RELEASE_BASE}.atom" 2>/dev/null \
-        | sed -n 's#.*<title>\(v[^<]*\)</title>.*#\1#p' \
+        | sed -n 's#.*<title>\(v[0-9][^<]*\)</title>.*#\1#p' \
         | head -n 1)
-    if [[ "$tag" == v* ]]; then
+    if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         printf '%s\n' "$tag"
         return 0
     fi
