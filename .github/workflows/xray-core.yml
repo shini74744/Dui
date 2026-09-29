@@ -1,7 +1,7 @@
 name: Build DUI Xray core
 on:
   push:
-    tags: ['xray-v*']
+    tags: ['xray-v*', 'vx-*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,13 +29,13 @@ jobs:
         run: bash core/xray/prepare.sh "$RUNNER_TEMP/xray"
       - name: Close and half-close regression tests
         working-directory: ${{ runner.temp }}/xray/source
-        run: go test ./common/singbridge ./transport/pipe -count=1 -timeout=120s
+        run: go test ./core ./common/singbridge ./transport/pipe -count=1 -timeout=120s
       - name: Package complete modified source
         run: |
           mkdir -p source-assets
-          tar -czf source-assets/Xray-v26.3.27-dui.1-source.tar.gz -C "$RUNNER_TEMP/xray" source
+          tar -czf source-assets/DUI-Xray-source.tar.gz -C "$RUNNER_TEMP/xray" source
           cd source-assets
-          sha256sum *.tar.gz > Xray-v26.3.27-dui.1-source.tar.gz.sha256
+          sha256sum *.tar.gz > DUI-Xray-source.tar.gz.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: xray-source
@@ -63,8 +63,8 @@ jobs:
       - name: Extract verified source
         run: |
           cd source-assets
-          sha256sum -c Xray-v26.3.27-dui.1-source.tar.gz.sha256
-          tar -xzf Xray-v26.3.27-dui.1-source.tar.gz -C "$RUNNER_TEMP"
+          sha256sum -c DUI-Xray-source.tar.gz.sha256
+          tar -xzf DUI-Xray-source.tar.gz -C "$RUNNER_TEMP"
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.1'
@@ -100,7 +100,7 @@ jobs:
           if-no-files-found: error
   publish:
     needs: [prepare, build]
-    if: startsWith(github.ref, 'refs/tags/xray-v')
+    if: startsWith(github.ref, 'refs/tags/xray-v') || startsWith(github.ref, 'refs/tags/vx-')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -119,12 +119,12 @@ jobs:
             sha256sum -c "Xray-$asset.zip.sha256"
           done < <(jq -r '.include[].asset' ../core/xray/targets.json)
           test "$(find . -name '*.zip' | wc -l)" -eq "$(jq '.include | length' ../core/xray/targets.json)"
-          sha256sum -c Xray-v26.3.27-dui.1-source.tar.gz.sha256
+          sha256sum -c DUI-Xray-source.tar.gz.sha256
           cat *.sha256 > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Xray v26.3.27 DUI CLOSE-WAIT fix1
+          name: DUI Xray ${{ github.ref_name }}
           make_latest: false
           body_path: core/xray/README.md
           fail_on_unmatched_files: true

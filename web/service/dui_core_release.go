@@ -18,7 +18,7 @@ import (
 const duiCoreAPI = "https://api.github.com/repos/shini74744/Dui/releases"
 const duiCoreDownloads = "https://github.com/shini74744/Dui/releases/download/"
 
-var duiCoreTag = regexp.MustCompile(`^xray-v[0-9]+\.[0-9]+\.[0-9]+-dui\.[1-9][0-9]*$`)
+var duiCoreTag = regexp.MustCompile(`^(vx-[0-9]+\.[0-9]+|xray-v[0-9]+\.[0-9]+\.[0-9]+-dui\.[1-9][0-9]*)$`)
 
 type duiCoreRelease struct {
 	TagName    string `json:"tag_name"`
