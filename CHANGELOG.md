@@ -1,5 +1,15 @@
 # Changelog
 
+## v26.9.34 - 2026-09-29
+
+### 默认 Xray v26.3.27 CLOSE-WAIT 修复核心
+
+- 七种 Linux 安装包及 Docker 默认下载 DUI 修复核心并验证 SHA-256。
+- 核心仅修复 singbridge Close/CloseWrite 语义，附回归测试、全平台构建和完整源码发布。
+- 增加 Windows、macOS、Android、FreeBSD、OpenBSD 和 Linux 各架构核心独立下载。
+- Docker 正确区分 ARM 变体，并对不支持的架构明确报错。
+- 保持面板业务逻辑、用户配置与首次安装 warning 日志默认值。
+
 ## v26.9.33 - 2026-09-29
 
 ### 首次安装日志默认等级

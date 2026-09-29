@@ -1,0 +1,276 @@
+{
+  "include": [
+    {
+      "goos": "android",
+      "goarch": "arm64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "android-arm64-v8a",
+      "win7": false
+    },
+    {
+      "goos": "darwin",
+      "goarch": "amd64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "macos-64",
+      "win7": false
+    },
+    {
+      "goos": "darwin",
+      "goarch": "arm64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "macos-arm64-v8a",
+      "win7": false
+    },
+    {
+      "goos": "freebsd",
+      "goarch": "386",
+      "goarm": "",
+      "gomips": "",
+      "asset": "freebsd-32",
+      "win7": false
+    },
+    {
+      "goos": "freebsd",
+      "goarch": "amd64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "freebsd-64",
+      "win7": false
+    },
+    {
+      "goos": "freebsd",
+      "goarch": "arm64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "freebsd-arm64-v8a",
+      "win7": false
+    },
+    {
+      "goos": "freebsd",
+      "goarch": "arm",
+      "goarm": "7",
+      "gomips": "",
+      "asset": "freebsd-arm32-v7a",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "386",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-32",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "amd64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-64",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "arm",
+      "goarm": "5",
+      "gomips": "",
+      "asset": "linux-arm32-v5",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "arm64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-arm64-v8a",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "arm",
+      "goarm": "6",
+      "gomips": "",
+      "asset": "linux-arm32-v6",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "arm",
+      "goarm": "7",
+      "gomips": "",
+      "asset": "linux-arm32-v7a",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "mips64le",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-mips64le",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "mips64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-mips64",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "mipsle",
+      "goarm": "",
+      "gomips": "softfloat",
+      "asset": "linux-mips32le-softfloat",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "mipsle",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-mips32le",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "mips",
+      "goarm": "",
+      "gomips": "softfloat",
+      "asset": "linux-mips32-softfloat",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "mips",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-mips32",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "ppc64le",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-ppc64le",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "ppc64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-ppc64",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "riscv64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-riscv64",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "loong64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-loong64",
+      "win7": false
+    },
+    {
+      "goos": "linux",
+      "goarch": "s390x",
+      "goarm": "",
+      "gomips": "",
+      "asset": "linux-s390x",
+      "win7": false
+    },
+    {
+      "goos": "openbsd",
+      "goarch": "386",
+      "goarm": "",
+      "gomips": "",
+      "asset": "openbsd-32",
+      "win7": false
+    },
+    {
+      "goos": "openbsd",
+      "goarch": "amd64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "openbsd-64",
+      "win7": false
+    },
+    {
+      "goos": "openbsd",
+      "goarch": "arm64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "openbsd-arm64-v8a",
+      "win7": false
+    },
+    {
+      "goos": "openbsd",
+      "goarch": "arm",
+      "goarm": "7",
+      "gomips": "",
+      "asset": "openbsd-arm32-v7a",
+      "win7": false
+    },
+    {
+      "goos": "windows",
+      "goarch": "386",
+      "goarm": "",
+      "gomips": "",
+      "asset": "windows-32",
+      "win7": false
+    },
+    {
+      "goos": "windows",
+      "goarch": "amd64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "windows-64",
+      "win7": false
+    },
+    {
+      "goos": "windows",
+      "goarch": "arm64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "windows-arm64-v8a",
+      "win7": false
+    },
+    {
+      "goos": "android",
+      "goarch": "amd64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "android-amd64",
+      "win7": false
+    },
+    {
+      "goos": "windows",
+      "goarch": "amd64",
+      "goarm": "",
+      "gomips": "",
+      "asset": "win7-64",
+      "win7": true
+    },
+    {
+      "goos": "windows",
+      "goarch": "386",
+      "goarm": "",
+      "gomips": "",
+      "asset": "win7-32",
+      "win7": true
+    }
+  ]
+}

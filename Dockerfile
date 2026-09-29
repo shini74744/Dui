@@ -4,6 +4,7 @@
 FROM golang:1.25-alpine AS builder
 WORKDIR /app
 ARG TARGETARCH
+ARG TARGETVARIANT
 
 RUN apk --no-cache --update add \
   build-base \
@@ -16,7 +17,9 @@ COPY . .
 ENV CGO_ENABLED=1
 ENV CGO_CFLAGS="-D_LARGEFILE64_SOURCE"
 RUN go build -ldflags "-w -s" -o build/x-ui main.go
-RUN ./DockerInit.sh "$TARGETARCH"
+RUN CORE_ARCH="$TARGETARCH"; \
+    if [ "$TARGETARCH" = "arm" ]; then CORE_ARCH="arm${TARGETVARIANT:-v7}"; fi; \
+    ./DockerInit.sh "$CORE_ARCH"
 
 # ========================================================
 # Stage: Final Image of Dui
