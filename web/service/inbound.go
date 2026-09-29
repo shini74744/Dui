@@ -96,13 +96,18 @@ func (s *InboundService) checkPortExist(listen string, port int, ignoreId int) (
 }
 
 func (s *InboundService) GetClients(inbound *model.Inbound) ([]model.Client, error) {
-	settings := map[string][]model.Client{}
-	json.Unmarshal([]byte(inbound.Settings), &settings)
-	if settings == nil {
-		return nil, fmt.Errorf("setting is null")
+	var settings struct {
+		Clients []model.Client `json:"clients"`
 	}
-
-	clients := settings["clients"]
+	if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
+		return nil, err
+	}
+	clients := settings.Clients
+	for _, c := range clients {
+		if err := c.ValidateUserRate(); err != nil {
+			return nil, err
+		}
+	}
 	if clients == nil {
 		return nil, nil
 	}
@@ -591,6 +596,9 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 			// ↓↓↓↓↓↓  【重要补充】在这里手动确保 SpeedLimit 被写入数据库 ↓↓↓↓↓↓
 			// clients[i] 和 interfaceClients[i] 是一一对应的
 			// 我们从强类型的 clients[i] 对象中取出 SpeedLimit，赋值给弱类型的 map
+			if clients[i].SpeedLimitMbps != nil {
+				cm["speedLimitMbps"] = *clients[i].SpeedLimitMbps
+			}
 			cm["speedLimit"] = clients[i].SpeedLimit // 中文注释: 确保批量添加时，speedLimit 的值也被写入数据库。
 
 			interfaceClients[i] = cm
@@ -677,7 +685,7 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 					"cipher":   cipher,
 
 					// Xray-core 会将这个值作为 level，然后去 policy 中寻找对应的限速策略。
-					"level": client.SpeedLimit,
+					"level": client.UserRateLevel(),
 				}
 				err1 := s.xrayApi.AddUser(string(oldInbound.Protocol), oldInbound.Tag, clientMap)
 
@@ -876,6 +884,9 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 			// ↓↓↓↓↓↓  【重要补充】在这里手动确保 SpeedLimit 被写入数据库 ↓↓↓↓↓↓
 			// clients[0] 是从请求中解码出来的强类型对象，它的 SpeedLimit 字段是有值的。
 			// 我们把它手动赋值给即将用于保存的 newMap。
+			if clients[0].SpeedLimitMbps != nil {
+				newMap["speedLimitMbps"] = *clients[0].SpeedLimitMbps
+			}
 			newMap["speedLimit"] = clients[0].SpeedLimit // 中文注释：确保将 speedLimit 的值写入将要保存到数据库的 map 中。
 
 			interfaceClients[0] = newMap
@@ -963,7 +974,7 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 				"password": clients[0].Password,
 				"cipher":   cipher,
 
-				"level": clients[0].SpeedLimit,
+				"level": clients[0].UserRateLevel(),
 			}
 			err1 := s.xrayApi.AddUser(string(oldInbound.Protocol), oldInbound.Tag, clientMap)
 
@@ -979,7 +990,7 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 		logger.Debug("Client old email not found")
 		needRestart = true
 	}
-	return needRestart, tx.Save(oldInbound).Error
+	return needRestart || oldClients[clientIndex].UserRateLevel() != clients[0].UserRateLevel(), tx.Save(oldInbound).Error
 }
 
 func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraffics []*xray.ClientTraffic) (error, bool) {

@@ -47,6 +47,7 @@
     </a-form-item>
     <a-form-item label="Allow Insecure">
       <a-switch v-model="inbound.stream.tls.settings.allowInsecure"></a-switch>
+ <a-alert v-if="inbound.stream.tls.settings.allowInsecure" type="warning" show-icon message="已关闭 TLS 证书验证，存在服务器被冒充的风险；建议使用有效证书或固定证书指纹。" />
     </a-form-item>
     <a-form-item label="Reject Unknown SNI">
       <a-switch v-model="inbound.stream.tls.rejectUnknownSni"></a-switch>
@@ -57,8 +58,8 @@
     <a-form-item label="Session Resumption">
       <a-switch v-model="inbound.stream.tls.enableSessionResumption"></a-switch>
     </a-form-item>
-    <a-form-item label="VerifyPeerCertInNames">
-      <a-input v-model.trim="inbound.stream.tls.verifyPeerCertInNames"></a-input>
+    <a-form-item label="VerifyPeerCertByName">
+      <a-input v-model.trim="inbound.stream.tls.verifyPeerCertByName"></a-input>
     </a-form-item>
     <template v-for="cert,index in inbound.stream.tls.certs">
       <a-form-item label='{{ i18n "certificate" }}'>
@@ -109,12 +110,7 @@
     <a-form-item label='ECH config'>
         <a-input v-model="inbound.stream.tls.settings.echConfigList"></a-input>
     </a-form-item>
-    <a-form-item label='ECH force query'>
-        <a-select v-model="inbound.stream.tls.echForceQuery"
-            :dropdown-class-name="themeSwitcher.currentTheme">
-            <a-select-option v-for="key in ['none', 'half', 'full']" :value="key">[[ key ]]</a-select-option>
-        </a-select>
-    </a-form-item>
+
     <a-form-item label=" ">
         <a-button type="primary" icon="import" @click="getNewEchCert">Get New ECH Cert</a-button>
     </a-form-item>

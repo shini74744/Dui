@@ -356,6 +356,8 @@ class TlsStreamSettings extends CommonClass {
         fingerprint = '',
         allowInsecure = false,
         echConfigList = '',
+        pinnedPeerCertSha256 = '',
+        verifyPeerCertByName = '',
     ) {
         super();
         this.serverName = serverName;
@@ -363,6 +365,8 @@ class TlsStreamSettings extends CommonClass {
         this.fingerprint = fingerprint;
         this.allowInsecure = allowInsecure;
         this.echConfigList = echConfigList;
+        this.pinnedPeerCertSha256 = pinnedPeerCertSha256;
+        this.verifyPeerCertByName = verifyPeerCertByName;
     }
 
     static fromJson(json = {}) {
@@ -372,6 +376,8 @@ class TlsStreamSettings extends CommonClass {
             json.fingerprint,
             json.allowInsecure,
             json.echConfigList,
+            json.pinnedPeerCertSha256,
+            json.verifyPeerCertByName ?? (json.verifyPeerCertInNames || []).join(","),
         );
     }
 
@@ -381,6 +387,8 @@ class TlsStreamSettings extends CommonClass {
             alpn: this.alpn,
             fingerprint: this.fingerprint,
             allowInsecure: this.allowInsecure,
+            pinnedPeerCertSha256: this.pinnedPeerCertSha256,
+            verifyPeerCertByName: this.verifyPeerCertByName,
             echConfigList: this.echConfigList
         };
     }
@@ -434,6 +442,7 @@ class SockoptStreamSettings extends CommonClass {
         addressPortStrategy = Address_Port_Strategy.NONE,
     ) {
         super();
+        this.trustedXForwardedFor = [];
         this.dialerProxy = dialerProxy;
         this.tcpFastOpen = tcpFastOpen;
         this.tcpKeepAliveInterval = tcpKeepAliveInterval;
@@ -444,7 +453,7 @@ class SockoptStreamSettings extends CommonClass {
 
     static fromJson(json = {}) {
         if (Object.keys(json).length === 0) return undefined;
-        return new SockoptStreamSettings(
+        const result = new SockoptStreamSettings(
             json.dialerProxy,
             json.tcpFastOpen,
             json.tcpKeepAliveInterval,
@@ -452,10 +461,13 @@ class SockoptStreamSettings extends CommonClass {
             json.penetrate,
             json.addressPortStrategy
         );
+        result.trustedXForwardedFor = json.trustedXForwardedFor || [];
+        return result;
     }
 
     toJson() {
         return {
+            trustedXForwardedFor: this.trustedXForwardedFor || [],
             dialerProxy: this.dialerProxy,
             tcpFastOpen: this.tcpFastOpen,
             tcpKeepAliveInterval: this.tcpKeepAliveInterval,

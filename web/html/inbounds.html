@@ -1309,8 +1309,8 @@
             title: '{{ i18n "pages.inbounds.speedLimit" }}',
             width: 80,
             align: 'center',
-            dataIndex: 'speedLimit',
-            customRender: (text) => (text > 0 ? `${text} KB/s` : {{ i18n "pages.inbounds.unlimited" }}),
+            dataIndex: 'speedLimitMbps',
+            customRender: (value, client) => (value ?? Number(((client.speedLimit || 0) * 0.008192).toFixed(3))) + ' Mbps',
         },
 
         { title: '{{ i18n "pages.inbounds.expireDate" }}', width: 80, align: 'center', scopedSlots: { customRender: 'expiryTime' } },

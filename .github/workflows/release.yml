@@ -36,6 +36,8 @@ jobs:
           sh -n web/service/ddns.sh
           sh -n DockerInit.sh
           bash -n core/xray/prepare.sh core/xray/build.sh
+      - name: User rate and TLS form round trips
+        run: node scripts/test-user-rate.cjs
       - name: Menu updater regression guards
         shell: bash
         run: |

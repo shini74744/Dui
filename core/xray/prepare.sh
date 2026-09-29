@@ -9,10 +9,6 @@ HASH=$(jq -r .source_sha256 "$META/manifest.json")
 curl -fL --retry 3 "$URL" -o "$DEST/upstream.zip"
 printf '%s  %s\n' "$HASH" "$DEST/upstream.zip" | sha256sum -c -
 unzip -q "$DEST/upstream.zip" -d "$DEST"
-mv "$DEST/Xray-core-26.3.27" "$DEST/source"
-patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/closewait.patch"
-install -m 0644 "$META/pipe_close_test.go.txt" "$DEST/source/common/singbridge/pipe_close_test.go"
-patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/version.patch"
-install -m 0644 "$META/dui_version_test.go.txt" "$DEST/source/core/dui_version_test.go"
-gofmt -w "$DEST/source/core/core.go" "$DEST/source/core/dui_version_test.go"
+mv "$DEST/Xray-core-26.9.9" "$DEST/source"
+patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/dui.patch"
 cp -R "$META" "$DEST/source/dui-build"

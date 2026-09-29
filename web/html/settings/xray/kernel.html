@@ -46,8 +46,8 @@
       type="info"
       show-icon
       :style="{ margin:'12px 0' }"
-      message="兼容现有独立限速"
-      description="handshake / connIdle 会同步到 DUI 动态生成的用户 level；uplinkOnly / downlinkOnly 对默认 level 0 生效，独立限速用户的现有 level 行为保持不变，避免破坏已有功能。">
+      message="连接超时与用户限速分开设置"
+      description="这些值只控制连接超时，单位为秒；所有用户均继承此策略。用户限速使用独立的 Mbps 配置，不再占用 uplinkOnly / downlinkOnly。">
     </a-alert>
 
     <a-button

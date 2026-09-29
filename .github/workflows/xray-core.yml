@@ -23,13 +23,15 @@ jobs:
           fi
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26.1'
+          go-version: '1.27.1'
           cache: false
       - name: Verify upstream and apply patch
         run: bash core/xray/prepare.sh "$RUNNER_TEMP/xray"
       - name: Close and half-close regression tests
         working-directory: ${{ runner.temp }}/xray/source
-        run: go test ./core ./common/singbridge ./transport/pipe -count=1 -timeout=120s
+        run: |
+          go test -race ./core ./common/duilimit ./common/singbridge ./transport/pipe ./app/dispatcher ./app/policy ./testing/dui -count=1 -timeout=180s
+          go test ./infra/conf ./transport/internet/tls -run TestDUI -count=1 -timeout=120s
       - name: Package complete modified source
         run: |
           mkdir -p source-assets
@@ -67,7 +69,7 @@ jobs:
           tar -xzf DUI-Xray-source.tar.gz -C "$RUNNER_TEMP"
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26.1'
+          go-version: '1.27.1'
           cache: false
       - name: Windows 7 Go toolchain
         if: matrix.win7

@@ -1,0 +1,982 @@
+--- a/app/dispatcher/default.go
++++ b/app/dispatcher/default.go
+@@ -2,6 +2,8 @@
+ 
+ import (
+ 	"context"
++	"fmt"
++	"github.com/xtls/xray-core/common/duilimit"
+ 	"strings"
+ 	"sync"
+ 	"time"
+@@ -91,6 +93,8 @@
+ 	}
+ }
+ 
++var duiUserLimits duilimit.Registry
++
+ // DefaultDispatcher is a default implementation of Dispatcher.
+ type DefaultDispatcher struct {
+ 	ohm    outbound.Manager
+@@ -184,6 +188,11 @@
+ 		}
+ 	}
+ 
++	if user != nil && !duiMuxCarrier(ctx) {
++		key := fmt.Sprintf("%p:%s", d.policy, user.Email)
++		inboundLink.Writer = duiUserLimits.Writer(ctx, key, user.Level, true, inboundLink.Writer)
++		outboundLink.Writer = duiUserLimits.Writer(ctx, key, user.Level, false, outboundLink.Writer)
++	}
+ 	return inboundLink, outboundLink
+ }
+ 
+@@ -218,7 +227,22 @@
+ 		}
+ 	}
+ 
++	if user != nil && !duiMuxCarrier(ctx) {
++		key := fmt.Sprintf("%p:%s", policyManager, user.Email)
++		link.Reader = duiUserLimits.Reader(ctx, key, user.Level, link.Reader)
++		link.Writer = duiUserLimits.Writer(ctx, key, user.Level, false, link.Writer)
++	}
+ 	return link
++}
++
++// Limit multiplexed child requests once, rather than both carrier and child.
++func duiMuxCarrier(ctx context.Context) bool {
++	obs := session.OutboundsFromContext(ctx)
++	if len(obs) == 0 {
++		return false
++	}
++	a := obs[len(obs)-1].Target.Address
++	return a != nil && a.Family().IsDomain() && a.Domain() == "v1.mux.cool"
+ }
+ 
+ func trackOnlineIP(ctx context.Context, sm stats.Manager, email, ip string) {
+--- /dev/null
++++ b/app/policy/dui_policy_test.go
+@@ -0,0 +1,19 @@
++package policy
++
++import (
++	"context"
++	"github.com/xtls/xray-core/common/duilimit"
++	"testing"
++	"time"
++)
++
++func TestDUIRateInheritsTimeoutSeconds(t *testing.T) {
++	m, e := New(context.Background(), &Config{Level: map[uint32]*Policy{0: {Timeout: &Policy_Timeout{UplinkOnly: &Second{Value: 2}, DownlinkOnly: &Second{Value: 3}}}}})
++	if e != nil {
++		t.Fatal(e)
++	}
++	p := m.ForLevel(duilimit.LevelFlag | 37500000)
++	if p.Timeouts.UplinkOnly != 2*time.Second || p.Timeouts.DownlinkOnly != 3*time.Second {
++		t.Fatal("rate changed connection timeout")
++	}
++}
+--- a/app/policy/manager.go
++++ b/app/policy/manager.go
+@@ -4,6 +4,7 @@
+ 	"context"
+ 
+ 	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/duilimit"
+ 	"github.com/xtls/xray-core/features/policy"
+ )
+ 
+@@ -37,6 +38,9 @@
+ 
+ // ForLevel implements policy.Manager.
+ func (m *Instance) ForLevel(level uint32) policy.Session {
++	if duilimit.BytesPerSecond(level) > 0 {
++		level = 0
++	}
+ 	if p, ok := m.levels[level]; ok {
+ 		return p.ToCorePolicy()
+ 	}
+--- /dev/null
++++ b/common/duilimit/limit.go
+@@ -0,0 +1,180 @@
++// Package duilimit implements DUI's aggregate per-user, per-direction bandwidth cap.
++package duilimit
++
++import (
++	"context"
++	"sync"
++	"time"
++
++	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/buf"
++	"golang.org/x/time/rate"
++)
++
++// Reserved user levels encode bytes/second; ordinary upstream levels retain their meaning.
++const LevelFlag uint32 = 1 << 31
++
++func BytesPerSecond(level uint32) uint32 {
++	if level&LevelFlag == 0 {
++		return 0
++	}
++	return level & (LevelFlag - 1)
++}
++
++type entry struct {
++	up, down   *rate.Limiter
++	refs       int
++	generation uint64
++}
++type Registry struct {
++	mu    sync.Mutex
++	users map[string]*entry
++}
++
++func (r *Registry) acquire(key string, speed uint32) (*entry, func()) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.users == nil {
++		r.users = make(map[string]*entry)
++	}
++	e := r.users[key]
++	if e == nil {
++		// One core buffer of burst per direction, shared by all this user's connections.
++		e = &entry{up: rate.NewLimiter(rate.Limit(speed), buf.Size), down: rate.NewLimiter(rate.Limit(speed), buf.Size)}
++		r.users[key] = e
++	} else {
++		e.up.SetLimit(rate.Limit(speed))
++		e.down.SetLimit(rate.Limit(speed))
++	}
++	e.refs++
++	e.generation++
++	var once sync.Once
++	return e, func() {
++		once.Do(func() {
++			r.mu.Lock()
++			defer r.mu.Unlock()
++			e.refs--
++			if e.refs == 0 {
++				generation := e.generation
++				delay := time.Duration(float64(buf.Size)/float64(e.up.Limit())*float64(time.Second)) + time.Second
++				time.AfterFunc(delay, func() {
++					r.mu.Lock()
++					defer r.mu.Unlock()
++					if e.refs == 0 && e.generation == generation && r.users[key] == e {
++						delete(r.users, key)
++					}
++				})
++			}
++		})
++	}
++}
++
++type life struct {
++	ctx     context.Context
++	cancel  context.CancelFunc
++	release func()
++	stop    func() bool
++	once    sync.Once
++}
++
++func newLife(ctx context.Context, release func()) *life {
++	child, cancel := context.WithCancel(ctx)
++	l := &life{ctx: child, cancel: cancel, release: release}
++	l.stop = context.AfterFunc(child, release)
++	return l
++}
++func (l *life) close() { l.once.Do(func() { l.cancel(); l.stop(); l.release() }) }
++
++type Writer struct {
++	buf.Writer
++	lim  *rate.Limiter
++	life *life
++}
++
++func (w *Writer) WriteMultiBuffer(mb buf.MultiBuffer) error {
++	for i, b := range mb {
++		if b == nil {
++			continue
++		}
++		// Buffers, including UDP datagrams, must not be split or lose their destination.
++		remaining := int(b.Len())
++		for remaining > 0 {
++			n := remaining
++			if n > buf.Size {
++				n = buf.Size
++			}
++			if err := w.lim.WaitN(w.life.ctx, n); err != nil {
++				buf.ReleaseMulti(mb[i:])
++				w.life.close()
++				return err
++			}
++			remaining -= n
++		}
++		if err := w.Writer.WriteMultiBuffer(buf.MultiBuffer{b}); err != nil {
++			buf.ReleaseMulti(mb[i+1:])
++			w.life.close()
++			return err
++		}
++	}
++	return nil
++}
++func (w *Writer) Close() error { w.life.close(); return common.Close(w.Writer) }
++func (w *Writer) Interrupt()   { w.life.close(); common.Interrupt(w.Writer) }
++
++type Reader struct {
++	buf.Reader
++	lim  *rate.Limiter
++	life *life
++}
++
++func (r *Reader) throttle(mb buf.MultiBuffer, err error) (buf.MultiBuffer, error) {
++	for _, b := range mb {
++		if b == nil {
++			continue
++		}
++		for left := int(b.Len()); left > 0; {
++			n := left
++			if n > buf.Size {
++				n = buf.Size
++			}
++			if e := r.lim.WaitN(r.life.ctx, n); e != nil {
++				buf.ReleaseMulti(mb)
++				return nil, e
++			}
++			left -= n
++		}
++	}
++	return mb, err
++}
++func (r *Reader) ReadMultiBuffer() (buf.MultiBuffer, error) {
++	return r.throttle(r.Reader.ReadMultiBuffer())
++}
++func (r *Reader) ReadMultiBufferTimeout(d time.Duration) (buf.MultiBuffer, error) {
++	if rr, ok := r.Reader.(buf.TimeoutReader); ok {
++		return r.throttle(rr.ReadMultiBufferTimeout(d))
++	}
++	return r.ReadMultiBuffer()
++}
++func (r *Reader) Close() error { r.life.close(); return common.Close(r.Reader) }
++func (r *Reader) Interrupt()   { r.life.close(); common.Interrupt(r.Reader) }
++
++func (r *Registry) Writer(ctx context.Context, key string, level uint32, up bool, w buf.Writer) buf.Writer {
++	speed := BytesPerSecond(level)
++	if speed == 0 || key == "" {
++		return w
++	}
++	e, release := r.acquire(key, speed)
++	lim := e.down
++	if up {
++		lim = e.up
++	}
++	return &Writer{Writer: w, lim: lim, life: newLife(ctx, release)}
++}
++func (r *Registry) Reader(ctx context.Context, key string, level uint32, rd buf.Reader) buf.Reader {
++	speed := BytesPerSecond(level)
++	if speed == 0 || key == "" {
++		return rd
++	}
++	e, release := r.acquire(key, speed)
++	return &Reader{Reader: rd, lim: e.up, life: newLife(ctx, release)}
++}
+--- /dev/null
++++ b/common/duilimit/limit_test.go
+@@ -0,0 +1,105 @@
++package duilimit
++
++import (
++	"context"
++	"github.com/xtls/xray-core/common/buf"
++	"github.com/xtls/xray-core/common/net"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++type sink struct {
++	n       atomic.Int64
++	packets atomic.Int64
++	udp     bool
++}
++
++func (s *sink) WriteMultiBuffer(mb buf.MultiBuffer) error {
++	for _, b := range mb {
++		if s.udp && b.UDP == nil {
++			panic("lost UDP destination")
++		}
++		s.n.Add(int64(b.Len()))
++		s.packets.Add(1)
++	}
++	buf.ReleaseMulti(mb)
++	return nil
++}
++func push(t *testing.T, w buf.Writer, n int, udp bool) {
++	t.Helper()
++	for i := 0; i < n; i++ {
++		b := buf.New()
++		b.Extend(buf.Size)
++		if udp {
++			b.UDP = &net.Destination{Network: net.Network_UDP, Address: net.LocalHostIP, Port: 53}
++		}
++		if err := w.WriteMultiBuffer(buf.MultiBuffer{b}); err != nil {
++			t.Error(err)
++			return
++		}
++	}
++}
++func TestAggregateIndependentDirectionsAndUsers(t *testing.T) {
++	var r Registry
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	dst := &sink{udp: true}
++	const speed = uint32(buf.Size * 20)
++	a := r.Writer(ctx, "a", LevelFlag|speed, true, dst).(*Writer)
++	b := r.Writer(ctx, "a", LevelFlag|speed, true, dst).(*Writer)
++	down := r.Writer(ctx, "a", LevelFlag|speed, false, dst).(*Writer)
++	other := r.Writer(ctx, "b", LevelFlag|speed, true, dst).(*Writer)
++	defer a.Close()
++	defer b.Close()
++	defer down.Close()
++	defer other.Close()
++	if a.lim != b.lim || a.lim == down.lim || a.lim == other.lim {
++		t.Fatal("incorrect sharing")
++	}
++	start := time.Now()
++	var wg sync.WaitGroup
++	for _, spec := range []struct {
++		w buf.Writer
++		n int
++	}{{a, 10}, {b, 10}, {down, 20}, {other, 20}} {
++		wg.Add(1)
++		go func() { defer wg.Done(); push(t, spec.w, spec.n, true) }()
++	}
++	wg.Wait()
++	elapsed := time.Since(start)
++	if elapsed < 900*time.Millisecond || elapsed > 1900*time.Millisecond {
++		t.Fatalf("aggregate/direction throughput incorrect: %v", elapsed)
++	}
++	if dst.packets.Load() != 60 || dst.n.Load() != 60*buf.Size {
++		t.Fatal("packet loss")
++	}
++}
++func TestCancellationUnlimitedAndCleanup(t *testing.T) {
++	var r Registry
++	ctx, cancel := context.WithCancel(context.Background())
++	dst := &sink{}
++	if r.Writer(ctx, "a", 0, true, dst) != dst {
++		t.Fatal("unlimited wrapped")
++	}
++	w := r.Writer(ctx, "a", LevelFlag|1, true, dst).(*Writer)
++	push(t, w, 1, false)
++	done := make(chan error, 1)
++	go func() { b := buf.New(); b.Extend(buf.Size); done <- w.WriteMultiBuffer(buf.MultiBuffer{b}) }()
++	cancel()
++	select {
++	case err := <-done:
++		if err == nil {
++			t.Fatal("missing cancellation")
++		}
++	case <-time.After(time.Second):
++		t.Fatal("limiter blocked close")
++	}
++	w.Close()
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.users["a"].refs != 0 {
++		t.Fatal("reference leak")
++	}
++}
+--- a/common/singbridge/pipe.go
++++ b/common/singbridge/pipe.go
+@@ -41,8 +41,13 @@
+ }
+ 
+ func (w *PipeConnWrapper) Close() error {
+-	return nil
++	common.Interrupt(w.R)
++	if w.T != nil {
++		w.T.SetTimeout(0)
++	}
++	return common.Close(w.W)
+ }
++func (w *PipeConnWrapper) CloseWrite() error { return common.Close(w.W) }
+ 
+ func (w *PipeConnWrapper) Read(b []byte) (n int, err error) {
+ 	w.T.Update()
+--- /dev/null
++++ b/common/singbridge/pipe_close_test.go
+@@ -0,0 +1,92 @@
++package singbridge
++
++import (
++	"context"
++	"io"
++	"net"
++	"testing"
++	"time"
++
++	"github.com/xtls/xray-core/common/buf"
++	"github.com/xtls/xray-core/common/signal"
++	"github.com/xtls/xray-core/transport"
++	"github.com/xtls/xray-core/transport/pipe"
++)
++
++func TestCloseWriteDrainsRequestAndPreservesResponse(t *testing.T) {
++	upR, upW := pipe.New()
++	downR, downW := pipe.New()
++	w := &PipeConnWrapper{R: &buf.BufferedReader{Reader: downR}, W: upW, T: signal.CancelAfterInactivity(context.Background(), func() {}, time.Second)}
++	defer w.Close()
++	defer downW.Close()
++	if _, err := w.Write([]byte("request")); err != nil {
++		t.Fatal(err)
++	}
++	if err := w.CloseWrite(); err != nil {
++		t.Fatal(err)
++	}
++	request, err := io.ReadAll(&buf.BufferedReader{Reader: upR})
++	if err != nil || string(request) != "request" {
++		t.Fatalf("request=%q err=%v", request, err)
++	}
++	if err := downW.WriteMultiBuffer(buf.MultiBuffer{buf.FromBytes([]byte("response"))}); err != nil {
++		t.Fatal(err)
++	}
++	response := make([]byte, 8)
++	if _, err := io.ReadFull(w, response); err != nil || string(response) != "response" {
++		t.Fatalf("response=%q err=%v", response, err)
++	}
++}
++
++func TestCloseUnblocksPendingRead(t *testing.T) {
++	upR, upW := pipe.New()
++	downR, downW := pipe.New()
++	defer upR.Interrupt()
++	defer downW.Close()
++	w := &PipeConnWrapper{R: &buf.BufferedReader{Reader: downR}, W: upW, T: signal.CancelAfterInactivity(context.Background(), func() {}, time.Second)}
++	done := make(chan error, 1)
++	go func() { _, err := w.Read(make([]byte, 1)); done <- err }()
++	if err := w.Close(); err != nil {
++		t.Fatal(err)
++	}
++	select {
++	case err := <-done:
++		if err == nil {
++			t.Fatal("read unexpectedly succeeded")
++		}
++	case <-time.After(time.Second):
++		t.Fatal("read remained blocked after Close")
++	}
++}
++
++func TestCopyConnPropagatesClientEOF(t *testing.T) {
++	client, server := net.Pipe()
++	defer client.Close()
++	defer server.Close()
++	upR, upW := pipe.New()
++	downR, downW := pipe.New()
++	defer upR.Interrupt()
++	defer downR.Interrupt()
++	defer downW.Close()
++	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++	defer cancel()
++	copied := make(chan error, 1)
++	go func() { copied <- CopyConn(ctx, server, &transport.Link{Reader: downR, Writer: upW}, server) }()
++	client.Close()
++	eof := make(chan error, 1)
++	go func() { _, err := upR.ReadMultiBuffer(); eof <- err }()
++	select {
++	case err := <-eof:
++		if err != io.EOF {
++			t.Fatalf("expected EOF, got %v", err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("client EOF was not propagated")
++	}
++	downW.Close()
++	select {
++	case <-copied:
++	case <-time.After(time.Second):
++		t.Fatal("copy did not finish")
++	}
++}
+--- a/core/core.go
++++ b/core/core.go
+@@ -24,9 +24,10 @@
+ )
+ 
+ var (
+-	build    = "Custom"
+-	codename = "Xray, Penetrates Everything."
+-	intro    = "A unified platform for anti-censorship."
++	releaseVersion = ""
++	build          = "Custom"
++	codename       = "Xray, Penetrates Everything."
++	intro          = "A unified platform for anti-censorship."
+ )
+ 
+ func init() {
+@@ -65,8 +66,12 @@
+ 
+ // VersionStatement returns a list of strings representing the full version info.
+ func VersionStatement() []string {
++	version := Version()
++	if releaseVersion != "" {
++		version = releaseVersion
++	}
+ 	return []string{
+-		serial.Concat("Xray ", Version(), " (", codename, ") ", build, " (", runtime.Version(), " ", runtime.GOOS, "/", runtime.GOARCH, ")"),
++		serial.Concat("Xray ", version, " (", codename, ") ", build, " (", runtime.Version(), " ", runtime.GOOS, "/", runtime.GOARCH, ")"),
+ 		intro,
+ 	}
+ }
+--- /dev/null
++++ b/core/dui_version_test.go
+@@ -0,0 +1,23 @@
++package core
++
++import (
++	"strings"
++	"testing"
++)
++
++func TestDUIReleaseVersionStatement(t *testing.T) {
++	old := releaseVersion
++	defer func() { releaseVersion = old }()
++	upstream := Version()
++	releaseVersion = "vx-26.1"
++	if !strings.HasPrefix(VersionStatement()[0], "Xray vx-26.1 ") {
++		t.Fatal("DUI version missing from version statement")
++	}
++	if Version() != upstream {
++		t.Fatal("upstream compatibility version changed")
++	}
++	releaseVersion = ""
++	if !strings.HasPrefix(VersionStatement()[0], "Xray "+upstream+" ") {
++		t.Fatal("upstream fallback broken")
++	}
++}
+--- /dev/null
++++ b/infra/conf/dui_insecure_test.go
+@@ -0,0 +1,18 @@
++package conf
++
++import (
++	xtls "github.com/xtls/xray-core/transport/internet/tls"
++	"testing"
++)
++
++func TestDUIAllowInsecureBuild(t *testing.T) {
++	for _, allow := range []bool{false, true} {
++		m, err := (&TLSConfig{AllowInsecure: allow}).Build()
++		if err != nil {
++			t.Fatal(err)
++		}
++		if m.(*xtls.Config).AllowInsecure != allow {
++			t.Fatal("allowInsecure lost")
++		}
++	}
++}
+--- a/infra/conf/shadowsocks.go
++++ b/infra/conf/shadowsocks.go
+@@ -32,7 +32,7 @@
+ type ShadowsocksUserConfig struct {
+ 	Cipher   string   `json:"method"`
+ 	Password string   `json:"password"`
+-	Level    byte     `json:"level"`
++	Level    uint32   `json:"level"`
+ 	Email    string   `json:"email"`
+ 	Address  *Address `json:"address"`
+ 	Port     uint16   `json:"port"`
+@@ -41,7 +41,7 @@
+ type ShadowsocksServerConfig struct {
+ 	Cipher      string                   `json:"method"`
+ 	Password    string                   `json:"password"`
+-	Level       byte                     `json:"level"`
++	Level       uint32                   `json:"level"`
+ 	Email       string                   `json:"email"`
+ 	Users       []*ShadowsocksUserConfig `json:"users"`
+ 	Clients     []*ShadowsocksUserConfig `json:"clients"`
+@@ -179,7 +179,7 @@
+ type ShadowsocksServerTarget struct {
+ 	Address  *Address `json:"address"`
+ 	Port     uint16   `json:"port"`
+-	Level    byte     `json:"level"`
++	Level    uint32   `json:"level"`
+ 	Email    string   `json:"email"`
+ 	Cipher   string   `json:"method"`
+ 	Password string   `json:"password"`
+@@ -188,7 +188,7 @@
+ type ShadowsocksClientConfig struct {
+ 	Address  *Address                   `json:"address"`
+ 	Port     uint16                     `json:"port"`
+-	Level    byte                       `json:"level"`
++	Level    uint32                     `json:"level"`
+ 	Email    string                     `json:"email"`
+ 	Cipher   string                     `json:"method"`
+ 	Password string                     `json:"password"`
+--- a/infra/conf/transport_security.go
++++ b/infra/conf/transport_security.go
+@@ -359,7 +359,8 @@
+ 	config.MasterKeyLog = c.MasterKeyLog
+ 
+ 	if c.AllowInsecure {
+-		return nil, errors.PrintRemovedFeatureError(`"allowInsecure"`, `"pinnedPeerCertSha256"(pcs) and "verifyPeerCertByName"(vcn)`)
++		config.AllowInsecure = true
++		errors.LogWarning(context.Background(), "DUI: allowInsecure=true disables TLS certificate verification; risk of server impersonation. Prefer a valid certificate or pinnedPeerCertSha256.")
+ 	}
+ 	if c.PinnedPeerCertSha256 != "" {
+ 		for v := range strings.SplitSeq(c.PinnedPeerCertSha256, ",") {
+--- a/proxy/proxy.go
++++ b/proxy/proxy.go
+@@ -18,6 +18,7 @@
+ 	"github.com/pires/go-proxyproto"
+ 	"github.com/xtls/xray-core/app/dispatcher"
+ 	"github.com/xtls/xray-core/common/buf"
++	"github.com/xtls/xray-core/common/duilimit"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/common/net"
+ 	"github.com/xtls/xray-core/common/protocol"
+@@ -719,6 +720,9 @@
+ 	readerConn, readCounter, _ := UnwrapRawConn(readerConn)
+ 	writerConn, _, writeCounter := UnwrapRawConn(writerConn)
+ 	reader := buf.NewReader(readerConn)
++	if in := session.InboundFromContext(ctx); in != nil && in.User != nil && duilimit.BytesPerSecond(in.User.Level) > 0 {
++		return readV(ctx, reader, writer, timer, readCounter)
++	}
+ 	if runtime.GOOS != "linux" && runtime.GOOS != "android" {
+ 		return readV(ctx, reader, writer, timer, readCounter)
+ 	}
+--- /dev/null
++++ b/testing/dui/rate_test.go
+@@ -0,0 +1,173 @@
++package dui_test
++
++import (
++	"crypto/ecdh"
++	"crypto/rand"
++	"crypto/tls"
++	"encoding/base64"
++	"encoding/json"
++	"github.com/xtls/xray-core/core"
++	_ "github.com/xtls/xray-core/main/distro/all"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"strconv"
++	"sync"
++	"testing"
++	"time"
++)
++
++func port(t *testing.T) int {
++	l, e := net.Listen("tcp", "127.0.0.1:0")
++	if e != nil {
++		t.Fatal(e)
++	}
++	defer l.Close()
++	return l.Addr().(*net.TCPAddr).Port
++}
++func start(t *testing.T, c map[string]any) {
++	b, e := json.Marshal(c)
++	if e != nil {
++		t.Fatal(e)
++	}
++	s, e := core.StartInstance("json", b)
++	if e != nil {
++		t.Fatal(e)
++	}
++	t.Cleanup(func() { s.Close() })
++}
++func TestDUIRealTCPAggregate(t *testing.T) {
++	for _, kind := range []string{"vless", "vless-mux", "vless-reality", "shadowsocks"} {
++		t.Run(kind, func(t *testing.T) {
++			variant := kind
++			protocolName := kind
++			if kind == "vless-mux" || kind == "vless-reality" {
++				protocolName = "vless"
++			}
++			kind = protocolName
++			echo, e := net.Listen("tcp", "127.0.0.1:0")
++			if e != nil {
++				t.Fatal(e)
++			}
++			defer echo.Close()
++			go func() {
++				for {
++					c, e := echo.Accept()
++					if e != nil {
++						return
++					}
++					go func() { defer c.Close(); io.Copy(c, c) }()
++				}
++			}()
++			serverPort, clientPort := port(t), port(t)
++			id := "82de13e6-2df5-4dd4-b2b0-4c8878b8dc09"
++			key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef"))
++			userKey := base64.StdEncoding.EncodeToString([]byte("fedcba9876543210"))
++			level := uint32(1<<31) | 250000
++			var sin, cout map[string]any
++			if kind == "vless" {
++				sin = map[string]any{"clients": []any{map[string]any{"id": id, "email": "dui-test", "level": level}}, "decryption": "none"}
++				cout = map[string]any{"vnext": []any{map[string]any{"address": "127.0.0.1", "port": serverPort, "users": []any{map[string]any{"id": id, "encryption": "none"}}}}}
++			} else {
++				sin = map[string]any{"method": "2022-blake3-aes-128-gcm", "password": key, "network": "tcp,udp", "clients": []any{map[string]any{"password": userKey, "email": "dui-test", "level": level}}}
++				cout = map[string]any{"servers": []any{map[string]any{"address": "127.0.0.1", "port": serverPort, "method": "2022-blake3-aes-128-gcm", "password": key + ":" + userKey}}}
++			}
++			var privateKey, publicKey, target string
++			if variant == "vless-reality" {
++				key, err := ecdh.X25519().GenerateKey(rand.Reader)
++				if err != nil {
++					t.Fatal(err)
++				}
++				privateKey = base64.RawURLEncoding.EncodeToString(key.Bytes())
++				publicKey = base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
++				camouflage := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
++				camouflage.TLS = &tls.Config{MinVersion: tls.VersionTLS13, CurvePreferences: []tls.CurveID{tls.X25519}}
++				camouflage.EnableHTTP2 = true
++				camouflage.StartTLS()
++				defer camouflage.Close()
++				target = camouflage.Listener.Addr().String()
++			}
++			transportConfig := func(c map[string]any, server bool) map[string]any {
++				if variant == "vless-mux" && !server {
++					c["outbounds"].([]any)[0].(map[string]any)["mux"] = map[string]any{"enabled": true, "concurrency": 4}
++				}
++				if variant == "vless-reality" {
++					var endpoint map[string]any
++					var reality map[string]any
++					if server {
++						endpoint = c["inbounds"].([]any)[0].(map[string]any)
++						sin["clients"].([]any)[0].(map[string]any)["flow"] = "xtls-rprx-vision"
++						reality = map[string]any{"dest": target, "serverNames": []string{"example.com"}, "privateKey": privateKey, "shortIds": []string{"12345678"}}
++					} else {
++						endpoint = c["outbounds"].([]any)[0].(map[string]any)
++						cout["vnext"].([]any)[0].(map[string]any)["users"].([]any)[0].(map[string]any)["flow"] = "xtls-rprx-vision"
++						reality = map[string]any{"serverName": "example.com", "publicKey": publicKey, "shortId": "12345678", "fingerprint": "chrome"}
++					}
++					endpoint["streamSettings"] = map[string]any{"network": "tcp", "security": "reality", "realitySettings": reality}
++				}
++				return c
++			}
++
++			start(t, transportConfig(map[string]any{"log": map[string]any{"loglevel": "error", "access": "none"}, "inbounds": []any{map[string]any{"listen": "127.0.0.1", "port": serverPort, "protocol": kind, "settings": sin}}, "outbounds": []any{map[string]any{"protocol": "freedom", "settings": map[string]any{"finalRules": []any{map[string]any{"action": "allow"}}}}}}, true))
++			start(t, transportConfig(map[string]any{"log": map[string]any{"loglevel": "error", "access": "none"}, "inbounds": []any{map[string]any{"listen": "127.0.0.1", "port": clientPort, "protocol": "dokodemo-door", "settings": map[string]any{"address": "127.0.0.1", "port": echo.Addr().(*net.TCPAddr).Port, "network": "tcp"}}}, "outbounds": []any{map[string]any{"protocol": kind, "settings": cout}}}, false))
++			// Establish all protocol handshakes before measuring application throughput.
++			connections := make([]net.Conn, 4)
++			var ready sync.WaitGroup
++			for i := range connections {
++				ready.Add(1)
++				go func() {
++					defer ready.Done()
++					c, e := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(clientPort))
++					if e != nil {
++						t.Error(e)
++						return
++					}
++					connections[i] = c
++					c.SetDeadline(time.Now().Add(30 * time.Second))
++					if _, e = c.Write([]byte{1}); e != nil {
++						t.Error(e)
++						return
++					}
++					if _, e = io.ReadFull(c, make([]byte, 1)); e != nil {
++						t.Error(e)
++					}
++				}()
++			}
++			ready.Wait()
++			if t.Failed() {
++				for _, c := range connections {
++					if c != nil {
++						c.Close()
++					}
++				}
++				t.FailNow()
++			}
++			begin := time.Now()
++			var wg sync.WaitGroup
++			for _, c := range connections {
++				wg.Add(1)
++				go func() {
++					defer wg.Done()
++					defer c.Close()
++					var e error
++					send := make(chan error, 1)
++					go func() { _, e := c.Write(make([]byte, 250000)); send <- e }()
++					n, e := io.CopyN(io.Discard, c, 250000)
++					if e != nil || n != 250000 {
++						t.Errorf("copy %d: %v", n, e)
++					}
++					if e = <-send; e != nil {
++						t.Error(e)
++					}
++				}()
++			}
++			wg.Wait()
++			elapsed := time.Since(begin)
++			if elapsed < 3800*time.Millisecond || elapsed > 7500*time.Millisecond {
++				t.Fatalf("expected aggregate 2 Mbps duplex (~4s), got %v", elapsed)
++			}
++			t.Logf("%s 4 concurrent connections, upload/download 1 MB each: %v", variant, elapsed)
++		})
++	}
++}
+--- /dev/null
++++ b/testing/dui/udp_test.go
+@@ -0,0 +1,57 @@
++package dui_test
++
++import (
++	"bytes"
++	"encoding/base64"
++	"net"
++	"strconv"
++	"testing"
++	"time"
++)
++
++func TestDUIRealSS2022UDP(t *testing.T) {
++	echo, e := net.ListenPacket("udp", "127.0.0.1:0")
++	if e != nil {
++		t.Fatal(e)
++	}
++	defer echo.Close()
++	go func() {
++		b := make([]byte, 2048)
++		for {
++			n, a, e := echo.ReadFrom(b)
++			if e != nil {
++				return
++			}
++			echo.WriteTo(b[:n], a)
++		}
++	}()
++	sp, cp := port(t), port(t)
++	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef"))
++	uk := base64.StdEncoding.EncodeToString([]byte("fedcba9876543210"))
++	start(t, map[string]any{"log": map[string]any{"loglevel": "error", "access": "none"}, "inbounds": []any{map[string]any{"listen": "127.0.0.1", "port": sp, "protocol": "shadowsocks", "settings": map[string]any{"method": "2022-blake3-aes-128-gcm", "password": key, "network": "udp", "clients": []any{map[string]any{"email": "udp-test", "password": uk, "level": uint32(1<<31) | 16000}}}}}, "outbounds": []any{map[string]any{"protocol": "freedom", "settings": map[string]any{"finalRules": []any{map[string]any{"action": "allow"}}}}}})
++	start(t, map[string]any{"log": map[string]any{"loglevel": "error", "access": "none"}, "inbounds": []any{map[string]any{"listen": "127.0.0.1", "port": cp, "protocol": "dokodemo-door", "settings": map[string]any{"address": "127.0.0.1", "port": echo.LocalAddr().(*net.UDPAddr).Port, "network": "udp"}}}, "outbounds": []any{map[string]any{"protocol": "shadowsocks", "settings": map[string]any{"servers": []any{map[string]any{"address": "127.0.0.1", "port": sp, "method": "2022-blake3-aes-128-gcm", "password": key + ":" + uk}}}}}})
++	c, e := net.Dial("udp", "127.0.0.1:"+strconv.Itoa(cp))
++	if e != nil {
++		t.Fatal(e)
++	}
++	defer c.Close()
++	c.SetDeadline(time.Now().Add(15 * time.Second))
++	payload := make([]byte, 1000)
++	received := make([]byte, 2048)
++	begin := time.Now()
++	for i := range 48 {
++		payload[0] = byte(i)
++		if _, e = c.Write(payload); e != nil {
++			t.Fatal(e)
++		}
++		n, e := c.Read(received)
++		if e != nil || !bytes.Equal(payload, received[:n]) {
++			t.Fatalf("UDP packet %d corrupted/lost: %v", i, e)
++		}
++	}
++	elapsed := time.Since(begin)
++	if elapsed < 2450*time.Millisecond || elapsed > 7*time.Second {
++		t.Fatalf("128 kbps UDP rate: %v", elapsed)
++	}
++	t.Logf("SS2022 UDP 48 intact packets, upload/download 48 KB each: %v", elapsed)
++}
+--- a/transport/internet/tls/config.go
++++ b/transport/internet/tls/config.go
+@@ -384,6 +384,7 @@
+ 		PinnedPeerCertSha256: c.PinnedPeerCertSha256,
+ 	}
+ 	config := &tls.Config{
++		InsecureSkipVerify:     c.AllowInsecure, // DUI: explicitly requested compatibility mode.
+ 		Rand:                   randCarrier,
+ 		ClientSessionCache:     globalSessionCache,
+ 		RootCAs:                root,
+--- a/transport/internet/tls/config.pb.go
++++ b/transport/internet/tls/config.pb.go
+@@ -177,7 +177,8 @@
+ }
+ 
+ type Config struct {
+-	state protoimpl.MessageState `protogen:"open.v1"`
++	state         protoimpl.MessageState `protogen:"open.v1"`
++	AllowInsecure bool                   `protobuf:"varint,1,opt,name=allow_insecure,json=allowInsecure,proto3" json:"allow_insecure,omitempty"` // DUI: opt-in compatibility; disabled by default.
+ 	// List of certificates to be served on server.
+ 	Certificate []*Certificate `protobuf:"bytes,2,rep,name=certificate,proto3" json:"certificate,omitempty"`
+ 	// Override server name.
+@@ -240,6 +241,13 @@
+ 	return file_transport_internet_tls_config_proto_rawDescGZIP(), []int{1}
+ }
+ 
++func (x *Config) GetAllowInsecure() bool {
++	if x != nil {
++		return x.AllowInsecure
++	}
++	return false
++}
++
+ func (x *Config) GetCertificate() []*Certificate {
+ 	if x != nil {
+ 		return x.Certificate
+@@ -377,8 +385,9 @@
+ 	"\x05Usage\x12\x10\n" +
+ 	"\fENCIPHERMENT\x10\x00\x12\x14\n" +
+ 	"\x10AUTHORITY_VERIFY\x10\x01\x12\x13\n" +
+-	"\x0fAUTHORITY_ISSUE\x10\x02\"\xa6\x06\n" +
+-	"\x06Config\x12J\n" +
++	"\x0fAUTHORITY_ISSUE\x10\x02\"\xcd\x06\n" +
++	"\x06Config\x12%\n" +
++	"\x0eallow_insecure\x18\x01 \x01(\bR\rallowInsecure\x12J\n" +
+ 	"\vcertificate\x18\x02 \x03(\v2(.xray.transport.internet.tls.CertificateR\vcertificate\x12\x1f\n" +
+ 	"\vserver_name\x18\x03 \x01(\tR\n" +
+ 	"serverName\x12#\n" +
+--- a/transport/internet/tls/config.proto
++++ b/transport/internet/tls/config.proto
+@@ -38,7 +38,7 @@
+ }
+ 
+ message Config {
+-  // Number 1 was assigned and used by an legacy option.
++  bool allow_insecure = 1; // DUI: opt-in compatibility; disabled by default.
+ 
+   // List of certificates to be served on server.
+   repeated Certificate certificate = 2;
+--- /dev/null
++++ b/transport/internet/tls/dui_insecure_test.go
+@@ -0,0 +1,37 @@
++package tls_test
++
++import (
++	"crypto/sha256"
++	"crypto/tls"
++	xtls "github.com/xtls/xray-core/transport/internet/tls"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++)
++
++func TestDUIInsecureAndPin(t *testing.T) {
++	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
++	defer s.Close()
++	pin := sha256.Sum256(s.Certificate().Raw)
++	for _, tc := range []struct {
++		name string
++		cfg  *xtls.Config
++		ok   bool
++	}{{"strict", &xtls.Config{}, false}, {"opt-in", &xtls.Config{AllowInsecure: true}, true}, {"valid-pin", &xtls.Config{AllowInsecure: true, PinnedPeerCertSha256: [][]byte{pin[:]}}, true}, {"wrong-pin", &xtls.Config{AllowInsecure: true, PinnedPeerCertSha256: [][]byte{make([]byte, 32)}}, false}} {
++		t.Run(tc.name, func(t *testing.T) {
++			cfg := tc.cfg.GetTLSConfig()
++			cfg.NextProtos = []string{"http/1.1"}
++			tr := &http.Transport{TLSClientConfig: cfg}
++			defer tr.CloseIdleConnections()
++			c := http.Client{Transport: tr}
++			resp, err := c.Get(s.URL)
++			if resp != nil {
++				resp.Body.Close()
++			}
++			if (err == nil) != tc.ok {
++				t.Fatalf("handshake got %v expected success=%v", err, tc.ok)
++			}
++		})
++	}
++	_ = tls.VersionTLS13
++}
