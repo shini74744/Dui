@@ -3,6 +3,7 @@ package job
 import (
 	"bufio"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt" // 中文注释 (新增): 导入 fmt 包用于格式化消息
@@ -800,13 +801,21 @@ func (j *CheckDeviceLimitJob) checkAllClientsLimit() {
 		Limit    int
 		Tag      string
 		Protocol model.Protocol
+		Cipher   string
 	})
 	for _, inbound := range inbounds {
+		var settings struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
+			continue
+		}
 		inboundInfoMap[inbound.Id] = struct {
 			Limit    int
 			Tag      string
 			Protocol model.Protocol
-		}{Limit: inbound.DeviceLimit, Tag: inbound.Tag, Protocol: inbound.Protocol}
+			Cipher   string
+		}{Limit: inbound.DeviceLimit, Tag: inbound.Tag, Protocol: inbound.Protocol, Cipher: settings.Method}
 	}
 
 	activeClientsLock.RLock()
@@ -864,11 +873,39 @@ func (j *CheckDeviceLimitJob) checkAllClientsLimit() {
 	}
 }
 
+func deviceLimitAPIUser(client model.Client, cipher string, banned bool) (map[string]any, error) {
+	if banned {
+		if client.ID != "" {
+			client.ID = RandomUUID()
+		}
+		if client.Password != "" {
+			size := 0
+			switch cipher {
+			case "2022-blake3-aes-128-gcm":
+				size = 16
+			case "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305":
+				size = 32
+			}
+			if size > 0 {
+				key := make([]byte, size)
+				if _, err := rand.Read(key); err != nil {
+					return nil, err
+				}
+				client.Password = base64.StdEncoding.EncodeToString(key)
+			} else {
+				client.Password = RandomUUID()
+			}
+		}
+	}
+	return client.XrayAPIUser(cipher), nil
+}
+
 // banUser 中文注释: 封装的封禁用户函数；IP数量超限，且用户当前未被封禁 -> 执行封禁 (UUID 替换)
 func (j *CheckDeviceLimitJob) banUser(email string, activeIPCount int, info *struct {
 	Limit    int
 	Tag      string
 	Protocol model.Protocol
+	Cipher   string
 }) {
 	// =================================================================
 	// 这一行代码是整个解封逻辑的灵魂！
@@ -881,6 +918,12 @@ func (j *CheckDeviceLimitJob) banUser(email string, activeIPCount int, info *str
 	if err != nil || client == nil {
 		return
 	}
+	clientMap, err := deviceLimitAPIUser(*client, info.Cipher, true)
+	if err != nil {
+		logger.Warning("Cannot prepare device-limit user:", err)
+		return
+	}
+
 	logger.Infof("〔设备限制〕超限：用户 %s. 限制: %d, 当前活跃: %d. 执行封禁掐网。", email, info.Limit, activeIPCount)
 
 	// 〔中文注释〕: 以下是发送 Telegram 通知的核心代码，
@@ -915,23 +958,6 @@ func (j *CheckDeviceLimitJob) banUser(email string, activeIPCount int, info *str
 	time.Sleep(5000 * time.Millisecond)
 	// =================================================================
 
-	// 中文注释: 创建一个带有随机UUID/Password的临时客户端配置用于“封禁”
-	tempClient := *client
-
-	// 适用于 VMess/VLESS
-	if tempClient.ID != "" {
-		tempClient.ID = RandomUUID()
-	}
-
-	// 适用于 Trojan/Shadowsocks/Socks
-	if tempClient.Password != "" {
-		tempClient.Password = RandomUUID()
-	}
-
-	var clientMap map[string]interface{}
-	clientJson, _ := json.Marshal(tempClient)
-	json.Unmarshal(clientJson, &clientMap)
-
 	// 中文注释: 步骤二：将这个带有错误UUID/Password的临时用户添加回去。
 	// 客户端持有的还是旧的UUID，自然就无法通过验证，从而达到了“封禁”的效果。
 	err = j.xrayApi.AddUser(string(info.Protocol), info.Tag, clientMap)
@@ -948,11 +974,18 @@ func (j *CheckDeviceLimitJob) unbanUser(email string, activeIPCount int, info *s
 	Limit    int
 	Tag      string
 	Protocol model.Protocol
+	Cipher   string
 }) {
 	_, client, err := j.inboundService.GetClientByEmail(email)
 	if err != nil || client == nil {
 		return
 	}
+	clientMap, err := deviceLimitAPIUser(*client, info.Cipher, false)
+	if err != nil {
+		logger.Warning("Cannot prepare device-limit user:", err)
+		return
+	}
+
 	logger.Infof("〔设备数量〕已恢复：用户 %s. 限制: %d, 当前活跃: %d. 执行解封/恢复用户。", email, info.Limit, activeIPCount)
 
 	// 中文注释: 步骤一：先从 Xray-Core 中删除用于“封禁”的那个临时用户。
@@ -962,10 +995,6 @@ func (j *CheckDeviceLimitJob) unbanUser(email string, activeIPCount int, info *s
 	// 中文注释: 同样增加 5000 毫秒延时，确保解封操作的稳定性
 	time.Sleep(5000 * time.Millisecond)
 	// =================================================================
-
-	var clientMap map[string]interface{}
-	clientJson, _ := json.Marshal(client)
-	json.Unmarshal(clientJson, &clientMap)
 
 	// 中文注释: 步骤二：将数据库中原始的、正确的用户信息重新添加回 Xray-Core，从而实现“解封”。
 	err = j.xrayApi.AddUser(string(info.Protocol), info.Tag, clientMap)

@@ -40,3 +40,17 @@ func TestDUIUserAPILevelAndSS2022Account(t *testing.T) {
 		t.Fatal("wrong SS2022 Account field")
 	}
 }
+
+func TestDUIUserAPIRejectsMissingCipherWithoutPanic(t *testing.T) {
+	c := &captureUserClient{}
+	var client command.HandlerServiceClient = c
+	a := &XrayAPI{HandlerServiceClient: &client}
+	for _, cipher := range []any{nil, 123, "unknown"} {
+		if err := a.AddUser("shadowsocks", "test", map[string]any{"email": "test", "password": "test", "cipher": cipher}); err == nil {
+			t.Fatal("invalid cipher accepted")
+		}
+	}
+	if c.request != nil {
+		t.Fatal("invalid user sent to core")
+	}
+}
