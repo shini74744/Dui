@@ -751,7 +751,8 @@ class RealityStreamSettings extends XrayCommonClass {
         maxTimediff = 0,
         shortIds = RandomUtil.randomShortIds(),
         mldsa65Seed = '',
-        settings = new RealityStreamSettings.Settings()
+        settings = new RealityStreamSettings.Settings(),
+        duiRequireHybridKeyShare = false
     ) {
         super();
         this.show = show;
@@ -764,6 +765,7 @@ class RealityStreamSettings extends XrayCommonClass {
         this.maxTimediff = maxTimediff;
         this.shortIds = Array.isArray(shortIds) ? shortIds.join(",") : shortIds;
         this.mldsa65Seed = mldsa65Seed;
+        this.duiRequireHybridKeyShare = duiRequireHybridKeyShare === true;
         this.settings = settings;
     }
 
@@ -790,6 +792,7 @@ class RealityStreamSettings extends XrayCommonClass {
             json.shortIds,
             json.mldsa65Seed,
             settings,
+            json.duiRequireHybridKeyShare,
         );
     }
 
@@ -805,6 +808,7 @@ class RealityStreamSettings extends XrayCommonClass {
             maxTimediff: this.maxTimediff,
             shortIds: this.shortIds.split(","),
             mldsa65Seed: this.mldsa65Seed,
+            duiRequireHybridKeyShare: this.duiRequireHybridKeyShare,
             settings: this.settings,
         };
     }

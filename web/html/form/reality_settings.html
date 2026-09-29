@@ -1,5 +1,15 @@
 {{define "form/realitySettings"}}
 <template>
+    <a-form-item label='REALITY 握手算法'>
+        <a-select v-model="inbound.stream.reality.duiRequireHybridKeyShare" :style="{ width: '100%' }"
+            :dropdown-class-name="themeSwitcher.currentTheme">
+            <a-select-option :value="false">X25519</a-select-option>
+            <a-select-option :value="true">X25519MLKEM768</a-select-option>
+        </a-select>
+        <div class="ant-form-explain" style="color: inherit; font-size: 12px; margin-top: 4px; line-height: 1.5;">
+            默认 X25519：兼容旧、新客户端指纹，不强制新客户端降级。X25519MLKEM768：要求客户端指纹提供新版混合密钥交换。此项与 VLESS Encryption 的 Authentication 独立；切换不会更换节点密钥。
+        </div>
+    </a-form-item>
     <a-form-item label='Show'>
         <a-switch v-model="inbound.stream.reality.show"></a-switch>
     </a-form-item>
