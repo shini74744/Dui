@@ -87,7 +87,7 @@
             :min="0" :max="10000" :precision="3" :step="1"
             style="width: 100%">
         </a-input-number>
-        <div class="ant-form-explain">Mbps · 0 为不限速；同一用户所有连接合计，上下行各自限速。</div>
+        <div class="ant-form-explain" style="color: inherit; font-size: 12px; margin-top: 4px; line-height: 1.5;">{{ i18n "pages.inbounds.speedLimitDesc" }}</div>
     </a-form-item>
     
     <a-form-item v-if="client.email" label='{{ i18n "comment" }}'>
