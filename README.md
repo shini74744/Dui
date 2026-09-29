@@ -30,6 +30,13 @@ Dui 是一套面向 Linux VPS 的 Xray 管理面板，提供入站、出站、�
 - 来源 IP 入站黑名单与集中黑名单管理
 - 星空主题、侧边栏动画与移动端适配
 
+## v26.9.34 默认 CLOSE-WAIT 修复核心
+
+- Linux 安装包和 Docker 构建默认使用基于 Xray v26.3.27 的 `dui-closewait-v26327-fix1`。
+- 修复 SS2022 singbridge 关闭/半关闭时未传递 EOF 导致连接滞留的问题。
+- [核心下载与完整源码](https://github.com/shini74744/Dui/releases/tag/xray-v26.3.27-dui.1)；[构建说明与平台列表](core/xray/README.md)。
+- 面板手动选择官方核心仍使用 XTLS/Xray-core，手动切换可能覆盖本修复。
+
 ## v26.9.33 首次安装日志默认等级
 
 - 首次安装默认使用 `warning`，保留警告和错误，减少调试及普通运行信息写入。

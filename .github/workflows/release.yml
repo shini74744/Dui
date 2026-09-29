@@ -34,6 +34,8 @@ jobs:
           bash -n web/service/fb5.sh
           bash -n web/service/ntp.sh
           sh -n web/service/ddns.sh
+          sh -n DockerInit.sh
+          bash -n core/xray/prepare.sh core/xray/build.sh
       - name: Menu updater regression guards
         shell: bash
         run: |
@@ -119,7 +121,8 @@ jobs:
           install -m 0644 x-ui.service x-ui/x-ui.service
           install -m 0755 web/service/fb5.sh x-ui/fb5.sh
 
-          XRAY_BASE='https://github.com/XTLS/Xray-core/releases/download/v25.10.15'
+          source core/xray/default.env
+          XRAY_BASE="https://github.com/$XRAY_REPO/releases/download/$XRAY_TAG"
           case '${{ matrix.platform }}' in
             amd64) XRAY_ZIP='Xray-linux-64.zip' ;;
             arm64) XRAY_ZIP='Xray-linux-arm64-v8a.zip' ;;
@@ -131,8 +134,13 @@ jobs:
           esac
 
           curl -fL --retry 3 "$XRAY_BASE/$XRAY_ZIP" -o /tmp/xray.zip
+          curl -fL --retry 3 "$XRAY_BASE/$XRAY_ZIP.sha256" -o /tmp/xray.sha256
+          XRAY_HASH=$(awk '{print $1}' /tmp/xray.sha256)
+          printf '%s  /tmp/xray.zip\n' "$XRAY_HASH" | sha256sum -c -
           unzip -q /tmp/xray.zip -d /tmp/xray
-          install -m 0755 /tmp/xray/xray "x-ui/bin/xray-linux-${{ matrix.platform }}"
+          install -m 0755 /tmp/xray/xray "x-ui/bin/xray-linux-${GOARCH}"
+          install -m 0644 /tmp/xray/LICENSE x-ui/bin/xray-LICENSE
+          install -m 0644 /tmp/xray/BUILD.json x-ui/bin/xray-BUILD.json
 
           curl -fL --retry 3 https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o x-ui/bin/geoip.dat
           curl -fL --retry 3 https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat -o x-ui/bin/geosite.dat

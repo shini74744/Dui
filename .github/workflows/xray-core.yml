@@ -1,0 +1,131 @@
+name: Build DUI Xray core
+on:
+  push:
+    tags: ['xray-v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dui-xray-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.metadata.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: metadata
+        run: |
+          echo "matrix=$(jq -c . core/xray/targets.json)" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "$GITHUB_REF_NAME" = "$(jq -r .release_tag core/xray/manifest.json)"
+          fi
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+          cache: false
+      - name: Verify upstream and apply patch
+        run: bash core/xray/prepare.sh "$RUNNER_TEMP/xray"
+      - name: Close and half-close regression tests
+        working-directory: ${{ runner.temp }}/xray/source
+        run: go test ./common/singbridge ./transport/pipe -count=1 -timeout=120s
+      - name: Package complete modified source
+        run: |
+          mkdir -p source-assets
+          tar -czf source-assets/Xray-v26.3.27-dui.1-source.tar.gz -C "$RUNNER_TEMP/xray" source
+          cd source-assets
+          sha256sum *.tar.gz > Xray-v26.3.27-dui.1-source.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xray-source
+          path: source-assets/*
+          if-no-files-found: error
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      GOARM: ${{ matrix.goarm }}
+      GOMIPS: ${{ matrix.gomips }}
+      CGO_ENABLED: '0'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: xray-source
+          path: source-assets
+      - name: Extract verified source
+        run: |
+          cd source-assets
+          sha256sum -c Xray-v26.3.27-dui.1-source.tar.gz.sha256
+          tar -xzf Xray-v26.3.27-dui.1-source.tar.gz -C "$RUNNER_TEMP"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+          cache: false
+      - name: Windows 7 Go toolchain
+        if: matrix.win7
+        run: |
+          curl -fL --retry 3 "$(jq -r .win7_go_url core/xray/manifest.json)" -o "$RUNNER_TEMP/win7.zip"
+          printf '%s  %s\n' "$(jq -r .win7_go_sha256 core/xray/manifest.json)" "$RUNNER_TEMP/win7.zip" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/win7-go"
+          unzip -q "$RUNNER_TEMP/win7.zip" -d "$RUNNER_TEMP/win7-go"
+          GO_BIN=$(find "$RUNNER_TEMP/win7-go" -type f -path '*/bin/go' | head -n1)
+          test -n "$GO_BIN"
+          echo "$(dirname "$GO_BIN")" >> "$GITHUB_PATH"
+          echo "GOROOT=$(dirname "$(dirname "$GO_BIN")")" >> "$GITHUB_ENV"
+      - name: Android NDK r28b
+        if: matrix.goos == 'android'
+        run: |
+          curl -fL --retry 3 https://dl.google.com/android/repository/android-ndk-r28b-linux.zip -o "$RUNNER_TEMP/ndk.zip"
+          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+          case "$GOARCH" in
+            amd64) TARGET=x86_64-linux-android24 ;;
+            arm64) TARGET=aarch64-linux-android24 ;;
+          esac
+          echo "CC=$RUNNER_TEMP/android-ndk-r28b/toolchains/llvm/prebuilt/linux-x86_64/bin/$TARGET-clang" >> "$GITHUB_ENV"
+          echo 'CGO_ENABLED=1' >> "$GITHUB_ENV"
+      - name: Build and package
+        run: bash core/xray/build.sh "$RUNNER_TEMP/source" "$RUNNER_TEMP/output" '${{ matrix.asset }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xray-${{ matrix.asset }}
+          path: ${{ runner.temp }}/output/Xray-*.zip*
+          if-no-files-found: error
+  publish:
+    needs: [prepare, build]
+    if: startsWith(github.ref, 'refs/tags/xray-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Verify complete platform set and checksums
+        run: |
+          set -euo pipefail
+          cd release-assets
+          while read -r asset; do
+            test -s "Xray-$asset.zip"
+            sha256sum -c "Xray-$asset.zip.sha256"
+          done < <(jq -r '.include[].asset' ../core/xray/targets.json)
+          test "$(find . -name '*.zip' | wc -l)" -eq "$(jq '.include | length' ../core/xray/targets.json)"
+          sha256sum -c Xray-v26.3.27-dui.1-source.tar.gz.sha256
+          cat *.sha256 > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Xray v26.3.27 DUI CLOSE-WAIT fix1
+          make_latest: false
+          body_path: core/xray/README.md
+          fail_on_unmatched_files: true
+          files: release-assets/*
