@@ -12,7 +12,10 @@ BINARY=xray
 if [ "$GOOS" = windows ]; then VERSION=$(jq -r .release_version "$META/manifest.json")
 BINARY=xray.exe; fi
 cd "$SOURCE"
-go build -trimpath -buildvcs=false -ldflags "-s -w -X github.com/xtls/xray-core/core.build=$BUILD -X github.com/xtls/xray-core/core.releaseVersion=$VERSION" -o "$OUT/package/$BINARY" ./main
+# Match upstream Android linker compatibility for github.com/wlynxg/anet.
+EXTRA_LDFLAGS=""
+if [ "$GOOS" = android ]; then EXTRA_LDFLAGS="-checklinkname=0"; fi
+go build -trimpath -buildvcs=false -ldflags "$EXTRA_LDFLAGS -s -w -X github.com/xtls/xray-core/core.build=$BUILD -X github.com/xtls/xray-core/core.releaseVersion=$VERSION" -o "$OUT/package/$BINARY" ./main
 cp LICENSE "$OUT/package/LICENSE"
 cp "$META/README.md" "$OUT/package/README.md"
 jq --arg target "$ASSET" --arg compiler "$(go version)" --arg commit "${GITHUB_SHA:-local}" '. + {target:$target,compiler:$compiler,dui_commit:$commit}' "$META/manifest.json" > "$OUT/package/BUILD.json"
