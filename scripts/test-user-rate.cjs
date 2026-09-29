@@ -11,5 +11,5 @@ for(const type of [Inbound.VmessSettings.VMESS,Inbound.VLESSSettings.VLESS,Inbou
 assert.equal(TlsStreamSettings.fromJson({verifyPeerCertInNames:['example.com']}).toJson().verifyPeerCertByName,'example.com');
 assert.deepEqual(SockoptStreamSettings.fromJson({trustedXForwardedFor:['127.0.0.1']}).toJson().trustedXForwardedFor,['127.0.0.1']);
 `,c);
-const o=context('outbound.js');vm.runInContext(`const tls=TlsStreamSettings.fromJson({allowInsecure:true,pinnedPeerCertSha256:'pin',verifyPeerCertByName:'example.com'}).toJson();assert.equal(tls.pinnedPeerCertSha256,'pin');assert.equal(tls.verifyPeerCertByName,'example.com');assert.equal(tls.allowInsecure,true);`,o);
+const o=context('outbound.js');vm.runInContext(`assert.deepEqual(Outbound.FreedomSettings.fromJson({finalRules:[{action:'block',ip:['127.0.0.0/8']}]}).toJson().finalRules,[{action:'block',ip:['127.0.0.0/8']}]);const tls=TlsStreamSettings.fromJson({allowInsecure:true,pinnedPeerCertSha256:'pin',verifyPeerCertByName:'example.com'}).toJson();assert.equal(tls.pinnedPeerCertSha256,'pin');assert.equal(tls.verifyPeerCertByName,'example.com');assert.equal(tls.allowInsecure,true);`,o);
 console.log('UI serialization: 4 protocols, Mbps migration/zero, TLS and trusted proxy round trips passed');

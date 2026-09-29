@@ -891,13 +891,15 @@ Outbound.FreedomSettings = class extends CommonClass {
         domainStrategy = '',
         redirect = '',
         fragment = {},
-        noises = []
+        noises = [],
+        finalRules = undefined
     ) {
         super();
         this.domainStrategy = domainStrategy;
         this.redirect = redirect;
         this.fragment = fragment;
         this.noises = noises;
+        this.finalRules = finalRules;
     }
 
     addNoise() {
@@ -914,11 +916,13 @@ Outbound.FreedomSettings = class extends CommonClass {
             json.redirect,
             json.fragment ? Outbound.FreedomSettings.Fragment.fromJson(json.fragment) : undefined,
             json.noises ? json.noises.map(noise => Outbound.FreedomSettings.Noise.fromJson(noise)) : undefined,
+            json.finalRules,
         );
     }
 
     toJson() {
         return {
+            finalRules: this.finalRules,
             domainStrategy: ObjectUtil.isEmpty(this.domainStrategy) ? undefined : this.domainStrategy,
             redirect: ObjectUtil.isEmpty(this.redirect) ? undefined: this.redirect,
             fragment: Object.keys(this.fragment).length === 0 ? undefined : this.fragment,
