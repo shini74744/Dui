@@ -608,12 +608,12 @@
 	<a-modal id="version-modal" v-model="versionModal.visible" title='{{ i18n "pages.index.xraySwitch" }}' :closable="true"
 		@ok="() => versionModal.visible = false" :class="themeSwitcher.currentTheme" footer="">
 		<a-collapse default-active-key="1">
-			<a-collapse-panel key="1" header='Xray'>
+			<a-collapse-panel key="1" header='Xray · DUI'>
 				<a-alert type="warning" :style="{ marginBottom: '12px', width: '100%' }" message='{{ i18n "pages.index.xraySwitchClickDesk" }}' show-icon></a-alert>
 				<a-list class="ant-version-list" bordered :style="{ width: '100%' }">
 					<a-list-item class="ant-version-list-item" v-for="version, index in versionModal.versions">
 						<a-tag :color="index % 2 == 0 ? 'purple' : 'green'">[[ version ]]</a-tag>
-						<a-radio :class="themeSwitcher.currentTheme" :checked="version === `v${status.xray.version}`" @click="switchV2rayVersion(version)"></a-radio>
+						<a-button size="small" @click="switchV2rayVersion(version)">{{ i18n "pages.index.xraySwitch" }}</a-button>
 					</a-list-item>
 				</a-list>
 			</a-collapse-panel>
