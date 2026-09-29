@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"time"
-	"math"
 
 	"x-ui/logger"
 	"x-ui/util/common"
@@ -17,12 +17,12 @@ import (
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/infra/conf"
 	"github.com/xtls/xray-core/proxy/shadowsocks"
-	"github.com/xtls/xray-core/proxy/shadowsocks_2022"
 	"github.com/xtls/xray-core/proxy/trojan"
 	"github.com/xtls/xray-core/proxy/vless"
 	"github.com/xtls/xray-core/proxy/vmess"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 type XrayAPI struct {
@@ -130,10 +130,8 @@ func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]an
 				CipherType: ssCipherType,
 			})
 		} else {
-			account = serial.ToTypedMessage(&shadowsocks_2022.ServerConfig{
-				Key:   user["password"].(string),
-				Email: user["email"].(string),
-			})
+			// v26.9.9 uses Account.key (field 1), not ServerConfig.key (field 2).
+			account = &serial.TypedMessage{Type: "xray.proxy.shadowsocks_2022.Account", Value: protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), user["password"].(string))}
 		}
 	default:
 		return nil
@@ -153,11 +151,12 @@ func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]an
 		Operation: serial.ToTypedMessage(&command.AddUserOperation{
 			User: &protocol.User{
 				Email:   user["email"].(string),
+				Level:   apiUserLevel(user["level"]),
 				Account: account,
 			},
 		}),
 	})
-	
+
 	// 〔中文注释〕: (修改点) 增加更详细的错误日志，方便排查问题。
 	if err != nil {
 		emailStr, _ := user["email"].(string)

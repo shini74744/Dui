@@ -52,7 +52,7 @@
             <a-input v-model.trim="clientsBulkModal.subId"></a-input>
         </a-form-item>
 
-<!-- 中文注释: 增加【独立限速】 speedLimit 输入框 -->
+<!-- Aggregate per-user upload and download caps, independently enforced. -->
         <a-form-item>
             <template slot="label">
                 <a-tooltip>
@@ -66,13 +66,11 @@
                 </a-tooltip>
                 </template>
             <a-input-number
-                v-model.number="clientsBulkModal.speedLimit"
+                v-model.number="clientsBulkModal.speedLimitMbps"
                 :min="0"
                 style="width: 100%">
-                <template slot="addonAfter">
-                    KB/s
-                </template>
             </a-input-number>
+        <div class="ant-form-explain">Mbps · 0 为不限速；同一用户所有连接合计，上下行各自限速。</div>
         </a-form-item>
 
         <a-form-item v-if="app.tgBotEnable">
@@ -163,7 +161,7 @@
         limitIp: 0,
 
         <!-- 中文注释: 在这里为批量添加对象增加 speedLimit 属性 -->
-        speedLimit: 0,
+        speedLimitMbps: 0,
 
         expiryTime: '',
         emailMethod: 0,
@@ -198,7 +196,7 @@
                 newClient.tgId = clientsBulkModal.tgId;
 
                 <!-- 中文注释: 在这里为每个新生成的 client 对象赋值 speedLimit -->
-                newClient.speedLimit = clientsBulkModal.speedLimit;
+                newClient.speedLimitMbps = clientsBulkModal.speedLimitMbps;
 
                 newClient.security = clientsBulkModal.security;
                 newClient.limitIp = clientsBulkModal.limitIp;
@@ -225,7 +223,7 @@
             this.quantity = 1;
 
             <!-- 中文注释: 在这里重置 speedLimit 的值 -->
-            this.speedLimit = 0;
+            this.speedLimitMbps = 0;
 
             this.totalGB = 0;
             this.expiryTime = 0;

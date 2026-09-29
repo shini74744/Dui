@@ -1,12 +1,12 @@
 {
-  "upstream_version": "v26.3.27",
-  "upstream_commit": "d2758a023cd7f4174a5a5fa4ff66e487d4342ba0",
-  "source_url": "https://codeload.github.com/XTLS/Xray-core/zip/refs/tags/v26.3.27",
-  "source_sha256": "9cad7fafde9705383cea42e809d1e5db366258c441ce9e4e75849bfb7ba01819",
-  "release_tag": "vx-26.0",
-  "build": "dui-vx-26.0-closewait-fix1",
-  "go_version": "1.26.1",
-  "win7_go_url": "https://github.com/XTLS/go-win7/releases/download/patched-1.26.1/go-for-win7-linux-amd64.zip",
-  "win7_go_sha256": "51fcbb20ec0c7e28993d85990999a9f7efdfefeb247e80e9e2fb6747294936ee",
-  "release_version": "vx-26.0"
+  "upstream_version": "v26.9.9",
+  "upstream_commit": "52a412d9e2f5c2a5142b1b4e2ab3771dacb8b120",
+  "source_url": "https://codeload.github.com/XTLS/Xray-core/zip/refs/tags/v26.9.9",
+  "source_sha256": "33871a5b7673418708beba3eaa76028f941ce77986003b24e48a0a1a5f01425e",
+  "release_tag": "vx-26.1",
+  "build": "dui-vx-26.1-user-rate-closewait",
+  "go_version": "1.27.1",
+  "win7_go_url": "https://github.com/XTLS/go-win7/releases/download/patched-1.27.1/go-for-win7-linux-amd64.zip",
+  "win7_go_sha256": "4f0434fceea1b1c80c6d3511f0f777b0dc3b1260f172f1bf1ec202575bd36ec1",
+  "release_version": "vx-26.1"
 }

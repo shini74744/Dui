@@ -567,7 +567,7 @@ class TlsStreamSettings extends XrayCommonClass {
         maxVersion = TLS_VERSION_OPTION.TLS13,
         cipherSuites = '',
         rejectUnknownSni = false,
-        verifyPeerCertInNames = ['dns.google', 'cloudflare-dns.com'],
+        verifyPeerCertByName = '',
         disableSystemRoot = false,
         enableSessionResumption = false,
         certificates = [new TlsStreamSettings.Cert()],
@@ -582,7 +582,7 @@ class TlsStreamSettings extends XrayCommonClass {
         this.maxVersion = maxVersion;
         this.cipherSuites = cipherSuites;
         this.rejectUnknownSni = rejectUnknownSni;
-        this.verifyPeerCertInNames = Array.isArray(verifyPeerCertInNames) ? verifyPeerCertInNames.join(",") : verifyPeerCertInNames;
+        this.verifyPeerCertByName = Array.isArray(verifyPeerCertByName) ? verifyPeerCertByName.join(",") : verifyPeerCertByName;
         this.disableSystemRoot = disableSystemRoot;
         this.enableSessionResumption = enableSessionResumption;
         this.certs = certificates;
@@ -616,7 +616,7 @@ class TlsStreamSettings extends XrayCommonClass {
             json.maxVersion,
             json.cipherSuites,
             json.rejectUnknownSni,
-            json.verifyPeerCertInNames,
+            json.verifyPeerCertByName ?? json.verifyPeerCertInNames,
             json.disableSystemRoot,
             json.enableSessionResumption,
             certs,
@@ -634,13 +634,13 @@ class TlsStreamSettings extends XrayCommonClass {
             maxVersion: this.maxVersion,
             cipherSuites: this.cipherSuites,
             rejectUnknownSni: this.rejectUnknownSni,
-            verifyPeerCertInNames: this.verifyPeerCertInNames.split(","),
+            verifyPeerCertByName: this.verifyPeerCertByName,
             disableSystemRoot: this.disableSystemRoot,
             enableSessionResumption: this.enableSessionResumption,
             certificates: TlsStreamSettings.toJsonArray(this.certs),
             alpn: this.alpn,
             echServerKeys: this.echServerKeys,
-            echForceQuery: this.echForceQuery,
+
             settings: this.settings,
         };
     }
@@ -865,6 +865,7 @@ class SockoptStreamSettings extends XrayCommonClass {
         interfaceName = "",
     ) {
         super();
+        this.trustedXForwardedFor = [];
         this.acceptProxyProtocol = acceptProxyProtocol;
         this.tcpFastOpen = tcpFastOpen;
         this.mark = mark;
@@ -885,7 +886,7 @@ class SockoptStreamSettings extends XrayCommonClass {
 
     static fromJson(json = {}) {
         if (Object.keys(json).length === 0) return undefined;
-        return new SockoptStreamSettings(
+        const result = new SockoptStreamSettings(
             json.acceptProxyProtocol,
             json.tcpFastOpen,
             json.mark,
@@ -903,10 +904,13 @@ class SockoptStreamSettings extends XrayCommonClass {
             json.tcpWindowClamp,
             json.interface,
         );
+        result.trustedXForwardedFor = json.trustedXForwardedFor || [];
+        return result;
     }
 
     toJson() {
         return {
+            trustedXForwardedFor: this.trustedXForwardedFor || [],
             acceptProxyProtocol: this.acceptProxyProtocol,
             tcpFastOpen: this.tcpFastOpen,
             mark: this.mark,
@@ -1798,7 +1802,8 @@ Inbound.VmessSettings.VMESS = class extends XrayCommonClass {
         security = USERS_SECURITY.AUTO,
         email = RandomUtil.randomLowerAndNum(8),
         limitIp = 0,
-        speedLimit = 0, // <--- 中文注释: 新增 speedLimit 属性
+        speedLimit = 0, // legacy KiB/s
+        speedLimitMbps = undefined,
         totalGB = 0,
         expiryTime = 0,
         enable = true,
@@ -1815,7 +1820,8 @@ Inbound.VmessSettings.VMESS = class extends XrayCommonClass {
         this.security = security;
         this.email = email;
         this.limitIp = limitIp;
-        this.speedLimit = speedLimit; // <--- 中文注释: 赋值
+        this.speedLimit = speedLimit;
+        this.speedLimitMbps = speedLimitMbps ?? Number((speedLimit * 0.008192).toFixed(6));
         this.totalGB = totalGB;
         this.expiryTime = expiryTime;
         this.enable = enable;
@@ -1835,7 +1841,8 @@ Inbound.VmessSettings.VMESS = class extends XrayCommonClass {
             json.security,
             json.email,
             json.limitIp,
-            json.speedLimit ?? 0, // <--- 中文注释: 从 JSON 解析
+            json.speedLimit ?? 0,
+            json.speedLimitMbps,
             json.totalGB,
             json.expiryTime,
             json.enable,
@@ -1944,7 +1951,8 @@ Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
         flow = '',
         email = RandomUtil.randomLowerAndNum(8),
         limitIp = 0,
-        speedLimit = 0, // <--- 中文注释: 新增 speedLimit 属性
+        speedLimit = 0, // legacy KiB/s
+        speedLimitMbps = undefined,
         totalGB = 0,
         expiryTime = 0,
         enable = true,
@@ -1961,7 +1969,8 @@ Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
         this.flow = flow;
         this.email = email;
         this.limitIp = limitIp;
-        this.speedLimit = speedLimit; // <--- 中文注释: 赋值
+        this.speedLimit = speedLimit;
+        this.speedLimitMbps = speedLimitMbps ?? Number((speedLimit * 0.008192).toFixed(6));
         this.totalGB = totalGB;
         this.expiryTime = expiryTime;
         this.enable = enable;
@@ -1981,7 +1990,8 @@ Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
             json.flow,
             json.email,
             json.limitIp,
-            json.speedLimit ?? 0, // <--- 中文注释: 从 JSON 解析
+            json.speedLimit ?? 0,
+            json.speedLimitMbps,
             json.totalGB,
             json.expiryTime,
             json.enable,
@@ -2096,7 +2106,8 @@ Inbound.TrojanSettings.Trojan = class extends XrayCommonClass {
         password = RandomUtil.randomSeq(10),
         email = RandomUtil.randomLowerAndNum(8),
         limitIp = 0,
-        speedLimit = 0, // <--- 中文注释: 新增 speedLimit 属性
+        speedLimit = 0, // legacy KiB/s
+        speedLimitMbps = undefined,
         totalGB = 0,
         expiryTime = 0,
         enable = true,
@@ -2112,7 +2123,8 @@ Inbound.TrojanSettings.Trojan = class extends XrayCommonClass {
         this.password = password;
         this.email = email;
         this.limitIp = limitIp;
-        this.speedLimit = speedLimit; // <--- 中文注释: 赋值
+        this.speedLimit = speedLimit;
+        this.speedLimitMbps = speedLimitMbps ?? Number((speedLimit * 0.008192).toFixed(6));
         this.totalGB = totalGB;
         this.expiryTime = expiryTime;
         this.enable = enable;
@@ -2130,7 +2142,8 @@ Inbound.TrojanSettings.Trojan = class extends XrayCommonClass {
             password: this.password,
             email: this.email,
             limitIp: this.limitIp,
-            speedLimit: this.speedLimit, // <--- 中文注释: 序列化到 JSON
+            speedLimit: 0,
+            speedLimitMbps: this.speedLimitMbps,
             totalGB: this.totalGB,
             expiryTime: this.expiryTime,
             enable: this.enable,
@@ -2149,7 +2162,8 @@ Inbound.TrojanSettings.Trojan = class extends XrayCommonClass {
             json.password,
             json.email,
             json.limitIp,
-            json.speedLimit ?? 0, // <--- 中文注释: 从 JSON 解析
+            json.speedLimit ?? 0,
+            json.speedLimitMbps,
             json.totalGB,
             json.expiryTime,
             json.enable,
@@ -2273,7 +2287,8 @@ Inbound.ShadowsocksSettings.Shadowsocks = class extends XrayCommonClass {
         password = RandomUtil.randomShadowsocksPassword(),
         email = RandomUtil.randomLowerAndNum(8),
         limitIp = 0,
-        speedLimit = 0, // <--- 中文注释: 新增 speedLimit 属性
+        speedLimit = 0, // legacy KiB/s
+        speedLimitMbps = undefined,
         totalGB = 0,
         expiryTime = 0,
         enable = true,
@@ -2290,7 +2305,8 @@ Inbound.ShadowsocksSettings.Shadowsocks = class extends XrayCommonClass {
         this.password = password;
         this.email = email;
         this.limitIp = limitIp;
-        this.speedLimit = speedLimit; // <--- 中文注释: 赋值
+        this.speedLimit = speedLimit;
+        this.speedLimitMbps = speedLimitMbps ?? Number((speedLimit * 0.008192).toFixed(6));
         this.totalGB = totalGB;
         this.expiryTime = expiryTime;
         this.enable = enable;
@@ -2309,7 +2325,8 @@ Inbound.ShadowsocksSettings.Shadowsocks = class extends XrayCommonClass {
             password: this.password,
             email: this.email,
             limitIp: this.limitIp,
-            speedLimit: this.speedLimit, // <--- 中文注释: 序列化到 JSON
+            speedLimit: 0,
+            speedLimitMbps: this.speedLimitMbps,
             totalGB: this.totalGB,
             expiryTime: this.expiryTime,
             enable: this.enable,
@@ -2329,7 +2346,8 @@ Inbound.ShadowsocksSettings.Shadowsocks = class extends XrayCommonClass {
             json.password,
             json.email,
             json.limitIp,
-            json.speedLimit ?? 0, // <--- 中文注释: 从 JSON 解析
+            json.speedLimit ?? 0,
+            json.speedLimitMbps,
             json.totalGB,
             json.expiryTime,
             json.enable,

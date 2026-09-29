@@ -443,7 +443,10 @@
           </a-form-item>
           <a-form-item label="Allow Insecure">
             <a-switch v-model="outbound.stream.tls.allowInsecure"></a-switch>
+ <a-alert v-if="outbound.stream.tls.allowInsecure" type="warning" show-icon message="已关闭 TLS 证书验证，存在服务器被冒充的风险；建议使用有效证书或固定证书指纹。" />
           </a-form-item>
+ <a-form-item label="PinnedPeerCertSha256"><a-input v-model.trim="outbound.stream.tls.pinnedPeerCertSha256"></a-input></a-form-item>
+ <a-form-item label="VerifyPeerCertByName"><a-input v-model.trim="outbound.stream.tls.verifyPeerCertByName"></a-input></a-form-item>
         </template>
 
         <!-- reality settings -->
