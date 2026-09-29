@@ -89,10 +89,6 @@ type Status struct {
 	} `json:"appStats"`
 }
 
-type Release struct {
-	TagName string `json:"tag_name"`
-}
-
 type ServerService struct {
 	xrayService    XrayService
 	inboundService InboundService
@@ -315,48 +311,11 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 }
 
 func (s *ServerService) GetXrayVersions() ([]string, error) {
-	const (
-		XrayURL    = "https://api.github.com/repos/XTLS/Xray-core/releases"
-		bufferSize = 8192
-	)
-
-	resp, err := http.Get(XrayURL)
+	asset, err := currentDUICoreAsset()
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	buffer := bytes.NewBuffer(make([]byte, bufferSize))
-	buffer.Reset()
-	if _, err := buffer.ReadFrom(resp.Body); err != nil {
-		return nil, err
-	}
-
-	var releases []Release
-	if err := json.Unmarshal(buffer.Bytes(), &releases); err != nil {
-		return nil, err
-	}
-
-	var versions []string
-	for _, release := range releases {
-		tagVersion := strings.TrimPrefix(release.TagName, "v")
-		tagParts := strings.Split(tagVersion, ".")
-		if len(tagParts) != 3 {
-			continue
-		}
-
-		major, err1 := strconv.Atoi(tagParts[0])
-		minor, err2 := strconv.Atoi(tagParts[1])
-		patch, err3 := strconv.Atoi(tagParts[2])
-		if err1 != nil || err2 != nil || err3 != nil {
-			continue
-		}
-
-		if major > 25 || (major == 25 && minor > 9) || (major == 25 && minor == 9 && patch >= 10) {
-			versions = append(versions, release.TagName)
-		}
-	}
-	return versions, nil
+	return newDUICoreClient().versions(asset)
 }
 
 func (s *ServerService) StopXrayService() error {
@@ -378,63 +337,15 @@ func (s *ServerService) RestartXrayService() error {
 }
 
 func (s *ServerService) downloadXRay(version string) (string, error) {
-	osName := runtime.GOOS
-	arch := runtime.GOARCH
-
-	switch osName {
-	case "darwin":
-		osName = "macos"
-	case "windows":
-		osName = "windows"
-	}
-
-	switch arch {
-	case "amd64":
-		arch = "64"
-	case "arm64":
-		arch = "arm64-v8a"
-	case "armv7":
-		arch = "arm32-v7a"
-	case "armv6":
-		arch = "arm32-v6"
-	case "armv5":
-		arch = "arm32-v5"
-	case "386":
-		arch = "32"
-	case "s390x":
-		arch = "s390x"
-	}
-
-	fileName := fmt.Sprintf("Xray-%s-%s.zip", osName, arch)
-	url := fmt.Sprintf("https://github.com/XTLS/Xray-core/releases/download/%s/%s", version, fileName)
-	resp, err := http.Get(url)
+	asset, err := currentDUICoreAsset()
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-
-	os.Remove(fileName)
-	file, err := os.Create(fileName)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return fileName, nil
+	return newDUICoreClient().download(version, asset)
 }
 
 func (s *ServerService) UpdateXray(version string) error {
-	// 1. Stop xray before doing anything
-	if err := s.StopXrayService(); err != nil {
-		logger.Warning("failed to stop xray before update:", err)
-	}
-
-	// 2. Download the zip
+	// Download and verify the DUI package before interrupting the running core.
 	zipFileName, err := s.downloadXRay(version)
 	if err != nil {
 		return err
@@ -454,6 +365,11 @@ func (s *ServerService) UpdateXray(version string) error {
 	reader, err := zip.NewReader(zipFile, stat.Size())
 	if err != nil {
 		return err
+	}
+
+	// The package has passed source, checksum and ZIP validation.
+	if err := s.StopXrayService(); err != nil {
+		logger.Warning("failed to stop xray before update:", err)
 	}
 
 	// 3. Helper to extract files
