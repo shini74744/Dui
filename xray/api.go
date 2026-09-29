@@ -104,24 +104,39 @@ func (x *XrayAPI) DelInbound(tag string) error {
 }
 
 func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]any) error {
+	if x.HandlerServiceClient == nil {
+		return fmt.Errorf("Xray API is not initialized")
+	}
+	id, _ := user["id"].(string)
+	flow, _ := user["flow"].(string)
+	password, _ := user["password"].(string)
+	email, _ := user["email"].(string)
+	if (Protocol == "vmess" || Protocol == "vless") && id == "" {
+		return fmt.Errorf("user ID is required")
+	}
+	if (Protocol == "trojan" || Protocol == "shadowsocks") && password == "" {
+		return fmt.Errorf("user password is required")
+	}
 	var account *serial.TypedMessage
 	switch Protocol {
 	case "vmess":
 		account = serial.ToTypedMessage(&vmess.Account{
-			Id: user["id"].(string),
+			Id: id,
 		})
 	case "vless":
 		account = serial.ToTypedMessage(&vless.Account{
-			Id:   user["id"].(string),
-			Flow: user["flow"].(string),
+			Id:   id,
+			Flow: flow,
 		})
 	case "trojan":
 		account = serial.ToTypedMessage(&trojan.Account{
-			Password: user["password"].(string),
+			Password: password,
 		})
 	case "shadowsocks":
 		var ssCipherType shadowsocks.CipherType
-		switch user["cipher"].(string) {
+		cipher, _ := user["cipher"].(string)
+		ss2022 := false
+		switch cipher {
 		case "aes-128-gcm":
 			ssCipherType = shadowsocks.CipherType_AES_128_GCM
 		case "aes-256-gcm":
@@ -130,21 +145,25 @@ func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]an
 			ssCipherType = shadowsocks.CipherType_CHACHA20_POLY1305
 		case "xchacha20-poly1305", "xchacha20-ietf-poly1305":
 			ssCipherType = shadowsocks.CipherType_XCHACHA20_POLY1305
-		default:
+		case "none", "plain":
 			ssCipherType = shadowsocks.CipherType_NONE
+		case "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305":
+			ss2022 = true
+		default:
+			return fmt.Errorf("missing or unsupported Shadowsocks cipher")
 		}
 
-		if ssCipherType != shadowsocks.CipherType_NONE {
+		if !ss2022 {
 			account = serial.ToTypedMessage(&shadowsocks.Account{
-				Password:   user["password"].(string),
+				Password:   password,
 				CipherType: ssCipherType,
 			})
 		} else {
 			// v26.9.9 uses Account.key (field 1), not ServerConfig.key (field 2).
-			account = &serial.TypedMessage{Type: "xray.proxy.shadowsocks_2022.Account", Value: protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), user["password"].(string))}
+			account = &serial.TypedMessage{Type: "xray.proxy.shadowsocks_2022.Account", Value: protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), password)}
 		}
 	default:
-		return nil
+		return fmt.Errorf("unsupported user API protocol")
 	}
 
 	// 〔中文注释〕: (修改点) 创建一个有5秒超时限制的上下文（Context）。
@@ -160,7 +179,7 @@ func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]an
 		Tag: inboundTag,
 		Operation: serial.ToTypedMessage(&command.AddUserOperation{
 			User: &protocol.User{
-				Email:   user["email"].(string),
+				Email:   email,
 				Level:   apiUserLevel(user["level"]),
 				Account: account,
 			},

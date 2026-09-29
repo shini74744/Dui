@@ -148,7 +148,7 @@ func (i *Inbound) GenXrayInboundConfig() *xray.InboundConfig {
 		Listen:         json_util.RawMessage(listen),
 		Port:           i.Port,
 		Protocol:       string(i.Protocol),
-		Settings:       json_util.RawMessage(i.Settings),
+		Settings:       json_util.RawMessage(i.xraySettingsWithRates()),
 		StreamSettings: json_util.RawMessage(i.StreamSettings),
 		Tag:            i.Tag,
 		Sniffing:       json_util.RawMessage(i.Sniffing),
