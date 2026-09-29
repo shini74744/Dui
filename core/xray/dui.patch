@@ -554,6 +554,14 @@
 +		t.Fatal("upstream fallback broken")
 +	}
 +}
+--- a/go.mod
++++ b/go.mod
+@@ -63,3 +63,5 @@
+ 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+ 	gopkg.in/yaml.v2 v2.4.0 // indirect
+ )
++
++replace github.com/xtls/reality => ./dui-reality
 --- /dev/null
 +++ b/infra/conf/dui_insecure_test.go
 @@ -0,0 +1,18 @@
@@ -572,6 +580,42 @@
 +		}
 +		if m.(*xtls.Config).AllowInsecure != allow {
 +			t.Fatal("allowInsecure lost")
++		}
++	}
++}
+--- /dev/null
++++ b/infra/conf/dui_reality_test.go
+@@ -0,0 +1,33 @@
++package conf
++
++import (
++	"encoding/json"
++	realitycfg "github.com/xtls/xray-core/transport/internet/reality"
++	"google.golang.org/protobuf/proto"
++	"testing"
++)
++
++func TestDUIRealityModeSurvivesProtobufAndClone(t *testing.T) {
++	for _, value := range []string{"", `,"duiRequireHybridKeyShare":false`, `,"duiRequireHybridKeyShare":true`} {
++		var cfg REALITYConfig
++		if err := json.Unmarshal([]byte(`{"target":"example.com:443","serverNames":["example.com"],"privateKey":"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY","shortIds":["12345678"]`+value+`}`), &cfg); err != nil {
++			t.Fatal(err)
++		}
++		built, err := cfg.Build()
++		if err != nil {
++			t.Fatal(err)
++		}
++		wire, err := proto.Marshal(built)
++		if err != nil {
++			t.Fatal(err)
++		}
++		decoded := new(realitycfg.Config)
++		if err := proto.Unmarshal(wire, decoded); err != nil {
++			t.Fatal(err)
++		}
++		actual := decoded.GetREALITYConfig().Clone().DUIRequireHybridKeyShare
++		if actual != cfg.DuiRequireHybridKeyShare {
++			t.Fatal("server mode lost during config transport or clone")
 +		}
 +	}
 +}
@@ -615,7 +659,49 @@
  	Password string                     `json:"password"`
 --- a/infra/conf/transport_security.go
 +++ b/infra/conf/transport_security.go
-@@ -359,7 +359,8 @@
+@@ -25,19 +25,20 @@
+ }
+ 
+ type REALITYConfig struct {
+-	MasterKeyLog string          `json:"masterKeyLog"`
+-	Show         bool            `json:"show"`
+-	Target       json.RawMessage `json:"target"`
+-	Dest         json.RawMessage `json:"dest"`
+-	Type         string          `json:"type"`
+-	Xver         uint64          `json:"xver"`
+-	ServerNames  []string        `json:"serverNames"`
+-	PrivateKey   string          `json:"privateKey"`
+-	MinClientVer string          `json:"minClientVer"`
+-	MaxClientVer string          `json:"maxClientVer"`
+-	MaxTimeDiff  uint64          `json:"maxTimeDiff"`
+-	ShortIds     []string        `json:"shortIds"`
+-	Mldsa65Seed  string          `json:"mldsa65Seed"`
++	DuiRequireHybridKeyShare bool            `json:"duiRequireHybridKeyShare"`
++	MasterKeyLog             string          `json:"masterKeyLog"`
++	Show                     bool            `json:"show"`
++	Target                   json.RawMessage `json:"target"`
++	Dest                     json.RawMessage `json:"dest"`
++	Type                     string          `json:"type"`
++	Xver                     uint64          `json:"xver"`
++	ServerNames              []string        `json:"serverNames"`
++	PrivateKey               string          `json:"privateKey"`
++	MinClientVer             string          `json:"minClientVer"`
++	MaxClientVer             string          `json:"maxClientVer"`
++	MaxTimeDiff              uint64          `json:"maxTimeDiff"`
++	ShortIds                 []string        `json:"shortIds"`
++	Mldsa65Seed              string          `json:"mldsa65Seed"`
+ 
+ 	LimitFallbackUpload   LimitFallback `json:"limitFallbackUpload"`
+ 	LimitFallbackDownload LimitFallback `json:"limitFallbackDownload"`
+@@ -53,6 +54,7 @@
+ 
+ func (c *REALITYConfig) Build() (proto.Message, error) {
+ 	config := new(reality.Config)
++	config.DuiRequireHybridKeyShare = c.DuiRequireHybridKeyShare
+ 	config.MasterKeyLog = c.MasterKeyLog
+ 	config.Show = c.Show
+ 	var err error
+@@ -359,7 +361,8 @@
  	config.MasterKeyLog = c.MasterKeyLog
  
  	if c.AllowInsecure {
@@ -822,6 +908,118 @@
 +	}
 +}
 --- /dev/null
++++ b/testing/dui/reality_compat_test.go
+@@ -0,0 +1,109 @@
++package dui_test
++
++import (
++	"crypto/ecdh"
++	"crypto/rand"
++	"crypto/tls"
++	"encoding/base64"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++	"time"
++)
++
++// Both server modes run together: selecting strict on one inbound must not
++// change old-node compatibility on another inbound.
++func TestDUIRealityFingerprintCompatibility(t *testing.T) {
++	key, err := ecdh.X25519().GenerateKey(rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	privateKey := base64.RawURLEncoding.EncodeToString(key.Bytes())
++	publicKey := base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
++	camouflage := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
++	camouflage.TLS = &tls.Config{MinVersion: tls.VersionTLS13, CurvePreferences: []tls.CurveID{tls.X25519}}
++	camouflage.EnableHTTP2 = true
++	camouflage.StartTLS()
++	defer camouflage.Close()
++	echo, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer echo.Close()
++	go func() {
++		for {
++			c, e := echo.Accept()
++			if e != nil {
++				return
++			}
++			go func() { defer c.Close(); io.Copy(c, c) }()
++		}
++	}()
++	const id = "82de13e6-2df5-4dd4-b2b0-4c8878b8dc09"
++	serverPorts := []int{port(t), port(t)}
++	var inbounds []any
++	for i, p := range serverPorts {
++		r := map[string]any{"target": camouflage.Listener.Addr().String(), "serverNames": []string{"example.com"}, "privateKey": privateKey, "shortIds": []string{"12345678"}}
++		if i == 1 {
++			r["duiRequireHybridKeyShare"] = true
++		} // Absent means legacy-compatible.
++		inbounds = append(inbounds, map[string]any{"tag": fmt.Sprint("mode-", i), "listen": "127.0.0.1", "port": p, "protocol": "vless", "settings": map[string]any{"clients": []any{map[string]any{"id": id}}, "decryption": "none"}, "streamSettings": map[string]any{"network": "tcp", "security": "reality", "realitySettings": r}})
++	}
++	start(t, map[string]any{"log": map[string]any{"loglevel": "none", "access": "none"}, "inbounds": inbounds, "outbounds": []any{map[string]any{"protocol": "freedom", "settings": map[string]any{"finalRules": []any{map[string]any{"action": "allow"}}}}}})
++	cases := []struct {
++		name    string
++		mode    int
++		fp, bad string
++		want    bool
++	}{
++		{"compatible-old", 0, "hellochrome_120", "", true},
++		{"compatible-new", 0, "chrome", "", true},
++		{"strict-old", 1, "hellochrome_120", "", false},
++		{"strict-new", 1, "chrome", "", true},
++		{"compatible-bad-key", 0, "hellochrome_120", "key", false},
++		{"compatible-bad-short-id", 0, "hellochrome_120", "short-id", false},
++		{"compatible-bad-sni", 0, "hellochrome_120", "sni", false},
++		{"compatible-bad-user", 0, "hellochrome_120", "user", false},
++	}
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			clientPort := port(t)
++			r := map[string]any{"serverName": "example.com", "publicKey": publicKey, "shortId": "12345678", "fingerprint": tc.fp}
++			user := map[string]any{"id": id, "encryption": "none"}
++			switch tc.bad {
++			case "key":
++				k, _ := ecdh.X25519().GenerateKey(rand.Reader)
++				r["publicKey"] = base64.RawURLEncoding.EncodeToString(k.PublicKey().Bytes())
++			case "short-id":
++				r["shortId"] = "ffffffff"
++			case "sni":
++				r["serverName"] = "other.example"
++			case "user":
++				user["id"] = "82de13e6-2df5-4dd4-b2b0-4c8878b8dc08"
++			}
++			start(t, map[string]any{"log": map[string]any{"loglevel": "none", "access": "none"}, "inbounds": []any{map[string]any{"listen": "127.0.0.1", "port": clientPort, "protocol": "dokodemo-door", "settings": map[string]any{"address": "127.0.0.1", "port": echo.Addr().(*net.TCPAddr).Port, "network": "tcp"}}}, "outbounds": []any{map[string]any{"protocol": "vless", "settings": map[string]any{"vnext": []any{map[string]any{"address": "127.0.0.1", "port": serverPorts[tc.mode], "users": []any{user}}}}, "streamSettings": map[string]any{"network": "tcp", "security": "reality", "realitySettings": r}}}})
++			c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", clientPort), time.Second)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer c.Close()
++			deadline := 2 * time.Second
++			if tc.want {
++				deadline = 15 * time.Second
++			} // REALITY target probing can take an initial 5-second cycle.
++			c.SetDeadline(time.Now().Add(deadline))
++			_, err = c.Write([]byte("DUI"))
++			b := make([]byte, 3)
++			if err == nil {
++				_, err = io.ReadFull(c, b)
++			}
++			ok := err == nil && string(b) == "DUI"
++			if ok != tc.want {
++				t.Fatalf("connection success=%v want=%v error=%v", ok, tc.want, err)
++			}
++		})
++	}
++}
+--- /dev/null
 +++ b/testing/dui/udp_test.go
 @@ -0,0 +1,57 @@
 +package dui_test
@@ -881,6 +1079,119 @@
 +	}
 +	t.Logf("SS2022 UDP 48 intact packets, upload/download 48 KB each: %v", elapsed)
 +}
+--- a/transport/internet/reality/config.go
++++ b/transport/internet/reality/config.go
+@@ -16,7 +16,8 @@
+ func (c *Config) GetREALITYConfig() *reality.Config {
+ 	var dialer net.Dialer
+ 	config := &reality.Config{
+-		DialContext: dialer.DialContext,
++		DUIRequireHybridKeyShare: c.DuiRequireHybridKeyShare,
++		DialContext:              dialer.DialContext,
+ 
+ 		Show: c.Show,
+ 		Type: c.Type,
+--- a/transport/internet/reality/config.pb.go
++++ b/transport/internet/reality/config.pb.go
+@@ -22,30 +22,31 @@
+ )
+ 
+ type Config struct {
+-	state                 protoimpl.MessageState `protogen:"open.v1"`
+-	Show                  bool                   `protobuf:"varint,1,opt,name=show,proto3" json:"show,omitempty"`
+-	Dest                  string                 `protobuf:"bytes,2,opt,name=dest,proto3" json:"dest,omitempty"`
+-	Type                  string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
+-	Xver                  uint64                 `protobuf:"varint,4,opt,name=xver,proto3" json:"xver,omitempty"`
+-	ServerNames           []string               `protobuf:"bytes,5,rep,name=server_names,json=serverNames,proto3" json:"server_names,omitempty"`
+-	PrivateKey            []byte                 `protobuf:"bytes,6,opt,name=private_key,json=privateKey,proto3" json:"private_key,omitempty"`
+-	MinClientVer          []byte                 `protobuf:"bytes,7,opt,name=min_client_ver,json=minClientVer,proto3" json:"min_client_ver,omitempty"`
+-	MaxClientVer          []byte                 `protobuf:"bytes,8,opt,name=max_client_ver,json=maxClientVer,proto3" json:"max_client_ver,omitempty"`
+-	MaxTimeDiff           uint64                 `protobuf:"varint,9,opt,name=max_time_diff,json=maxTimeDiff,proto3" json:"max_time_diff,omitempty"`
+-	ShortIds              [][]byte               `protobuf:"bytes,10,rep,name=short_ids,json=shortIds,proto3" json:"short_ids,omitempty"`
+-	Mldsa65Seed           []byte                 `protobuf:"bytes,11,opt,name=mldsa65_seed,json=mldsa65Seed,proto3" json:"mldsa65_seed,omitempty"`
+-	LimitFallbackUpload   *LimitFallback         `protobuf:"bytes,12,opt,name=limit_fallback_upload,json=limitFallbackUpload,proto3" json:"limit_fallback_upload,omitempty"`
+-	LimitFallbackDownload *LimitFallback         `protobuf:"bytes,13,opt,name=limit_fallback_download,json=limitFallbackDownload,proto3" json:"limit_fallback_download,omitempty"`
+-	Fingerprint           string                 `protobuf:"bytes,21,opt,name=Fingerprint,proto3" json:"Fingerprint,omitempty"`
+-	ServerName            string                 `protobuf:"bytes,22,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
+-	PublicKey             []byte                 `protobuf:"bytes,23,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+-	ShortId               []byte                 `protobuf:"bytes,24,opt,name=short_id,json=shortId,proto3" json:"short_id,omitempty"`
+-	Mldsa65Verify         []byte                 `protobuf:"bytes,25,opt,name=mldsa65_verify,json=mldsa65Verify,proto3" json:"mldsa65_verify,omitempty"`
+-	SpiderX               string                 `protobuf:"bytes,26,opt,name=spider_x,json=spiderX,proto3" json:"spider_x,omitempty"`
+-	SpiderY               []int64                `protobuf:"varint,27,rep,packed,name=spider_y,json=spiderY,proto3" json:"spider_y,omitempty"`
+-	MasterKeyLog          string                 `protobuf:"bytes,31,opt,name=master_key_log,json=masterKeyLog,proto3" json:"master_key_log,omitempty"`
+-	unknownFields         protoimpl.UnknownFields
+-	sizeCache             protoimpl.SizeCache
++	state                    protoimpl.MessageState `protogen:"open.v1"`
++	Show                     bool                   `protobuf:"varint,1,opt,name=show,proto3" json:"show,omitempty"`
++	Dest                     string                 `protobuf:"bytes,2,opt,name=dest,proto3" json:"dest,omitempty"`
++	Type                     string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
++	Xver                     uint64                 `protobuf:"varint,4,opt,name=xver,proto3" json:"xver,omitempty"`
++	ServerNames              []string               `protobuf:"bytes,5,rep,name=server_names,json=serverNames,proto3" json:"server_names,omitempty"`
++	PrivateKey               []byte                 `protobuf:"bytes,6,opt,name=private_key,json=privateKey,proto3" json:"private_key,omitempty"`
++	MinClientVer             []byte                 `protobuf:"bytes,7,opt,name=min_client_ver,json=minClientVer,proto3" json:"min_client_ver,omitempty"`
++	MaxClientVer             []byte                 `protobuf:"bytes,8,opt,name=max_client_ver,json=maxClientVer,proto3" json:"max_client_ver,omitempty"`
++	MaxTimeDiff              uint64                 `protobuf:"varint,9,opt,name=max_time_diff,json=maxTimeDiff,proto3" json:"max_time_diff,omitempty"`
++	ShortIds                 [][]byte               `protobuf:"bytes,10,rep,name=short_ids,json=shortIds,proto3" json:"short_ids,omitempty"`
++	Mldsa65Seed              []byte                 `protobuf:"bytes,11,opt,name=mldsa65_seed,json=mldsa65Seed,proto3" json:"mldsa65_seed,omitempty"`
++	DuiRequireHybridKeyShare bool                   `protobuf:"varint,14,opt,name=dui_require_hybrid_key_share,json=duiRequireHybridKeyShare,proto3" json:"dui_require_hybrid_key_share,omitempty"`
++	LimitFallbackUpload      *LimitFallback         `protobuf:"bytes,12,opt,name=limit_fallback_upload,json=limitFallbackUpload,proto3" json:"limit_fallback_upload,omitempty"`
++	LimitFallbackDownload    *LimitFallback         `protobuf:"bytes,13,opt,name=limit_fallback_download,json=limitFallbackDownload,proto3" json:"limit_fallback_download,omitempty"`
++	Fingerprint              string                 `protobuf:"bytes,21,opt,name=Fingerprint,proto3" json:"Fingerprint,omitempty"`
++	ServerName               string                 `protobuf:"bytes,22,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
++	PublicKey                []byte                 `protobuf:"bytes,23,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
++	ShortId                  []byte                 `protobuf:"bytes,24,opt,name=short_id,json=shortId,proto3" json:"short_id,omitempty"`
++	Mldsa65Verify            []byte                 `protobuf:"bytes,25,opt,name=mldsa65_verify,json=mldsa65Verify,proto3" json:"mldsa65_verify,omitempty"`
++	SpiderX                  string                 `protobuf:"bytes,26,opt,name=spider_x,json=spiderX,proto3" json:"spider_x,omitempty"`
++	SpiderY                  []int64                `protobuf:"varint,27,rep,packed,name=spider_y,json=spiderY,proto3" json:"spider_y,omitempty"`
++	MasterKeyLog             string                 `protobuf:"bytes,31,opt,name=master_key_log,json=masterKeyLog,proto3" json:"master_key_log,omitempty"`
++	unknownFields            protoimpl.UnknownFields
++	sizeCache                protoimpl.SizeCache
+ }
+ 
+ func (x *Config) Reset() {
+@@ -153,6 +154,13 @@
+ 		return x.Mldsa65Seed
+ 	}
+ 	return nil
++}
++
++func (x *Config) GetDuiRequireHybridKeyShare() bool {
++	if x != nil {
++		return x.DuiRequireHybridKeyShare
++	}
++	return false
+ }
+ 
+ func (x *Config) GetLimitFallbackUpload() *LimitFallback {
+@@ -289,7 +297,7 @@
+ 
+ const file_transport_internet_reality_config_proto_rawDesc = "" +
+ 	"\n" +
+-	"'transport/internet/reality/config.proto\x12\x1fxray.transport.internet.reality\"\x98\x06\n" +
++	"'transport/internet/reality/config.proto\x12\x1fxray.transport.internet.reality\"\xd8\x06\n" +
+ 	"\x06Config\x12\x12\n" +
+ 	"\x04show\x18\x01 \x01(\bR\x04show\x12\x12\n" +
+ 	"\x04dest\x18\x02 \x01(\tR\x04dest\x12\x12\n" +
+@@ -303,7 +311,8 @@
+ 	"\rmax_time_diff\x18\t \x01(\x04R\vmaxTimeDiff\x12\x1b\n" +
+ 	"\tshort_ids\x18\n" +
+ 	" \x03(\fR\bshortIds\x12!\n" +
+-	"\fmldsa65_seed\x18\v \x01(\fR\vmldsa65Seed\x12b\n" +
++	"\fmldsa65_seed\x18\v \x01(\fR\vmldsa65Seed\x12>\n" +
++	"\x1cdui_require_hybrid_key_share\x18\x0e \x01(\bR\x18duiRequireHybridKeyShare\x12b\n" +
+ 	"\x15limit_fallback_upload\x18\f \x01(\v2..xray.transport.internet.reality.LimitFallbackR\x13limitFallbackUpload\x12f\n" +
+ 	"\x17limit_fallback_download\x18\r \x01(\v2..xray.transport.internet.reality.LimitFallbackR\x15limitFallbackDownload\x12 \n" +
+ 	"\vFingerprint\x18\x15 \x01(\tR\vFingerprint\x12\x1f\n" +
+--- a/transport/internet/reality/config.proto
++++ b/transport/internet/reality/config.proto
+@@ -19,6 +19,7 @@
+   repeated bytes short_ids = 10;
+ 
+   bytes mldsa65_seed = 11;
++  bool dui_require_hybrid_key_share = 14;
+   LimitFallback limit_fallback_upload = 12;
+   LimitFallback limit_fallback_download = 13;
+ 
 --- a/transport/internet/tls/config.go
 +++ b/transport/internet/tls/config.go
 @@ -384,6 +384,7 @@

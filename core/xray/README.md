@@ -1,6 +1,8 @@
-# DUI Xray vx-26.1
+# DUI Xray vx-26.2
 
 Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source, platform binaries and SHA256 checksums are published together.
+
+- REALITY defaults to accepting legacy X25519 and modern hybrid client fingerprints. Set `realitySettings.duiRequireHybridKeyShare: true` on a server inbound to require the upstream X25519MLKEM768 fingerprint. This changes the ClientHello requirement, not VLESS Encryption authentication, node keys, or normal TLS cipher negotiation. Key, short ID, SNI, user and time/version validation remain in effect. Both modes can coexist on different inbounds. The patched REALITY module is included in the source asset and verified independently during preparation.
 
 - Optional allowInsecure is restored, disabled by default, with a warning. Explicit certificate pin/name checks remain effective.
 - Real per-user upload and download rate limits, shared across all connections, are enforced independently. DUI stores speedLimitMbps; 300 means 300 Mbps upload and 300 Mbps download. Zero is unlimited. Legacy speedLimit KiB/s values are converted without changing units silently.

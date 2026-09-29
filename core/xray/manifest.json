@@ -3,10 +3,13 @@
   "upstream_commit": "52a412d9e2f5c2a5142b1b4e2ab3771dacb8b120",
   "source_url": "https://codeload.github.com/XTLS/Xray-core/zip/refs/tags/v26.9.9",
   "source_sha256": "33871a5b7673418708beba3eaa76028f941ce77986003b24e48a0a1a5f01425e",
-  "release_tag": "vx-26.1",
-  "build": "dui-vx-26.1-user-rate-closewait",
+  "release_tag": "vx-26.2",
+  "build": "dui-vx-26.2-reality-compat",
   "go_version": "1.27.1",
   "win7_go_url": "https://github.com/XTLS/go-win7/releases/download/patched-1.27.1/go-for-win7-linux-amd64.zip",
   "win7_go_sha256": "4f0434fceea1b1c80c6d3511f0f777b0dc3b1260f172f1bf1ec202575bd36ec1",
-  "release_version": "vx-26.1"
+  "release_version": "vx-26.2",
+  "reality_source_url": "https://proxy.golang.org/github.com/xtls/reality/@v/v0.0.0-20260908062103-8cdf7bf9c7f0.zip",
+  "reality_source_sha256": "388de1507e023377a12b928d066692eeaa30bbe5d13ccf321a8fe9c2f4d0be5a",
+  "reality_source_prefix": "github.com/xtls/reality@v0.0.0-20260908062103-8cdf7bf9c7f0"
 }

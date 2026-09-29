@@ -1,10 +1,12 @@
 package xray
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
+	"os/exec"
 	"regexp"
 	"time"
 
@@ -15,7 +17,6 @@ import (
 	statsService "github.com/xtls/xray-core/app/stats/command"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
-	"github.com/xtls/xray-core/infra/conf"
 	"github.com/xtls/xray-core/proxy/shadowsocks"
 	"github.com/xtls/xray-core/proxy/trojan"
 	"github.com/xtls/xray-core/proxy/vless"
@@ -30,6 +31,7 @@ type XrayAPI struct {
 	StatsServiceClient   *statsService.StatsServiceClient
 	grpcClient           *grpc.ClientConn
 	isConnected          bool
+	apiPort              int
 }
 
 func (x *XrayAPI) Init(apiPort int) error {
@@ -45,6 +47,7 @@ func (x *XrayAPI) Init(apiPort int) error {
 
 	x.grpcClient = conn
 	x.isConnected = true
+	x.apiPort = apiPort
 
 	hsClient := command.NewHandlerServiceClient(conn)
 	ssClient := statsService.NewStatsServiceClient(conn)
@@ -62,27 +65,34 @@ func (x *XrayAPI) Close() {
 	x.HandlerServiceClient = nil
 	x.StatsServiceClient = nil
 	x.isConnected = false
+	x.apiPort = 0
 }
 
 func (x *XrayAPI) AddInbound(inbound []byte) error {
-	client := *x.HandlerServiceClient
-
-	conf := new(conf.InboundDetourConfig)
-	err := json.Unmarshal(inbound, conf)
+	if !x.isConnected || x.apiPort <= 0 || x.apiPort > math.MaxUint16 {
+		return fmt.Errorf("Xray API is not initialized")
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(inbound, &object); err != nil || object == nil {
+		return fmt.Errorf("invalid inbound JSON object")
+	}
+	payload, err := json.Marshal(map[string]any{"inbounds": []json.RawMessage{inbound}})
 	if err != nil {
-		logger.Debug("Failed to unmarshal inbound:", err)
 		return err
 	}
-	config, err := conf.Build()
-	if err != nil {
-		logger.Debug("Failed to build inbound Detur:", err)
-		return err
+	// Use the installed core's parser so new fields survive hot additions.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, GetBinaryPath(), "api", "adi", fmt.Sprintf("--server=127.0.0.1:%d", x.apiPort), "--timeout=5")
+	cmd.Stdin = bytes.NewReader(payload)
+	// Do not log CLI output: config errors may contain private keys.
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("Xray add inbound: %w", ctx.Err())
+		}
+		return fmt.Errorf("Xray add inbound: %w", err)
 	}
-	inboundConfig := command.AddInboundRequest{Inbound: config}
-
-	_, err = client.AddInbound(context.Background(), &inboundConfig)
-
-	return err
+	return nil
 }
 
 func (x *XrayAPI) DelInbound(tag string) error {
