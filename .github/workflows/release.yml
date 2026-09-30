@@ -41,6 +41,7 @@ jobs:
           node scripts/test-user-rate.cjs
           node scripts/test-native-protocols.cjs
           node scripts/test-helper-protocols.cjs
+          node scripts/test-close-wait.cjs
       - name: Menu updater regression guards
         shell: bash
         run: |

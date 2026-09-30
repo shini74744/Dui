@@ -6,10 +6,11 @@ import (
 )
 
 type XrayConnectionPolicy struct {
-	Handshake    int `json:"handshake" form:"handshake"`
-	ConnIdle     int `json:"connIdle" form:"connIdle"`
-	UplinkOnly   int `json:"uplinkOnly" form:"uplinkOnly"`
-	DownlinkOnly int `json:"downlinkOnly" form:"downlinkOnly"`
+	CloseWaitTimeout int `json:"closeWaitTimeout" form:"closeWaitTimeout"`
+	Handshake        int `json:"handshake" form:"handshake"`
+	ConnIdle         int `json:"connIdle" form:"connIdle"`
+	UplinkOnly       int `json:"uplinkOnly" form:"uplinkOnly"`
+	DownlinkOnly     int `json:"downlinkOnly" form:"downlinkOnly"`
 }
 
 func defaultXrayConnectionPolicy() XrayConnectionPolicy {
@@ -41,6 +42,9 @@ func xrayPolicyInt(m map[string]any, key string, fallback int) int {
 	return fallback
 }
 func validateXrayConnectionPolicy(v XrayConnectionPolicy) error {
+	if v.CloseWaitTimeout < 0 || v.CloseWaitTimeout > 600 {
+		return fmt.Errorf("CLOSE-WAIT 清理超时必须为 0-600 秒；0 关闭额外清理")
+	}
 	if v.Handshake < 1 || v.Handshake > 120 {
 		return fmt.Errorf("handshake 必须在 1-120 秒之间")
 	}
@@ -86,6 +90,17 @@ func GetXrayConnectionPolicy(template string) (XrayConnectionPolicy, error) {
 		return XrayConnectionPolicy{}, fmt.Errorf("解析 Xray 模板失败: %w", err)
 	}
 	result := defaultXrayConnectionPolicy()
+	var closeWait struct {
+		Policy struct {
+			System struct {
+				Seconds int `json:"duiCloseWaitTimeout"`
+			} `json:"system"`
+		} `json:"policy"`
+	}
+	if err := json.Unmarshal([]byte(template), &closeWait); err != nil {
+		return result, fmt.Errorf("CLOSE-WAIT 超时必须为整数: %w", err)
+	}
+	result.CloseWaitTimeout = closeWait.Policy.System.Seconds
 	level0 := xrayPolicyLevel0(root, false)
 	if level0 == nil {
 		return result, nil
@@ -106,6 +121,17 @@ func UpdateXrayConnectionPolicyTemplate(template string, v XrayConnectionPolicy)
 		return "", fmt.Errorf("解析 Xray 模板失败: %w", err)
 	}
 	level0 := xrayPolicyLevel0(root, true)
+	policy := root["policy"].(map[string]any)
+	system, _ := policy["system"].(map[string]any)
+	if v.CloseWaitTimeout > 0 {
+		if system == nil {
+			system = map[string]any{}
+			policy["system"] = system
+		}
+		system["duiCloseWaitTimeout"] = v.CloseWaitTimeout
+	} else if system != nil {
+		delete(system, "duiCloseWaitTimeout")
+	}
 	level0["handshake"] = v.Handshake
 	level0["connIdle"] = v.ConnIdle
 	level0["uplinkOnly"] = v.UplinkOnly

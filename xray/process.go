@@ -223,6 +223,9 @@ func (p *process) Start() (err error) {
 		}
 	}()
 
+	if err := ValidateCloseWaitSupport(p.config); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(p.config, "", "  ")
 	if err != nil {
 		return common.NewErrorf("Failed to generate XRAY configuration files: %v", err)

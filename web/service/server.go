@@ -345,6 +345,21 @@ func (s *ServerService) downloadXRay(version string) (string, error) {
 }
 
 func (s *ServerService) UpdateXray(version string) error {
+	if !duiCoreTag.MatchString(version) {
+		return fmt.Errorf("只能安装 DUI 仓库提供的核心版本")
+	}
+	settings := &SettingService{}
+	template, err := settings.GetXrayConfigTemplate()
+	if err != nil {
+		return err
+	}
+	var cfg xray.Config
+	if err := json.Unmarshal([]byte(template), &cfg); err != nil {
+		return err
+	}
+	if err := xray.ValidateCloseWaitTarget(&cfg, version); err != nil {
+		return err
+	}
 	// Download and verify the DUI package before interrupting the running core.
 	zipFileName, err := s.downloadXRay(version)
 	if err != nil {

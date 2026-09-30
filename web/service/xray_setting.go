@@ -63,6 +63,10 @@ func (s *XraySettingService) CheckXrayConfig(XrayTemplateConfig string) error {
 		return common.NewError("xray template config invalid:", err)
 	}
 
+	if err := xray.ValidateCloseWaitSupport(xrayConfig); err != nil {
+		return err
+	}
+
 	var raw map[string]any
 	if err := json.Unmarshal([]byte(XrayTemplateConfig), &raw); err != nil {
 		return common.NewError("xray template config invalid:", err)

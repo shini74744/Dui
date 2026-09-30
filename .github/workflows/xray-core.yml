@@ -30,7 +30,7 @@ jobs:
       - name: Close and half-close regression tests
         working-directory: ${{ runner.temp }}/xray/source
         run: |
-          go test -race ./proxy/hysteria/account ./transport/internet/hysteria ./common/duilimit ./common/singbridge ./transport/pipe ./app/dispatcher ./app/policy -count=1 -timeout=180s
+          go test -race ./common/duiclosewait ./transport/internet ./proxy/hysteria/account ./transport/internet/hysteria ./common/duilimit ./common/singbridge ./transport/pipe ./app/dispatcher ./app/policy -count=1 -timeout=180s
           # Upstream Vision uses uintptr reflection (vless/outbound.go:286), which trips checkptr under -race.
           # Run complete protocol integration with the same compiler flags as production binaries.
           go test ./core ./testing/dui -count=1 -timeout=180s
@@ -38,9 +38,12 @@ jobs:
       - name: Verify panel hot-add preserves core settings
         working-directory: ${{ runner.temp }}/xray/source
         run: |
-          go build -o "$RUNNER_TEMP/xray-hot-add" ./main
+          VERSION=$(jq -r .release_version "$GITHUB_WORKSPACE/core/xray/manifest.json")
+          go build -ldflags="-X github.com/xtls/xray-core/core.releaseVersion=$VERSION" -o "$RUNNER_TEMP/xray-hot-add" ./main
           cd "$GITHUB_WORKSPACE"
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" go test ./xray -run TestDUIHotAddUsesInstalledCore -count=1 -timeout=60s
+          go build -o "$RUNNER_TEMP/dui-closewait-panel" .
+          DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-close-wait-integration.py
       - name: Package complete modified source
         run: |
           mkdir -p source-assets
