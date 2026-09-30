@@ -59,6 +59,46 @@ jobs:
       - name: Go tests
         run: go test ./...
 
+  test-docker:
+    name: Docker amd64 smoke test
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build complete Docker image
+        run: docker build --build-arg TARGETARCH=amd64 -t dui-ci:${{ github.sha }} .
+      - name: Verify bundled programs and isolated startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE='dui-ci:${{ github.sha }}'
+          EXPECTED_PANEL=$(cat config/version)
+          source core/xray/default.env
+          docker run --rm --network none --env EXPECTED_PANEL="$EXPECTED_PANEL" --env EXPECTED_CORE="$XRAY_TAG" --entrypoint /bin/sh "$IMAGE" -c '
+            set -e
+            test "$(./x-ui -v)" = "$EXPECTED_PANEL"
+            ./bin/xray-linux-amd64 version | grep -F "Xray $EXPECTED_CORE "
+            ./bin/tuic-server-linux-amd64 --version
+            ./bin/mtg-linux-amd64 --version
+            test -s ./bin/helpers-BUILD.json
+          '
+          trap 'docker rm -fv dui-ci-smoke >/dev/null 2>&1 || true' EXIT
+          docker run -d --name dui-ci-smoke --network none -e XUI_ENABLE_FAIL2BAN=false --entrypoint /bin/sh "$IMAGE" -c '
+            ./x-ui setting -port 2053 -listenIP 127.0.0.1 -webBasePath / >/dev/null 2>&1
+            exec /app/DockerEntrypoint.sh
+          '
+          for attempt in $(seq 1 30); do
+            if docker exec dui-ci-smoke wget -q -O - http://127.0.0.1:2053/ > /tmp/dui-login.html && grep -qi "<html" /tmp/dui-login.html; then
+              docker exec dui-ci-smoke pgrep -f '^([^ ]*/)?xray-linux-amd64( |$)'
+              echo "Docker panel HTTP, core and bundled helper checks passed"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Docker panel did not become healthy"
+          exit 1
+
   build-linux:
     name: Linux ${{ matrix.platform }}
     needs: validate
