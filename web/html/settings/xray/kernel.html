@@ -42,6 +42,14 @@
       </template>
     </a-setting-list-item>
 
+    <a-setting-list-item paddings="small">
+      <template #title>CLOSE-WAIT 清理超时</template>
+      <template #description>0 关闭额外清理（默认）；1–600 秒。仅清理持续处于 CLOSE-WAIT 且超过时限的 Xray TCP 连接，每秒检测。不会清理 ESTABLISHED 或 UDP；较短时限可能截断半关闭后仍在发送的响应。需要 Linux 和 DUI 核心 vx-26.4 或更新版本，不作用于独立运行的辅助核心。</template>
+      <template #control>
+        <a-input-number v-model="xrayPolicyForm.closeWaitTimeout" :min="0" :max="600" :precision="0" :style="{width:'100%'}"></a-input-number>
+      </template>
+    </a-setting-list-item>
+
     <a-alert
       type="info"
       show-icon

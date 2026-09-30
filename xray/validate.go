@@ -12,6 +12,9 @@ import (
 // ValidateConfig does not start listeners or alter network routes. Never return
 // the core's raw diagnostics: they can echo node credentials or private keys.
 func ValidateConfig(cfg *Config) error {
+	if err := ValidateCloseWaitSupport(cfg); err != nil {
+		return err
+	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err

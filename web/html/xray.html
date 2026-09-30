@@ -621,7 +621,7 @@
       routeSourceLoaded: false,
       xrayPolicyBusy: false,
       xrayPolicyLoaded: false,
-      xrayPolicyForm: { handshake: 4, connIdle: 300, uplinkOnly: 0, downlinkOnly: 0 },
+      xrayPolicyForm: { handshake: 4, connIdle: 300, uplinkOnly: 0, downlinkOnly: 0, closeWaitTimeout: 0 },
       xrayPolicySavedForm: null,
       xraySocketBusy: false,
       xraySocketLoaded: false,
@@ -979,6 +979,7 @@
           connIdle: Number(form.connIdle || 0),
           uplinkOnly: Number(form.uplinkOnly || 0),
           downlinkOnly: Number(form.downlinkOnly || 0),
+          closeWaitTimeout: Number(form.closeWaitTimeout || 0),
         };
       },
       xrayPolicySaved() {
@@ -997,6 +998,12 @@
           level0.connIdle = Number(policy.connIdle);
           level0.uplinkOnly = Number(policy.uplinkOnly);
           level0.downlinkOnly = Number(policy.downlinkOnly);
+          if (Number(policy.closeWaitTimeout) > 0) {
+            if (!root.policy.system || typeof root.policy.system !== 'object') root.policy.system = {};
+            root.policy.system.duiCloseWaitTimeout = Number(policy.closeWaitTimeout);
+          } else if (root.policy.system) {
+            delete root.policy.system.duiCloseWaitTimeout;
+          }
           level0.statsUserUplink = true;
           level0.statsUserDownlink = true;
           level0.statsUserOnline = true;

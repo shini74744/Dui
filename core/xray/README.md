@@ -1,4 +1,4 @@
-# DUI Xray vx-26.3
+# DUI Xray vx-26.4
 
 Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source, platform binaries and SHA256 checksums are published together.
 
@@ -9,6 +9,7 @@ Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source,
 - Reserved protocol user levels (high bit plus bytes/second) carry DUI rates through static configuration and the existing user API. Normal policy levels are unchanged. Reserved rate levels inherit policy level 0 timeouts; uplinkOnly/downlinkOnly remain seconds.
 - SS2022 user levels accept uint32, and the panel uses the new SS2022 Account protobuf. Limited Vision traffic cannot bypass the limiter via splice.
 - Retains the DUI CLOSE-WAIT fix: propagate write EOF while allowing the response direction to finish; full close interrupts blocked reads and ends the activity timer.
+- Adds optional Linux `policy.system.duiCloseWaitTimeout` (integer seconds, 0 disables, 1–600 enables). One scanner per core instance checks native accepted and dialed TCP sockets every second using TCP_INFO. It closes only sockets continuously observed in CLOSE-WAIT for the configured duration, including when application reads are blocked. Detection adds up to roughly two polling intervals; this is not a real-time deadline. ESTABLISHED connections, UDP and other processes are unaffected. A long legitimate response after a peer half-close can be truncated; leave 0 unless this behavior is wanted. No sysctl is changed. Default-off works on all release platforms; enabling on a non-Linux core returns a validation error. API-added inbounds inherit the setting, independently of user rates and uplinkOnly/downlinkOnly. Panel-managed helper processes are outside its scope.
 - Hysteria 2 user removal also revokes established QUIC sessions, including idle sessions, so disabling or exhausting a user cannot leave an authenticated tunnel usable. Authentication identities are shared with per-user statistics and DUI upload/download limits.
 - Panel compatibility uses current TLS certificate field names, removes retired echForceQuery from generated configuration, and preserves explicit trustedXForwardedFor proxy settings. Only add trusted reverse proxy addresses; the empty default trusts none.
 
