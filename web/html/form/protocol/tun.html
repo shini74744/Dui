@@ -1,0 +1,14 @@
+{{define "form/tun"}}
+<a-alert type="info" show-icon message="TUN 是本机虚拟网卡，不生成节点链接；需要系统 TUN 权限。默认不修改系统路由。"></a-alert>
+<a-form :colon="false" :label-col="{ md: {span:8} }" :wrapper-col="{ md: {span:14} }">
+  <a-form-item label="接口名称"><a-input v-model.trim="inbound.settings.name" :max-length="15"></a-input></a-form-item>
+  <a-form-item label="MTU"><a-input-number v-model.number="inbound.settings.mtu" :min="576" :max="9000"></a-input-number></a-form-item>
+  <a-form-item label="接口地址（CIDR）"><a-select mode="tags" v-model="inbound.settings.gateway" :dropdown-class-name="themeSwitcher.currentTheme" placeholder="172.31.255.1/30"></a-select></a-form-item>
+  <a-form-item label="DNS 地址"><a-select mode="tags" v-model="inbound.settings.dns" :dropdown-class-name="themeSwitcher.currentTheme"></a-select></a-form-item>
+  <a-form-item label="系统路由（CIDR）">
+    <a-select mode="tags" v-model="inbound.settings.autoSystemRoutingTable" :dropdown-class-name="themeSwitcher.currentTheme" placeholder="留空则不修改系统路由"></a-select>
+    <a-alert v-if="inbound.settings.autoSystemRoutingTable.length" type="warning" show-icon message="这些路由会改变本机出站路径，可能影响 SSH 和面板访问。请确认出口接口与路由范围。"></a-alert>
+  </a-form-item>
+  <a-form-item label="出口网卡"><a-input v-model.trim="inbound.settings.autoOutboundsInterface" placeholder="例如 eth0；自动选择填 auto"></a-input></a-form-item>
+</a-form>
+{{end}}

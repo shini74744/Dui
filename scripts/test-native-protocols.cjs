@@ -1,0 +1,23 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('path');
+const ctx=vm.createContext({assert,URLSearchParams,console,location:{hostname:'test.example'},RandomUtil:{randomShortIds:()=>['abcdef12'],randomInteger:()=>43210,randomUUID:()=> 'example-auth',randomLowerAndNum:()=> 'example',randomSeq:()=> 'example'},ObjectUtil:{clone:x=>x,isEmpty:x=>x==null,isArrEmpty:x=>!x?.length},DateUtil:{},Date});
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../web/assets/js/model/inbound.js'),'utf8'),ctx);
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../web/assets/js/model/dbinbound.js'),'utf8'),ctx);
+vm.runInContext(`
+const db = new DBInbound(); db.protocol=Protocols.HYSTERIA; assert(db.isMultiUser());assert(db.hasLink());
+db.protocol=Protocols.TUN;assert(!db.hasLink());assert(!db.isMultiUser());
+const i=new Inbound(); i.protocol=Protocols.HYSTERIA;
+assert.equal(i.network,'hysteria'); assert.equal(i.stream.security,'tls');
+assert.equal(i.stream.tls.minVersion,'1.3');assert.equal(i.stream.tls.maxVersion,'1.3');
+assert.equal(i.canEnableReality(),false); assert.equal(i.canEnableTls(),true);
+i.clients[0].auth='a:/?#@中文';i.clients[0].speedLimitMbps=300;
+const raw=i.toJson(), again=Inbound.fromJson(raw).toJson();
+assert.deepEqual(again,raw);assert.equal(raw.settings.clients[0].password,undefined);
+assert.equal(raw.settings.clients[0].auth,'a:/?#@中文');assert.equal(raw.settings.clients[0].speedLimitMbps,300);
+assert.equal(raw.streamSettings.hysteriaSettings.version,2);
+assert(i.genHysteriaLink('2001:db8::1',443,'测试',i.clients[0]).includes('@[2001:db8::1]:443/'));
+i.protocol=Protocols.MIXED;assert.equal(i.network,'tcp');assert.equal(i.listen,'127.0.0.1');assert.equal(i.settings.auth,'password');assert(i.settings.accounts.length>0);
+i.protocol=Protocols.TUN;assert.equal(i.port,0);assert.equal(i.listen,'');assert.equal(i.clients,null);assert.equal(i.settings.autoSystemRoutingTable.length,0);
+assert.deepEqual(Inbound.fromJson(i.toJson()).toJson(),i.toJson());
+i.protocol=Protocols.VLESS;assert(i.port>0);assert.equal(i.network,'tcp');
+`,ctx);
+console.log('Hysteria/Mixed/TUN defaults, protocol changes, auth/rate/link serialization passed');

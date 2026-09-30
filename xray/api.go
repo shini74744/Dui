@@ -128,6 +128,13 @@ func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]an
 			Id:   id,
 			Flow: flow,
 		})
+	case "hysteria":
+		auth, _ := user["auth"].(string)
+		if auth == "" {
+			return fmt.Errorf("Hysteria auth is required")
+		}
+		// v26.9.9 account.proto: xray.proxy.hysteria.account.Account.auth = 1.
+		account = &serial.TypedMessage{Type: "xray.proxy.hysteria.account.Account", Value: protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), auth)}
 	case "trojan":
 		account = serial.ToTypedMessage(&trojan.Account{
 			Password: password,

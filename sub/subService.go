@@ -112,7 +112,7 @@ func (s *SubService) getInboundsBySubId(subId string) ([]*model.Inbound, error) 
 		FROM inbounds,
 			JSON_EACH(JSON_EXTRACT(inbounds.settings, '$.clients')) AS client 
 		WHERE
-			protocol in ('vmess','vless','trojan','shadowsocks')
+			protocol in ('vmess','vless','trojan','shadowsocks','hysteria','tuic','mtproto')
 			AND JSON_EXTRACT(client.value, '$.subId') = ? AND enable = ?
 	)`, subId, true).Find(&inbounds).Error
 	if err != nil {
@@ -155,6 +155,10 @@ func (s *SubService) getFallbackMaster(dest string, streamSettings string) (stri
 
 func (s *SubService) getLink(inbound *model.Inbound, email string) string {
 	switch inbound.Protocol {
+	case "tuic", "mtproto":
+		return s.genHelperLink(inbound, email)
+	case "hysteria":
+		return s.genHysteriaLink(inbound, email)
 	case "vmess":
 		return s.genVmessLink(inbound, email)
 	case "vless":
@@ -313,9 +317,9 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 	if inbound.Protocol != model.VLESS {
 		return ""
 	}
-		var vlessSettings model.VLESSSettings
+	var vlessSettings model.VLESSSettings
 	_ = json.Unmarshal([]byte(inbound.Settings), &vlessSettings)
-	
+
 	var stream map[string]any
 	json.Unmarshal([]byte(inbound.StreamSettings), &stream)
 	clients, _ := s.inboundService.GetClients(inbound)
@@ -330,7 +334,7 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 	port := inbound.Port
 	streamNetwork := stream["network"].(string)
 	params := make(map[string]string)
-		if vlessSettings.Encryption != "" {
+	if vlessSettings.Encryption != "" {
 		params["encryption"] = vlessSettings.Encryption
 	}
 	params["type"] = streamNetwork

@@ -3,6 +3,7 @@ package xray
 import (
 	"regexp"
 	"strings"
+	"sync"
 
 	"x-ui/logger"
 )
@@ -12,10 +13,15 @@ func NewLogWriter() *LogWriter {
 }
 
 type LogWriter struct {
+	mu       sync.RWMutex
 	lastLine string
 }
 
+func (lw *LogWriter) LastLine() string { lw.mu.RLock(); defer lw.mu.RUnlock(); return lw.lastLine }
+
 func (lw *LogWriter) Write(m []byte) (n int, err error) {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
 	crashRegex := regexp.MustCompile(`(?i)(panic|exception|stack trace|fatal error)`)
 
 	// Convert the data to a string

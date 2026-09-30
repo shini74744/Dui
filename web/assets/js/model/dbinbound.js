@@ -56,7 +56,7 @@ class DBInbound {
     }
 
     get isSocks() {
-        return this.protocol === Protocols.SOCKS;
+        return this.protocol === Protocols.SOCKS || this.protocol === Protocols.MIXED;
     }
 
     get isHTTP() {
@@ -127,6 +127,10 @@ class DBInbound {
         switch (this.protocol) {
             case Protocols.VMESS:
             case Protocols.VLESS:
+            case Protocols.TUIC:
+            case Protocols.MTPROTO:
+            case Protocols.AMNEZIAWG:
+            case Protocols.HYSTERIA:
             case Protocols.TROJAN:
                 return true;
             case Protocols.SHADOWSOCKS:
@@ -140,6 +144,10 @@ class DBInbound {
         switch (this.protocol) {
             case Protocols.VMESS:
             case Protocols.VLESS:
+            case Protocols.TUIC:
+            case Protocols.MTPROTO:
+            case Protocols.AMNEZIAWG:
+            case Protocols.HYSTERIA:
             case Protocols.TROJAN:
             case Protocols.SHADOWSOCKS:
                 return true;

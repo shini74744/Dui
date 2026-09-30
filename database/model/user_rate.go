@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"time"
 )
 
 // Hot-added and hot-edited inbounds need the same rate levels as a full rebuild.
 func (i *Inbound) xraySettingsWithRates() string {
 	switch i.Protocol {
-	case VMESS, VLESS, Trojan, Shadowsocks:
+	case VMESS, VLESS, Trojan, Shadowsocks, Hysteria:
 	default:
 		return i.Settings
 	}
@@ -21,6 +22,7 @@ func (i *Inbound) xraySettingsWithRates() string {
 	if json.Unmarshal(settings["clients"], &clients) != nil || clients == nil {
 		return i.Settings
 	}
+	active := make([]map[string]json.RawMessage, 0, len(clients))
 	for _, raw := range clients {
 		if raw == nil {
 			return i.Settings
@@ -33,10 +35,26 @@ func (i *Inbound) xraySettingsWithRates() string {
 		if json.Unmarshal(data, &client) != nil {
 			return i.Settings
 		}
+		if i.Protocol == Hysteria {
+			if string(raw["enable"]) == "false" || (client.ExpiryTime > 0 && client.ExpiryTime <= time.Now().UnixMilli()) {
+				continue
+			}
+			blocked := false
+			for _, stat := range i.ClientStats {
+				if stat.Email == client.Email && (!stat.Enable || (stat.Total > 0 && stat.Up+stat.Down >= stat.Total)) {
+					blocked = true
+					break
+				}
+			}
+			if blocked {
+				continue
+			}
+		}
 		level, _ := json.Marshal(client.UserRateLevel())
 		raw["level"] = level
+		active = append(active, raw)
 	}
-	settings["clients"], _ = json.Marshal(clients)
+	settings["clients"], _ = json.Marshal(active)
 	data, err := json.Marshal(settings)
 	if err != nil {
 		return i.Settings
@@ -50,7 +68,7 @@ const MaxUserRateMbps = 10000
 // XrayAPIUser preserves authentication, flow and user rate when restoring a user.
 func (c Client) XrayAPIUser(cipher string) map[string]any {
 	return map[string]any{"email": c.Email, "id": c.ID, "security": c.Security,
-		"flow": c.Flow, "password": c.Password, "cipher": cipher, "level": c.UserRateLevel()}
+		"auth": c.Auth, "flow": c.Flow, "password": c.Password, "cipher": cipher, "level": c.UserRateLevel()}
 }
 
 func (c Client) UserRateMbps() float64 {

@@ -15,7 +15,16 @@
         </template>
         <a-input v-model.trim="client.email"></a-input>
     </a-form-item>
-    <a-form-item v-if="inbound.protocol === Protocols.TROJAN || inbound.protocol === Protocols.SHADOWSOCKS">
+    <a-form-item v-if="inbound.protocol === Protocols.MTPROTO" label="FakeTLS secret"><a-input v-model.trim="client.secret"><a-icon slot="addonAfter" type="sync" @click="client.secret = Inbound.HelperClient.fakeTLSSecret()"></a-icon></a-input></a-form-item>
+    <a-form-item v-if="inbound.protocol === Protocols.MTPROTO" label="广告标签（可选）"><a-input v-model.trim="client.adTag"></a-input></a-form-item>
+    <template v-if="inbound.protocol === Protocols.AMNEZIAWG">
+      <a-form-item label="用户私钥"><a-input v-model.trim="client.privateKey" @change="client.publicKey = Wireguard.generateKeypair(client.privateKey).publicKey"></a-input></a-form-item>
+      <a-form-item label="用户公钥"><a-input v-model.trim="client.publicKey"></a-input></a-form-item>
+      <a-form-item label="预共享密钥"><a-input v-model.trim="client.preSharedKey"></a-input></a-form-item>
+      <a-form-item label="隧道地址 /32"><a-input v-model.trim="client.allowedIPs[0]"></a-input></a-form-item>
+    </template>
+    <a-form-item v-if="inbound.protocol === Protocols.HYSTERIA" label="认证密码 Auth"><a-input v-model.trim="client.auth"><a-icon slot="addonAfter" type="sync" @click="client.auth = RandomUtil.randomUUID()"></a-icon></a-input></a-form-item>
+    <a-form-item v-if="inbound.protocol === Protocols.TROJAN || inbound.protocol === Protocols.SHADOWSOCKS || inbound.protocol === Protocols.TUIC">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
@@ -28,7 +37,7 @@
         </template>
         <a-input v-model.trim="client.password"></a-input>
     </a-form-item>
-    <a-form-item v-if="inbound.protocol === Protocols.VMESS || inbound.protocol === Protocols.VLESS">
+    <a-form-item v-if="inbound.protocol === Protocols.VMESS || inbound.protocol === Protocols.VLESS || inbound.protocol === Protocols.TUIC">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
@@ -44,7 +53,7 @@
             <a-select-option v-for="key in USERS_SECURITY" :value="key">[[ key ]]</a-select-option>
         </a-select>
     </a-form-item>
-    <a-form-item v-if="client.email && app.subSettings?.enable">
+    <a-form-item v-if="client.email && app.subSettings?.enable && inbound.protocol !== Protocols.AMNEZIAWG">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
@@ -70,7 +79,7 @@
     </a-form-item>
 
 <!-- Aggregate per-user upload and download caps, independently enforced. -->
-    <a-form-item>
+    <a-form-item v-if="!inbound.isHelperProtocol()">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
@@ -93,7 +102,7 @@
     <a-form-item v-if="client.email" label='{{ i18n "comment" }}'>
         <a-input v-model.trim="client.comment"></a-input>
     </a-form-item>
-    <a-form-item v-if="app.ipLimitEnable">
+    <a-form-item v-if="app.ipLimitEnable && !inbound.isHelperProtocol()">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
@@ -135,7 +144,7 @@
             <a-select-option v-for="key in TLS_FLOW_CONTROL" :value="key">[[ key ]]</a-select-option>
         </a-select>
     </a-form-item>
-    <a-form-item>
+    <a-form-item v-if="inbound.protocol !== Protocols.TUIC">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">

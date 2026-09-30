@@ -37,7 +37,10 @@ jobs:
           sh -n DockerInit.sh
           bash -n core/xray/prepare.sh core/xray/build.sh
       - name: User rate and TLS form round trips
-        run: node scripts/test-user-rate.cjs
+        run: |
+          node scripts/test-user-rate.cjs
+          node scripts/test-native-protocols.cjs
+          node scripts/test-helper-protocols.cjs
       - name: Menu updater regression guards
         shell: bash
         run: |
@@ -59,7 +62,7 @@ jobs:
   build-linux:
     name: Linux ${{ matrix.platform }}
     needs: validate
-    if: startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/vx-')
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/vx-'))
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -143,6 +146,8 @@ jobs:
           install -m 0755 /tmp/xray/xray "x-ui/bin/xray-linux-${GOARCH}"
           install -m 0644 /tmp/xray/LICENSE x-ui/bin/xray-LICENSE
           install -m 0644 /tmp/xray/BUILD.json x-ui/bin/xray-BUILD.json
+
+          python3 core/helpers/assemble.py --platform '${{ matrix.platform }}' --output x-ui/bin
 
           curl -fL --retry 3 https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -o x-ui/bin/geoip.dat
           curl -fL --retry 3 https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat -o x-ui/bin/geosite.dat

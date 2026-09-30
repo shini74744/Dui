@@ -184,6 +184,8 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 		var newOutbounds []json_util.RawMessage
 
 		switch inbound.Protocol {
+		case "hysteria":
+			newOutbounds = append(newOutbounds, s.genHysteria(inbound, newStream, client))
 		case "vmess":
 			newOutbounds = append(newOutbounds, s.genVnext(inbound, streamSettings, client, ""))
 		case "vless":

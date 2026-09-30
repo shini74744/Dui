@@ -30,7 +30,7 @@ jobs:
       - name: Close and half-close regression tests
         working-directory: ${{ runner.temp }}/xray/source
         run: |
-          go test -race ./common/duilimit ./common/singbridge ./transport/pipe ./app/dispatcher ./app/policy -count=1 -timeout=180s
+          go test -race ./proxy/hysteria/account ./transport/internet/hysteria ./common/duilimit ./common/singbridge ./transport/pipe ./app/dispatcher ./app/policy -count=1 -timeout=180s
           # Upstream Vision uses uintptr reflection (vless/outbound.go:286), which trips checkptr under -race.
           # Run complete protocol integration with the same compiler flags as production binaries.
           go test ./core ./testing/dui -count=1 -timeout=180s

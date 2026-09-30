@@ -56,7 +56,7 @@ func (s *XrayService) GetXrayErr() error {
 
 	err := p.GetErr()
 
-	if runtime.GOOS == "windows" && err.Error() == "exit status 1" {
+	if err != nil && runtime.GOOS == "windows" && err.Error() == "exit status 1" {
 		// exit status 1 on Windows means that Xray process was killed
 		// as we kill process to stop in on Windows, this is not an error
 		return nil
@@ -184,6 +184,16 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 			continue
 		}
 
+		if inbound.Protocol.IsHelperProtocol() {
+			bridge, err := helperBridge(inbound)
+			if err != nil {
+				return nil, err
+			}
+			if bridge != nil {
+				xrayConfig.InboundConfigs = append(xrayConfig.InboundConfigs, *bridge)
+			}
+			continue
+		}
 		// 先生成一个 inboundConfig（后面会覆盖 Settings/StreamSettings）
 		inboundConfig := inbound.GenXrayInboundConfig()
 
@@ -215,7 +225,7 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		if ok {
 			clientStats := inbound.ClientStats
 
-			var xrayClients []interface{}
+			xrayClients := make([]interface{}, 0)
 			for _, clientRaw := range originalClients {
 				c, ok := clientRaw.(map[string]interface{})
 				if !ok {
@@ -267,6 +277,9 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 					} else {
 						xrayClient["flow"] = flow
 					}
+				}
+				if auth, ok := c["auth"]; ok {
+					xrayClient["auth"] = auth
 				}
 				if password, ok := c["password"]; ok {
 					xrayClient["password"] = password
@@ -352,7 +365,10 @@ func (s *XrayService) GetXrayTraffic() ([]*xray.Traffic, []*xray.ClientTraffic, 
 		logger.Debug("Failed to fetch Xray traffic:", err)
 		return nil, nil, err
 	}
-	return traffic, clientTraffic, nil
+	// Persist one combined sample so helpers cannot overwrite native online
+	// users, or race a second traffic transaction and lose a collected delta.
+	helperTraffic, helperClients := collectHelperTraffic()
+	return append(traffic, helperTraffic...), append(clientTraffic, helperClients...), nil
 }
 
 func (s *XrayService) RestartXray(isForce bool) error {
@@ -366,36 +382,49 @@ func (s *XrayService) RestartXray(isForce bool) error {
 		return err
 	}
 
-	// 【新功能】重启时，将完整配置打印到 Debug 日志以供验证
-	configBytes, jsonErr := json.MarshalIndent(xrayConfig, "", "  ")
-	if jsonErr == nil {
-		logger.Debugf("使用新配置重启 Xray：\n%s", string(configBytes))
-	} else {
-		logger.Warning("无法将 Xray 配置编组以进行日志记录：", jsonErr)
-	}
-
 	if s.IsXrayRunning() {
 		if !isForce && p.GetConfig().Equals(xrayConfig) && !isNeedXrayRestart.Load() {
 			logger.Debug("It does not need to restart Xray")
 			return nil
 		}
-		p.Stop()
+	}
+	if err := xray.ValidateConfig(xrayConfig); err != nil {
+		return err
+	}
+	var previous *xray.Config
+	if s.IsXrayRunning() {
+		previous = p.GetConfig()
+		if err := p.Stop(); err != nil {
+			return err
+		}
 	}
 
 	p = xray.NewProcess(xrayConfig)
 	result = ""
 	err = p.Start()
 	if err != nil {
+		if previous != nil {
+			p = xray.NewProcess(previous)
+			if restoreErr := p.Start(); restoreErr != nil {
+				return errors.Join(err, restoreErr)
+			}
+		}
 		return err
 	}
 
-	return nil
+	helperMu.Lock()
+	helperBridges = map[int]*xray.InboundConfig{}
+	helperMu.Unlock()
+	return s.SyncHelperProtocols()
 }
 
 func (s *XrayService) StopXray() error {
 	lock.Lock()
 	defer lock.Unlock()
 	isManuallyStopped.Store(true)
+	helperMu.Lock()
+	stopAllHelpers()
+	helperMu.Unlock()
 	logger.Debug("Attempting to stop Xray...")
 	if s.IsXrayRunning() {
 		return p.Stop()

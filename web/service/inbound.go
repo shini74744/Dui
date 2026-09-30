@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	"x-ui/database"
 	"x-ui/database/model"
+	"x-ui/internal/amneziawgnet"
 	"x-ui/logger"
 	"x-ui/util/common"
 	"x-ui/xray"
@@ -66,6 +68,18 @@ func (s *InboundService) GetInboundsByTrafficReset(period string) ([]*model.Inbo
 }
 
 func (s *InboundService) checkPortExist(listen string, port int, ignoreId int) (bool, error) {
+	if port == 0 {
+		return false, nil
+	} // TUN has no listening port.
+	var bridges []model.Inbound
+	if err := database.GetDB().Model(model.Inbound{}).Where("protocol = ?", model.AmneziaWG).Select("id").Find(&bridges).Error; err != nil {
+		return false, err
+	}
+	for _, ib := range bridges {
+		if amneziawgnet.SOCKSPortForInbound(ib.Id) == port {
+			return true, nil
+		}
+	}
 	db := database.GetDB()
 	if listen == "" || listen == "0.0.0.0" || listen == "::" || listen == "::0" {
 		db = db.Model(model.Inbound{}).Where("port = ?", port)
@@ -184,6 +198,12 @@ func (s *InboundService) checkEmailExistForInbound(inbound *model.Inbound) (stri
 
 // AddInbound adds a new inbound to db
 func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, bool, error) {
+	if inbound.Protocol.IsHelperProtocol() {
+		return s.saveHelperInbound(inbound, true)
+	}
+	if err := s.validateNativeInbound(inbound); err != nil {
+		return inbound, false, err
+	}
 	// 中文注释：检查端口是否已存在
 	exist, err := s.checkPortExist(inbound.Listen, inbound.Port, 0)
 	if err != nil {
@@ -235,6 +255,10 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	// 中文注释：根据不同协议，验证客户端ID/密码是否为空
 	for _, client := range clients {
 		switch inbound.Protocol {
+		case "hysteria":
+			if client.Auth == "" || client.Email == "" {
+				return inbound, false, common.NewError("Hysteria auth and email are required")
+			}
 		case "trojan":
 			if client.Password == "" {
 				return inbound, false, common.NewError("empty client ID")
@@ -310,7 +334,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 
 	// 中文注释：如果入站规则是启用的，则尝试通过 API 热加载到 Xray-core
 	needRestart := false
-	if inbound.Enable {
+	if inbound.Enable && p != nil && p.IsRunning() {
 		s.xrayApi.Init(p.GetAPIPort())
 		inboundJson, err1 := json.MarshalIndent(inbound.GenXrayInboundConfig(), "", "  ")
 		if err1 != nil {
@@ -323,6 +347,11 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 		} else {
 			// 中文注释：如果 API 调用失败，则标记需要重启面板以应用更改
 			logger.Debug("Unable to add inbound by api:", err1)
+			if inbound.Protocol.IsNativeExtension() {
+				s.xrayApi.Close()
+				err = fmt.Errorf("新入站启动失败，未保存配置：%w", err1)
+				return inbound, false, err
+			}
 			needRestart = true
 		}
 		s.xrayApi.Close()
@@ -333,12 +362,15 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 }
 
 func (s *InboundService) DelInbound(id int) (bool, error) {
+	if old, err := s.GetInbound(id); err == nil && old.Protocol.IsHelperProtocol() {
+		return s.deleteHelperInbound(old)
+	}
 	db := database.GetDB()
 
 	var tag string
 	needRestart := false
 	result := db.Model(model.Inbound{}).Select("tag").Where("id = ? and enable = ?", id, true).First(&tag)
-	if result.Error == nil {
+	if result.Error == nil && p != nil && p.IsRunning() {
 		s.xrayApi.Init(p.GetAPIPort())
 		err1 := s.xrayApi.DelInbound(tag)
 		if err1 == nil {
@@ -389,6 +421,15 @@ func (s *InboundService) GetInbound(id int) (*model.Inbound, error) {
 }
 
 func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, bool, error) {
+	if inbound.Protocol.IsHelperProtocol() {
+		return s.saveHelperInbound(inbound, false)
+	}
+	if old, err := s.GetInbound(inbound.Id); err == nil && old.Protocol.IsHelperProtocol() {
+		return inbound, false, fmt.Errorf("请新建入站切换协议类型")
+	}
+	if err := s.validateNativeInbound(inbound); err != nil {
+		return inbound, false, err
+	}
 	exist, err := s.checkPortExist(inbound.Listen, inbound.Port, inbound.Id)
 	if err != nil {
 		return inbound, false, err
@@ -402,6 +443,13 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		return inbound, false, err
 	}
 
+	previous := *oldInbound
+	if oldInbound.Protocol == model.Hysteria {
+		if err := dbClientStats(oldInbound); err != nil {
+			return inbound, false, err
+		}
+		previous.ClientStats = oldInbound.ClientStats
+	}
 	tag := oldInbound.Tag
 
 	db := database.GetDB()
@@ -501,6 +549,13 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		oldInbound.Tag = fmt.Sprintf("inbound-%v:%v", inbound.Listen, inbound.Port)
 	}
 
+	if oldInbound.Protocol == model.TUN {
+		oldInbound.Tag = inbound.Tag
+	}
+	if p == nil || !p.IsRunning() {
+		err = tx.Save(oldInbound).Error
+		return inbound, false, err
+	}
 	needRestart := false
 	s.xrayApi.Init(p.GetAPIPort())
 	if s.xrayApi.DelInbound(tag) == nil {
@@ -517,13 +572,27 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 				logger.Debug("Updated inbound added by api:", oldInbound.Tag)
 			} else {
 				logger.Debug("Unable to update inbound by api:", err2)
+				if inbound.Protocol.IsNativeExtension() {
+					if previous.Enable {
+						oldJSON, _ := json.Marshal(previous.GenXrayInboundConfig())
+						if restoreErr := s.xrayApi.AddInbound(oldJSON); restoreErr != nil {
+							s.xrayApi.Close()
+							err = fmt.Errorf("入站更新失败，数据库旧配置保留，但运行时恢复失败；请重启核心恢复：%w", errors.Join(err2, restoreErr))
+							return inbound, false, err
+						}
+					}
+					s.xrayApi.Close()
+					err = fmt.Errorf("入站更新失败，已保留旧配置：%w", err2)
+					return inbound, false, err
+				}
 				needRestart = true
 			}
 		}
 	}
 	s.xrayApi.Close()
 
-	return inbound, needRestart, tx.Save(oldInbound).Error
+	err = tx.Save(oldInbound).Error
+	return inbound, needRestart, err
 }
 
 func (s *InboundService) updateClientTraffics(tx *gorm.DB, oldInbound *model.Inbound, newInbound *model.Inbound) error {
@@ -572,6 +641,9 @@ func (s *InboundService) updateClientTraffics(tx *gorm.DB, oldInbound *model.Inb
 }
 
 func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
+	if old, err := s.GetInbound(data.Id); err == nil && old.Protocol.IsHelperProtocol() {
+		return s.changeHelperClients(old, data, "", "add")
+	}
 	clients, err := s.GetClients(data)
 	if err != nil {
 		return false, err
@@ -620,6 +692,10 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 	// Secure client ID
 	for _, client := range clients {
 		switch oldInbound.Protocol {
+		case "hysteria":
+			if client.Auth == "" || client.Email == "" {
+				return false, common.NewError("Hysteria auth and email are required")
+			}
 		case "trojan":
 			if client.Password == "" {
 				return false, common.NewError("empty client ID")
@@ -652,6 +728,9 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 	}
 
 	oldInbound.Settings = string(newSettings)
+	if err := oldInbound.ValidateNativeProtocol(); err != nil {
+		return false, err
+	}
 
 	db := database.GetDB()
 	tx := db.Begin()
@@ -665,11 +744,15 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 	}()
 
 	needRestart := false
-	s.xrayApi.Init(p.GetAPIPort())
+	live := p != nil && p.IsRunning() && oldInbound.Enable
+	if live {
+		s.xrayApi.Init(p.GetAPIPort())
+		defer s.xrayApi.Close()
+	}
 	for _, client := range clients {
 		if len(client.Email) > 0 {
 			s.AddClientStat(tx, data.Id, &client)
-			if client.Enable {
+			if client.Enable && live {
 				cipher := ""
 				if oldInbound.Protocol == "shadowsocks" {
 					cipher = oldSettings["method"].(string)
@@ -682,6 +765,7 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 					"security": client.Security,
 					"flow":     client.Flow,
 					"password": client.Password,
+					"auth":     client.Auth,
 					"cipher":   cipher,
 
 					// Xray-core 会将这个值作为 level，然后去 policy 中寻找对应的限速策略。
@@ -700,12 +784,15 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 			needRestart = true
 		}
 	}
-	s.xrayApi.Close()
 
-	return needRestart, tx.Save(oldInbound).Error
+	err = tx.Save(oldInbound).Error
+	return needRestart, err
 }
 
 func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool, error) {
+	if old, err := s.GetInbound(inboundId); err == nil && old.Protocol.IsHelperProtocol() {
+		return s.changeHelperClients(old, nil, clientId, "delete")
+	}
 	oldInbound, err := s.GetInbound(inboundId)
 	if err != nil {
 		logger.Error("Load Old Data Error")
@@ -719,6 +806,9 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 
 	email := ""
 	client_key := "id"
+	if oldInbound.Protocol == model.Hysteria {
+		client_key = "auth"
+	}
 	if oldInbound.Protocol == "trojan" {
 		client_key = "password"
 	}
@@ -751,6 +841,9 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 	}
 
 	oldInbound.Settings = string(newSettings)
+	if err := oldInbound.ValidateNativeProtocol(); err != nil {
+		return false, err
+	}
 
 	db := database.GetDB()
 
@@ -776,7 +869,7 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 			logger.Error("Delete stats Data Error")
 			return false, err
 		}
-		if needApiDel && notDepleted {
+		if needApiDel && notDepleted && p != nil && p.IsRunning() && oldInbound.Enable {
 			s.xrayApi.Init(p.GetAPIPort())
 			err1 := s.xrayApi.RemoveUser(oldInbound.Tag, email)
 			if err1 == nil {
@@ -797,6 +890,9 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 }
 
 func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId string) (bool, error) {
+	if old, err := s.GetInbound(data.Id); err == nil && old.Protocol.IsHelperProtocol() {
+		return s.changeHelperClients(old, data, clientId, "update")
+	}
 	clients, err := s.GetClients(data)
 	if err != nil {
 		return false, err
@@ -826,6 +922,9 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 	for index, oldClient := range oldClients {
 		oldClientId := ""
 		switch oldInbound.Protocol {
+		case "hysteria":
+			oldClientId = oldClient.Auth
+			newClientId = clients[0].Auth
 		case "trojan":
 			oldClientId = oldClient.Password
 			newClientId = clients[0].Password
@@ -901,6 +1000,9 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 	}
 
 	oldInbound.Settings = string(newSettings)
+	if err := oldInbound.ValidateNativeProtocol(); err != nil {
+		return false, err
+	}
 	db := database.GetDB()
 	tx := db.Begin()
 
@@ -944,7 +1046,8 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 		}
 	}
 	needRestart := false
-	if len(oldEmail) > 0 {
+	live := p != nil && p.IsRunning() && oldInbound.Enable
+	if len(oldEmail) > 0 && live {
 		s.xrayApi.Init(p.GetAPIPort())
 		if oldClients[clientIndex].Enable {
 			err1 := s.xrayApi.RemoveUser(oldInbound.Tag, oldEmail)
@@ -972,6 +1075,7 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 				"security": clients[0].Security,
 				"flow":     clients[0].Flow,
 				"password": clients[0].Password,
+				"auth":     clients[0].Auth,
 				"cipher":   cipher,
 
 				"level": clients[0].UserRateLevel(),
@@ -990,11 +1094,13 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 		logger.Debug("Client old email not found")
 		needRestart = true
 	}
-	return needRestart || oldClients[clientIndex].UserRateLevel() != clients[0].UserRateLevel(), tx.Save(oldInbound).Error
+	err = tx.Save(oldInbound).Error
+	return live && (needRestart || oldClients[clientIndex].UserRateLevel() != clients[0].UserRateLevel()), err
 }
 
 func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraffics []*xray.ClientTraffic) (error, bool) {
 	var err error
+	var renewedHelperEmails []string
 	db := database.GetDB()
 	tx := db.Begin()
 
@@ -1002,7 +1108,11 @@ func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraff
 		if err != nil {
 			tx.Rollback()
 		} else {
-			tx.Commit()
+			if tx.Commit().Error == nil && len(renewedHelperEmails) > 0 {
+				if resetErr := s.resetHelperQuotas(-1, renewedHelperEmails); resetErr != nil {
+					logger.Warning("helper renewal: ", resetErr)
+				}
+			}
 		}
 	}()
 	err = s.addInboundTraffic(tx, inboundTraffics)
@@ -1014,7 +1124,7 @@ func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraff
 		return err, false
 	}
 
-	needRestart0, count, err := s.autoRenewClients(tx)
+	needRestart0, count, err := s.autoRenewClients(tx, &renewedHelperEmails)
 	if err != nil {
 		logger.Warning("Error in renew clients:", err)
 	} else if count > 0 {
@@ -1170,7 +1280,7 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 				}
 
 				// Add user in onlineUsers array on traffic
-				if traffics[traffic_index].Up+traffics[traffic_index].Down > 0 {
+				if traffics[traffic_index].Up+traffics[traffic_index].Down > 0 || traffics[traffic_index].Active {
 					onlineClients = append(onlineClients, traffics[traffic_index].Email)
 					dbClientTraffics[dbTraffic_index].LastOnline = time.Now().UnixMilli()
 				}
@@ -1250,7 +1360,7 @@ func (s *InboundService) adjustTraffics(tx *gorm.DB, dbClientTraffics []*xray.Cl
 	return dbClientTraffics, nil
 }
 
-func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
+func (s *InboundService) autoRenewClients(tx *gorm.DB, renewedHelperEmails *[]string) (bool, int64, error) {
 	// check for time expired
 	var traffics []*xray.ClientTraffic
 	now := time.Now().Unix() * 1000
@@ -1292,6 +1402,9 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 					newExpiryTime := traffic.ExpiryTime
 					for newExpiryTime < now {
 						newExpiryTime += (int64(traffic.Reset) * 86400000)
+					}
+					if inbounds[inbound_index].Protocol.IsHelperProtocol() {
+						*renewedHelperEmails = append(*renewedHelperEmails, traffic.Email)
 					}
 					c["expiryTime"] = newExpiryTime
 					traffics[traffic_index].ExpiryTime = newExpiryTime
@@ -1336,6 +1449,9 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 			return true, int64(len(traffics)), nil
 		}
 		for _, clientToAdd := range clientsToAdd {
+			if model.Protocol(clientToAdd.protocol).IsHelperProtocol() {
+				continue
+			}
 			err1 = s.xrayApi.AddUser(clientToAdd.protocol, clientToAdd.tag, clientToAdd.client)
 			if err1 != nil {
 				needRestart = true
@@ -1354,6 +1470,7 @@ func (s *InboundService) disableInvalidInbounds(tx *gorm.DB) (bool, int64, error
 		var tags []string
 		err := tx.Table("inbounds").
 			Select("inbounds.tag").
+			Where("protocol NOT IN ?", []model.Protocol{model.TUIC, model.MTProto, model.AmneziaWG}).
 			Where("((total > 0 and up + down >= total) or (expiry_time > 0 and expiry_time <= ?)) and enable = ?", now, true).
 			Scan(&tags).Error
 		if err != nil {
@@ -1392,6 +1509,7 @@ func (s *InboundService) disableInvalidClients(tx *gorm.DB) (bool, int64, error)
 
 		err := tx.Table("inbounds").
 			Select("inbounds.tag, client_traffics.email").
+			Where("inbounds.protocol NOT IN ?", []model.Protocol{model.TUIC, model.MTProto, model.AmneziaWG}).
 			Joins("JOIN client_traffics ON inbounds.id = client_traffics.inbound_id").
 			Where("((client_traffics.total > 0 AND client_traffics.up + client_traffics.down >= client_traffics.total) OR (client_traffics.expiry_time > 0 AND client_traffics.expiry_time <= ?)) AND client_traffics.enable = ?", now, true).
 			Scan(&results).Error
@@ -1564,12 +1682,17 @@ func (s *InboundService) SetClientTelegramUserID(trafficId int, tgId int64) (boo
 	for _, oldClient := range oldClients {
 		if oldClient.Email == clientEmail {
 			switch inbound.Protocol {
+			case "hysteria":
+				clientId = oldClient.Auth
 			case "trojan":
 				clientId = oldClient.Password
 			case "shadowsocks":
 				clientId = oldClient.Email
 			default:
 				clientId = oldClient.ID
+			}
+			if inbound.Protocol.IsHelperProtocol() {
+				clientId = helperClientID(inbound.Protocol, oldClient)
 			}
 			break
 		}
@@ -1650,12 +1773,17 @@ func (s *InboundService) ToggleClientEnableByEmail(clientEmail string) (bool, bo
 	for _, oldClient := range oldClients {
 		if oldClient.Email == clientEmail {
 			switch inbound.Protocol {
+			case "hysteria":
+				clientId = oldClient.Auth
 			case "trojan":
 				clientId = oldClient.Password
 			case "shadowsocks":
 				clientId = oldClient.Email
 			default:
 				clientId = oldClient.ID
+			}
+			if inbound.Protocol.IsHelperProtocol() {
+				clientId = helperClientID(inbound.Protocol, oldClient)
 			}
 			clientOldEnabled = oldClient.Enable
 			break
@@ -1715,12 +1843,17 @@ func (s *InboundService) ResetClientIpLimitByEmail(clientEmail string, count int
 	for _, oldClient := range oldClients {
 		if oldClient.Email == clientEmail {
 			switch inbound.Protocol {
+			case "hysteria":
+				clientId = oldClient.Auth
 			case "trojan":
 				clientId = oldClient.Password
 			case "shadowsocks":
 				clientId = oldClient.Email
 			default:
 				clientId = oldClient.ID
+			}
+			if inbound.Protocol.IsHelperProtocol() {
+				clientId = helperClientID(inbound.Protocol, oldClient)
 			}
 			break
 		}
@@ -1774,12 +1907,17 @@ func (s *InboundService) ResetClientExpiryTimeByEmail(clientEmail string, expiry
 	for _, oldClient := range oldClients {
 		if oldClient.Email == clientEmail {
 			switch inbound.Protocol {
+			case "hysteria":
+				clientId = oldClient.Auth
 			case "trojan":
 				clientId = oldClient.Password
 			case "shadowsocks":
 				clientId = oldClient.Email
 			default:
 				clientId = oldClient.ID
+			}
+			if inbound.Protocol.IsHelperProtocol() {
+				clientId = helperClientID(inbound.Protocol, oldClient)
 			}
 			break
 		}
@@ -1836,12 +1974,17 @@ func (s *InboundService) ResetClientTrafficLimitByEmail(clientEmail string, tota
 	for _, oldClient := range oldClients {
 		if oldClient.Email == clientEmail {
 			switch inbound.Protocol {
+			case "hysteria":
+				clientId = oldClient.Auth
 			case "trojan":
 				clientId = oldClient.Password
 			case "shadowsocks":
 				clientId = oldClient.Email
 			default:
 				clientId = oldClient.ID
+			}
+			if inbound.Protocol.IsHelperProtocol() {
+				clientId = helperClientID(inbound.Protocol, oldClient)
 			}
 			break
 		}
@@ -1877,13 +2020,20 @@ func (s *InboundService) ResetClientTrafficLimitByEmail(clientEmail string, tota
 }
 
 func (s *InboundService) ResetClientTrafficByEmail(clientEmail string) error {
+	_, inbound, err := s.GetClientInboundByEmail(clientEmail)
+	if err != nil {
+		return err
+	}
+	if inbound != nil && inbound.Protocol.IsHelperProtocol() {
+		return s.resetHelperClientTraffic(inbound, clientEmail)
+	}
 	db := database.GetDB()
 
 	result := db.Model(xray.ClientTraffic{}).
 		Where("email = ?", clientEmail).
 		Updates(map[string]any{"enable": true, "up": 0, "down": 0})
 
-	err := result.Error
+	err = result.Error
 	if err != nil {
 		return err
 	}
@@ -1891,6 +2041,13 @@ func (s *InboundService) ResetClientTrafficByEmail(clientEmail string) error {
 }
 
 func (s *InboundService) ResetClientTraffic(id int, clientEmail string) (bool, error) {
+	inbound, err := s.GetInbound(id)
+	if err != nil {
+		return false, err
+	}
+	if inbound.Protocol.IsHelperProtocol() {
+		return false, s.resetHelperClientTraffic(inbound, clientEmail)
+	}
 	needRestart := false
 
 	traffic, err := s.GetClientTrafficByEmail(clientEmail)
@@ -1898,7 +2055,7 @@ func (s *InboundService) ResetClientTraffic(id int, clientEmail string) (bool, e
 		return false, err
 	}
 
-	if !traffic.Enable {
+	if !traffic.Enable && p != nil && p.IsRunning() {
 		inbound, err := s.GetInbound(id)
 		if err != nil {
 			return false, err
@@ -1949,7 +2106,7 @@ func (s *InboundService) ResetAllClientTraffics(id int) error {
 	db := database.GetDB()
 	now := time.Now().Unix() * 1000
 
-	return db.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		whereText := "inbound_id "
 		if id == -1 {
 			whereText += " > ?"
@@ -1973,6 +2130,10 @@ func (s *InboundService) ResetAllClientTraffics(id int) error {
 			Where(inboundWhere, id).
 			Update("last_traffic_reset_time", now).Error
 	})
+	if err != nil {
+		return err
+	}
+	return s.resetHelperQuotas(id, nil)
 }
 
 // ResetInboundTraffics resets the aggregate counters of one inbound.
@@ -1994,6 +2155,9 @@ func (s *InboundService) ResetAllTraffics() error {
 }
 
 func (s *InboundService) DelDepletedClients(id int) (err error) {
+	if err := s.deleteDepletedHelperClients(id); err != nil {
+		return err
+	}
 	db := database.GetDB()
 	tx := db.Begin()
 	defer func() {
@@ -2053,6 +2217,9 @@ func (s *InboundService) DelDepletedClients(id int) (err error) {
 			}
 
 			oldInbound.Settings = string(newSettings)
+			if err := oldInbound.ValidateNativeProtocol(); err != nil {
+				return err
+			}
 			err = tx.Save(oldInbound).Error
 			if err != nil {
 				return err

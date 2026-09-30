@@ -10,6 +10,12 @@ import (
 type Protocol string
 
 const (
+	TUIC      Protocol = "tuic"
+	MTProto   Protocol = "mtproto"
+	AmneziaWG Protocol = "amneziawg"
+)
+
+const (
 	VMESS       Protocol = "vmess"
 	VLESS       Protocol = "vless"
 	Tunnel      Protocol = "tunnel"
@@ -18,6 +24,9 @@ const (
 	Shadowsocks Protocol = "shadowsocks"
 	Socks       Protocol = "socks"
 	WireGuard   Protocol = "wireguard"
+	Hysteria    Protocol = "hysteria"
+	Mixed       Protocol = "mixed"
+	TUN         Protocol = "tun"
 )
 
 type User struct {
@@ -162,6 +171,16 @@ type Setting struct {
 }
 
 type Client struct {
+	UUID           string   `json:"uuid,omitempty"`
+	Secret         string   `json:"secret,omitempty"`
+	AdTag          string   `json:"adTag,omitempty"`
+	PublicKey      string   `json:"publicKey,omitempty"`
+	PrivateKey     string   `json:"privateKey,omitempty"`
+	PreSharedKey   string   `json:"preSharedKey,omitempty"`
+	AllowedIPs     []string `json:"allowedIPs,omitempty"`
+	ForwardedPorts string   `json:"forwardedPorts,omitempty"`
+
+	Auth     string `json:"auth,omitempty"`
 	ID       string `json:"id"`
 	Security string `json:"security"`
 	Password string `json:"password"`

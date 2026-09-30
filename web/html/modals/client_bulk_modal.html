@@ -39,7 +39,7 @@
                 <a-select-option v-for="key in TLS_FLOW_CONTROL" :value="key">[[ key ]]</a-select-option>
             </a-select>
         </a-form-item>
-        <a-form-item v-if="app.subSettings?.enable">
+        <a-form-item v-if="app.subSettings?.enable && clientsBulkModal.inbound?.protocol !== Protocols.AMNEZIAWG">
             <template slot="label">
                 <a-tooltip>
                     <template slot="title">
@@ -53,7 +53,7 @@
         </a-form-item>
 
 <!-- Aggregate per-user upload and download caps, independently enforced. -->
-        <a-form-item>
+        <a-form-item v-if="!clientsBulkModal.inbound?.isHelperProtocol()">
             <template slot="label">
                 <a-tooltip>
                     <template slot="title">
@@ -85,7 +85,7 @@
             </template>
             <a-input-number :style="{ width: '50%' }" v-model.number="clientsBulkModal.tgId" min="0"></a-input-number>
         </a-form-item>
-        <a-form-item v-if="app.ipLimitEnable">
+        <a-form-item v-if="app.ipLimitEnable && !clientsBulkModal.inbound?.isHelperProtocol()">
             <template slot="label">
                 <a-tooltip>
                     <template slot="title">
@@ -97,7 +97,7 @@
             </template>
             <a-input-number v-model.number="clientsBulkModal.limitIp" min="0"></a-input-number>
         </a-form-item>
-        <a-form-item>
+        <a-form-item v-if="clientsBulkModal.inbound?.protocol !== Protocols.TUIC">
             <template slot="label">
                 <a-tooltip>
                     <template slot="title">
@@ -189,10 +189,10 @@
             useNum = (method > 1);
             postfix = (method > 2 && clientsBulkModal.emailPostfix.length > 0) ? clientsBulkModal.emailPostfix : "";
             for (let i = start; i < end; i++) {
-                newClient = clientsBulkModal.newClient(clientsBulkModal.dbInbound.protocol);
+                newClient = clientsBulkModal.dbInbound.protocol === Protocols.AMNEZIAWG ? Inbound.HelperClient.create(Protocols.AMNEZIAWG, {...clientsBulkModal.inbound.settings, clients: [...clientsBulkModal.inbound.settings.clients, ...clients]}) : clientsBulkModal.newClient(clientsBulkModal.dbInbound.protocol);
                 if (method == 4) newClient.email = "";
                 newClient.email += useNum ? prefix + i.toString() + postfix : prefix + postfix;
-                if (clientsBulkModal.subId.length > 0) newClient.subId = clientsBulkModal.subId;
+                if (clientsBulkModal.inbound.protocol !== Protocols.AMNEZIAWG && clientsBulkModal.subId.length > 0) newClient.subId = clientsBulkModal.subId;
                 newClient.tgId = clientsBulkModal.tgId;
 
                 <!-- 中文注释: 在这里为每个新生成的 client 对象赋值 speedLimit -->
@@ -200,7 +200,7 @@
 
                 newClient.security = clientsBulkModal.security;
                 newClient.limitIp = clientsBulkModal.limitIp;
-                newClient._totalGB = clientsBulkModal.totalGB;
+                newClient._totalGB = clientsBulkModal.inbound.protocol === Protocols.TUIC ? 0 : clientsBulkModal.totalGB;
                 newClient._expiryTime = clientsBulkModal.expiryTime;
                 if (clientsBulkModal.inbound.canEnableTlsFlow()) {
                     newClient.flow = clientsBulkModal.flow;
@@ -246,6 +246,10 @@
             switch (protocol) {
                 case Protocols.VMESS: return new Inbound.VmessSettings.VMESS();
                 case Protocols.VLESS: return new Inbound.VLESSSettings.VLESS();
+                case Protocols.TUIC:
+                case Protocols.MTPROTO:
+                case Protocols.AMNEZIAWG: return Inbound.HelperClient.create(protocol,clientsBulkModal.inbound.settings);
+                case Protocols.HYSTERIA: return new Inbound.HysteriaSettings.Client();
                 case Protocols.TROJAN: return new Inbound.TrojanSettings.Trojan();
                 case Protocols.SHADOWSOCKS: return new Inbound.ShadowsocksSettings.Shadowsocks(clientsBulkModal.inbound.settings.shadowsockses[0].method);
                 default: return null;

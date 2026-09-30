@@ -1,10 +1,11 @@
 module x-ui
 
-go 1.25.2
+go 1.27.1
 
-replace gvisor.dev/gvisor => gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c
+replace gvisor.dev/gvisor => gvisor.dev/gvisor v0.0.0-20260122175437-89a5d21be8f0
 
 require (
+	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
 	github.com/gin-contrib/gzip v1.2.5
 	github.com/gin-contrib/sessions v1.0.4
 	github.com/gin-gonic/gin v1.11.0
@@ -22,10 +23,14 @@ require (
 	github.com/xtls/xray-core v1.251015.0
 	go.uber.org/atomic v1.11.0
 	golang.org/x/crypto v0.43.0
+	golang.org/x/net v0.46.0
+	golang.org/x/sys v0.38.0
 	golang.org/x/text v0.30.0
 	google.golang.org/grpc v1.76.0
+	google.golang.org/protobuf v1.36.10
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
+	gvisor.dev/gvisor v0.0.0-20251108002617-cd0901c24964
 )
 
 require (
@@ -48,7 +53,6 @@ require (
 	github.com/gorilla/context v1.1.2 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/sessions v1.4.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grbit/go-json v0.11.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
@@ -81,22 +85,16 @@ require (
 	github.com/v2fly/ss-bloomring v0.0.0-20210312155135-28617310f63e // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
-	github.com/vishvananda/netlink v1.3.1 // indirect
-	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/xtls/reality v0.0.0-20251014195629-e4eec4520535 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/arch v0.23.0 // indirect
+	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
 	golang.org/x/mod v0.29.0 // indirect
-	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.38.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251110190251-83f479183930 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
-	gvisor.dev/gvisor v0.0.0-20251108002617-cd0901c24964 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )

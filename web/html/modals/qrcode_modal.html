@@ -30,7 +30,7 @@
           </tr-qr-bg-inner>
         </tr-qr-bg>
       </tr-qr-box>
-      <tr-qr-box class="qr-box">
+      <tr-qr-box v-if="!qrModal.inbound?.isHelperProtocol()" class="qr-box">
         <a-tag color="purple" class="qr-tag"><span>{{ i18n "pages.settings.subSettings"}} Json</span></a-tag>
         <tr-qr-bg class="qr-bg-sub">
           <tr-qr-bg-inner class="qr-bg-sub-inner">
@@ -45,6 +45,7 @@
         <tr-qr-bg class="qr-bg">
           <canvas @click="copy(row.link)" :id="'qrCode-'+index" class="qr-cv"></canvas>
         </tr-qr-bg>
+        <a-button v-if="qrModal.inbound?.protocol === Protocols.AMNEZIAWG" @click="downloadConfig(row)">下载 AmneziaWG 配置 (.conf)</a-button>
       </tr-qr-box>
     </template>
   </tr-qr-modal>
@@ -174,12 +175,11 @@
         if (row.useIPv4 && this.serverStatus.publicIP.ipv4) {
           // Replace the hostname or IP in the link with the IPv4 address
           const originalLink = row.originalLink;
-          const url = new URL(originalLink);
           const ipv4 = this.serverStatus.publicIP.ipv4;
           
-          if (qrModal.inbound.protocol == Protocols.WIREGUARD) {
+          if ([Protocols.WIREGUARD, Protocols.AMNEZIAWG].includes(qrModal.inbound.protocol)) {
             // Special handling for WireGuard config
-            const endpointRegex = /Endpoint = ([^:]+):(\d+)/;
+            const endpointRegex = /Endpoint = (\[[^\]]+\]|[^:\r\n]+):(\d+)/;
             const match = originalLink.match(endpointRegex);
             if (match) {
               row.link = originalLink.replace(
@@ -189,7 +189,9 @@
             }
           } else {
             // For other protocols using URL format
-            url.hostname = ipv4;
+            const url = new URL(originalLink);
+            if (qrModal.inbound.protocol === Protocols.MTPROTO) url.searchParams.set('server', ipv4);
+            else url.hostname = ipv4;
             row.link = url.toString();
           }
         } else {
@@ -218,7 +220,16 @@
             app.$message.success('{{ i18n "copied" }}')
           })
       },
+      downloadConfig(row) {
+        const url = URL.createObjectURL(new Blob([row.link], {type: 'text/plain;charset=utf-8'}));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (row.remark || 'AmneziaWG').replace(/[^\p{L}\p{N}_-]/gu, '_') + '.conf';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      },
       setQrCode(elementId, content) {
+        if (!document.getElementById(elementId)) return;
         new QRious({
           element: document.querySelector('#' + elementId),
           size: 400,

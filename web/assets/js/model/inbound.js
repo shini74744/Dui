@@ -7,6 +7,12 @@ const Protocols = {
     SOCKS: 'socks',
     HTTP: 'http',
     WIREGUARD: 'wireguard',
+    HYSTERIA: 'hysteria',
+    MIXED: 'mixed',
+    TUN: 'tun',
+    TUIC: 'tuic',
+    MTPROTO: 'mtproto',
+    AMNEZIAWG: 'amneziawg',
 };
 
 const SSMethods = {
@@ -948,6 +954,8 @@ class StreamSettings extends XrayCommonClass {
         httpupgradeSettings = new HTTPUpgradeStreamSettings(),
         xhttpSettings = new xHTTPStreamSettings(),
         sockopt = undefined,
+        hysteriaSettings = {version: 2, udpIdleTimeout: 60},
+        finalMask = undefined,
     ) {
         super();
         this.network = network;
@@ -962,6 +970,8 @@ class StreamSettings extends XrayCommonClass {
         this.httpupgrade = httpupgradeSettings;
         this.xhttp = xhttpSettings;
         this.sockopt = sockopt;
+        this.hysteria = hysteriaSettings;
+        this.finalMask = finalMask;
     }
 
     get isTls() {
@@ -1011,6 +1021,8 @@ class StreamSettings extends XrayCommonClass {
             HTTPUpgradeStreamSettings.fromJson(json.httpupgradeSettings),
             xHTTPStreamSettings.fromJson(json.xhttpSettings),
             SockoptStreamSettings.fromJson(json.sockopt),
+            json.hysteriaSettings,
+            json.finalMask,
         );
     }
 
@@ -1018,6 +1030,8 @@ class StreamSettings extends XrayCommonClass {
         const network = this.network;
         return {
             network: network,
+            hysteriaSettings: network === 'hysteria' ? this.hysteria : undefined,
+            finalMask: this.finalMask,
             security: this.security,
             externalProxy: this.externalProxy,
             tlsSettings: this.isTls ? this.tls.toJson() : undefined,
@@ -1092,6 +1106,10 @@ class Inbound extends XrayCommonClass {
             case Protocols.VMESS: return this.settings.vmesses;
             case Protocols.VLESS: return this.settings.vlesses;
             case Protocols.TROJAN: return this.settings.trojans;
+            case Protocols.HYSTERIA:
+            case Protocols.TUIC:
+            case Protocols.MTPROTO:
+            case Protocols.AMNEZIAWG: return this.settings.clients;
             case Protocols.SHADOWSOCKS: return this.isSSMultiUser ? this.settings.shadowsockses : null;
             default: return null;
         }
@@ -1104,6 +1122,17 @@ class Inbound extends XrayCommonClass {
     set protocol(protocol) {
         this._protocol = protocol;
         this.settings = Inbound.Settings.getSettings(protocol);
+        if (protocol === Protocols.HYSTERIA) {
+            this.stream.network = 'hysteria'; this.stream.security = 'tls';
+            this.stream.tls.alpn = ['h3'];
+            this.stream.tls.minVersion = TLS_VERSION_OPTION.TLS13;
+            this.stream.tls.maxVersion = TLS_VERSION_OPTION.TLS13;
+        } else if (this.stream.network === 'hysteria') {
+            this.stream.network = 'tcp'; this.stream.security = 'none';
+        }
+        if (protocol === Protocols.MIXED) this.listen = '127.0.0.1';
+        if (protocol === Protocols.TUN) { this.listen = ''; this.port = 0; }
+        else if (this.port === 0) this.port = RandomUtil.randomInteger(10000, 60000);
         if (protocol === Protocols.TROJAN) {
             this.tls = false;
         }
@@ -1216,6 +1245,7 @@ class Inbound extends XrayCommonClass {
     }
 
     canEnableTls() {
+        if (this.protocol === Protocols.HYSTERIA) return true;
         if (![Protocols.VMESS, Protocols.VLESS, Protocols.TROJAN, Protocols.SHADOWSOCKS].includes(this.protocol)) return false;
         return ["tcp", "ws", "http", "grpc", "httpupgrade", "xhttp"].includes(this.network);
     }
@@ -1623,8 +1653,23 @@ class Inbound extends XrayCommonClass {
         return txt;
     }
 
+    isHelperProtocol() { return [Protocols.TUIC, Protocols.MTPROTO, Protocols.AMNEZIAWG].includes(this.protocol); }
+
+    genHysteriaLink(address, port, remark, client) {
+        const query = new URLSearchParams();
+        if (this.stream.tls.sni) query.set('sni', this.stream.tls.sni);
+        if (this.stream.tls.settings.allowInsecure) query.set('insecure', '1');
+        const host = address.includes(':') && !address.startsWith('[') ? '[' + address + ']' : address;
+        return 'hysteria2://' + encodeURIComponent(client.auth) + '@' + host + ':' + port + '/?' + query + '#' + encodeURIComponent(remark);
+    }
+
     genLink(address = '', port = this.port, forceTls = 'same', remark = '', client) {
         switch (this.protocol) {
+            case Protocols.TUIC: return this.genTuicLink(address,port,remark,client);
+            case Protocols.MTPROTO: return 'tg://proxy?' + new URLSearchParams({server: address.replace(/^\[|\]$/g,''), port, secret:client.secret});
+            case Protocols.AMNEZIAWG: return this.genAmneziaConfig(address,port,client);
+            case Protocols.HYSTERIA:
+                return this.genHysteriaLink(address, port, remark, client);
             case Protocols.VMESS:
                 return this.genVmessLink(address, port, forceTls, remark, client.id, client.security);
             case Protocols.VLESS:
@@ -1640,7 +1685,7 @@ class Inbound extends XrayCommonClass {
     genAllLinks(remark = '', remarkModel = '-ieo', client) {
         let result = [];
         let email = client ? client.email : '';
-        let addr = !ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname;
+        let addr = !ObjectUtil.isEmpty(this.listen) && !["0.0.0.0", "::", "::0"].includes(this.listen) ? this.listen : location.hostname;
         let port = this.port;
         const separationChar = remarkModel.charAt(0);
         const orderChars = remarkModel.slice(1);
@@ -1669,7 +1714,7 @@ class Inbound extends XrayCommonClass {
     }
 
     genInboundLinks(remark = '', remarkModel = '-ieo') {
-        let addr = !ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname;
+        let addr = !ObjectUtil.isEmpty(this.listen) && !["0.0.0.0", "::", "::0"].includes(this.listen) ? this.listen : location.hostname;
         if (this.clients) {
             let links = [];
             this.clients.forEach((client) => {
@@ -1706,7 +1751,7 @@ class Inbound extends XrayCommonClass {
 
     toJson() {
         let streamSettings;
-        if (this.canEnableStream() || this.stream?.sockopt) {
+        if (this.canEnableStream() || this.protocol === Protocols.HYSTERIA || this.stream?.sockopt) {
             streamSettings = this.stream.toJson();
         }
         return {
@@ -1735,7 +1780,13 @@ Inbound.Settings = class extends XrayCommonClass {
             case Protocols.TROJAN: return new Inbound.TrojanSettings(protocol);
             case Protocols.SHADOWSOCKS: return new Inbound.ShadowsocksSettings(protocol);
             case Protocols.TUNNEL: return new Inbound.TunnelSettings(protocol);
-            case Protocols.SOCKS: return new Inbound.SocksSettings(protocol);
+            case Protocols.SOCKS:
+            case Protocols.MIXED: return new Inbound.SocksSettings(protocol);
+            case Protocols.HYSTERIA: return new Inbound.HysteriaSettings();
+            case Protocols.TUIC:
+            case Protocols.MTPROTO:
+            case Protocols.AMNEZIAWG: return new Inbound.HelperSettings(protocol);
+            case Protocols.TUN: return new Inbound.TunSettings();
             case Protocols.HTTP: return new Inbound.HttpSettings(protocol);
             case Protocols.WIREGUARD: return new Inbound.WireguardSettings(protocol);
             default: return null;
@@ -1749,7 +1800,13 @@ Inbound.Settings = class extends XrayCommonClass {
             case Protocols.TROJAN: return Inbound.TrojanSettings.fromJson(json);
             case Protocols.SHADOWSOCKS: return Inbound.ShadowsocksSettings.fromJson(json);
             case Protocols.TUNNEL: return Inbound.TunnelSettings.fromJson(json);
-            case Protocols.SOCKS: return Inbound.SocksSettings.fromJson(json);
+            case Protocols.SOCKS:
+            case Protocols.MIXED: return Inbound.SocksSettings.fromJson(json);
+            case Protocols.HYSTERIA: return Inbound.HysteriaSettings.fromJson(json);
+            case Protocols.TUIC:
+            case Protocols.MTPROTO:
+            case Protocols.AMNEZIAWG: return Inbound.HelperSettings.fromJson(protocol,json);
+            case Protocols.TUN: return Inbound.TunSettings.fromJson(json);
             case Protocols.HTTP: return Inbound.HttpSettings.fromJson(json);
             case Protocols.WIREGUARD: return Inbound.WireguardSettings.fromJson(json);
             default: return null;
@@ -2614,4 +2671,89 @@ Inbound.WireguardSettings.Peer = class extends XrayCommonClass {
             keepAlive: this.keepAlive ?? undefined,
         };
     }
+};
+
+Inbound.HysteriaSettings = class extends Inbound.Settings {
+    constructor(clients = [new Inbound.HysteriaSettings.Client()]) { super(Protocols.HYSTERIA); this.version = 2; this.clients = clients; }
+    static fromJson(json = {}) { return new Inbound.HysteriaSettings((json.clients || []).map(c => Inbound.HysteriaSettings.Client.fromJson(c))); }
+    toJson() { return {version: 2, clients: this.clients.map(c => c.toJson())}; }
+};
+Inbound.HysteriaSettings.Client = class extends Inbound.TrojanSettings.Trojan {
+    constructor() { super(); this.auth = RandomUtil.randomUUID(); delete this.password; }
+    static fromJson(json = {}) {
+        const c = Object.assign(new Inbound.HysteriaSettings.Client(), Inbound.TrojanSettings.Trojan.fromJson(json));
+        c.auth = json.auth ?? ''; delete c.password; return c;
+    }
+    toJson() { const c = super.toJson(); delete c.password; c.auth = this.auth; return c; }
+};
+Inbound.TunSettings = class extends XrayCommonClass {
+    constructor(json = {}) {
+        super(); Object.assign(this, {name: 'dui' + RandomUtil.randomInteger(10, 999), mtu: 1500, gateway: ['172.31.255.1/30'], dns: [], autoSystemRoutingTable: [], autoOutboundsInterface: ''}, json);
+    }
+    static fromJson(json = {}) { return new Inbound.TunSettings(json); }
+};
+
+Inbound.HelperSettings = class extends Inbound.Settings {
+    constructor(protocol, json) {
+        super(protocol);
+        if (json) Object.assign(this, json);
+        else if (protocol === Protocols.TUIC) Object.assign(this, {certificate:'',private_key:'',sni:'',congestion_control:'bbr',alpn:['h3'],zero_rtt_handshake:false,log_level:'warn',max_idle_time:30,authentication_timeout:5,max_udp_relay_packet_size:1500,allowInsecure:false});
+        else if (protocol === Protocols.AMNEZIAWG) {
+            const keys=Wireguard.generateKeypair();
+            this.server={...keys,subnetIp:'10.8.0.0',subnetCidr:24,mtu:1280,primaryDns:'1.1.1.1',secondaryDns:'',jc:4,jmin:40,jmax:70,s1:20,s2:30,s3:20,s4:20,h1:'',h2:'',h3:'',h4:''};
+        }
+        this.clients=json ? (json.clients || []).map(c=>Inbound.HelperClient.fromJson(protocol,c)) : [Inbound.HelperClient.create(protocol,this)];
+    }
+    static fromJson(protocol,json={}) {return new Inbound.HelperSettings(protocol,json);}
+    toJson() {const data={...this};delete data.protocol;data.clients=this.clients.map(c=>c.toJson());return data;}
+};
+Inbound.HelperClient = class extends Inbound.TrojanSettings.Trojan {
+    constructor(protocol) {super();this.helperProtocol=protocol;this.id=RandomUtil.randomUUID();}
+    static fakeTLSSecret(domain='www.cloudflare.com') {
+        const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
+        return 'ee'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('')+Array.from(new TextEncoder().encode(domain),b=>b.toString(16).padStart(2,'0')).join('');
+    }
+    static create(protocol, settings) {
+        const c=new Inbound.HelperClient(protocol);
+        if(protocol===Protocols.MTPROTO){c.secret=this.fakeTLSSecret();c.adTag='';}
+        if(protocol===Protocols.AMNEZIAWG){
+            Object.assign(c,Wireguard.generateKeypair());c.preSharedKey='';c.subId='';
+            const server=settings.server, bits=Number(server.subnetCidr), parts=server.subnetIp.split('.').map(Number);
+            const ip=parts.reduce((n,v)=>(n*256+v)>>>0,0),mask=(0xffffffff<<(32-bits))>>>0,base=(ip&mask)>>>0;
+            const used=new Set((settings.clients||[]).flatMap(x=>x.allowedIPs||[]));let value='';
+            for(let host=2;host<Math.min(65536,2**(32-bits)-1);host++){
+                const n=(base+host)>>>0;value=[n>>>24,(n>>>16)&255,(n>>>8)&255,n&255].join('.')+'/32';if(!used.has(value))break;value='';
+            }
+            c.allowedIPs=[value];
+        }
+        return c;
+    }
+    static fromJson(protocol,json={}) {
+        const c=Object.assign(new Inbound.HelperClient(protocol),Inbound.TrojanSettings.Trojan.fromJson(json),json);
+        c.helperProtocol=protocol;if(protocol===Protocols.TUIC)c.id=json.uuid||json.id||'';return c;
+    }
+    toJson(){
+        const c=super.toJson();c.id=this.id;
+        if(this.helperProtocol===Protocols.MTPROTO){delete c.password;c.secret=this.secret;c.adTag=this.adTag;}
+        if(this.helperProtocol===Protocols.AMNEZIAWG){delete c.password;for(const k of ['privateKey','publicKey','preSharedKey','allowedIPs','forwardedPorts'])if(this[k]!==undefined)c[k]=this[k];}
+        return c;
+    }
+};
+Inbound.prototype.genTuicLink=function(address,port,remark,c){
+    const host=address.includes(':')&&!address.startsWith('[')?'['+address+']':address;
+    const s=this.settings,q=new URLSearchParams({congestion_control:s.congestion_control,alpn:s.alpn.join(','),udp_relay_mode:s.udp_relay_mode||'native'});
+    if(s.sni)q.set('sni',s.sni);if(s.allowInsecure)q.set('allow_insecure','1');
+    return 'tuic://'+encodeURIComponent(c.id)+':'+encodeURIComponent(c.password)+'@'+host+':'+port+'?'+q+'#'+encodeURIComponent(remark);
+};
+Inbound.prototype.genAmneziaConfig=function(address,port,c){
+    const s=this.settings.server,host=address.includes(':')&&!address.startsWith('[')?'['+address+']':address;
+    const lines=['[Interface]','PrivateKey = '+(c.privateKey||''),'Address = '+c.allowedIPs.join(', '),'MTU = '+s.mtu];
+    const dns=[s.primaryDns,s.secondaryDns].filter(Boolean);if(dns.length)lines.push('DNS = '+dns.join(', '));
+    for(const k of ['jc','jmin','jmax','s1','s2','s3','s4','h1','h2','h3','h4','i1','i2','i3','i4','i5'])if(s[k]!==undefined&&s[k]!=='')lines.push(k.charAt(0).toUpperCase()+k.slice(1)+' = '+s[k]);
+    for(const [k,label] of Object.entries({headerProtectionKey:'HeaderProtectionKey',contentPaddingAddition:'ContentPaddingAddition',rekeyAfterTime:'RekeyAfterTime',rekeyTimeout:'RekeyTimeout',rejectAfterTime:'RejectAfterTime',keepaliveTimeout:'KeepaliveTimeout',maxHandshakeAttempts:'MaxHandshakeAttempts'}))if(s[k]!==undefined&&s[k]!=='')lines.push(label+' = '+s[k]);
+    for(const [k,label] of Object.entries({randomTrailers:'RandomTrailers',disableCookies:'DisableCookies'}))if(s[k]===true)lines.push(label+' = on');
+    lines.push('','[Peer]','PublicKey = '+s.publicKey);
+    if(c.preSharedKey)lines.push('PresharedKey = '+c.preSharedKey);
+    lines.push('Endpoint = '+host+':'+port,'AllowedIPs = 0.0.0.0/0','PersistentKeepalive = 25');
+    return lines.join('\n')+'\n';
 };
