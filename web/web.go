@@ -201,6 +201,10 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 
 	engine := gin.Default()
+	// Client credentials may contain '/'. Match the encoded path first and
+	// decode each parameter once so a valid Hysteria auth remains editable.
+	engine.UseRawPath = true
+	engine.UnescapePathValues = true
 
 	webDomain, err := s.settingService.GetWebDomain()
 	if err != nil {
@@ -307,6 +311,7 @@ func (s *Server) startTask() {
 
 	// check client ips from log file every 10 sec
 	s.cron.AddJob("@every 10s", job.NewCheckClientIpJob())
+	s.cron.AddJob("@every 10s", job.NewHelperProtocolJob())
 
 	// check client ips from log file every day
 	s.cron.AddJob("@daily", job.NewClearLogsJob())

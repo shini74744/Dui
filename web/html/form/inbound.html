@@ -19,7 +19,7 @@
     </a-form-item>
 
     <!-- 监听地址 -->
-    <a-form-item>
+    <a-form-item v-if="inbound.protocol !== Protocols.TUN">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
@@ -35,7 +35,7 @@
     <!-- 端口 + 总流量 在同一行 -->
     <a-row :gutter="16">
         <!-- 左侧：端口 -->
-        <a-col :span="12">
+        <a-col :span="12" v-if="inbound.protocol !== Protocols.TUN">
             <a-form-item>
                 <template slot="label">
                     <a-tooltip>
@@ -46,7 +46,7 @@
                         <a-icon type="question-circle"></a-icon>
                     </a-tooltip>
                 </template>
-                <a-input-number v-model.number="inbound.port" :min="1" :max="65531" style="width: 100%" />
+                <a-input-number v-model.number="inbound.port" :min="1" :max="65531" style="width: 100%"></a-input-number>
             </a-form-item>
         </a-col>
 
@@ -62,13 +62,13 @@
                         <a-icon type="question-circle"></a-icon>
                     </a-tooltip>
                 </template>
-                <a-input-number v-model.number="dbInbound.totalGB" :min="0" style="width: 100%" />
+                <a-input-number v-model.number="dbInbound.totalGB" :min="0" style="width: 100%"></a-input-number>
             </a-form-item>
         </a-col>
     </a-row>
 
     <!-- 设备限制 单独占一行 -->
-    <a-form-item>
+    <a-form-item v-if="!inbound.isHelperProtocol() && ![Protocols.TUN, Protocols.MIXED].includes(inbound.protocol)">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
@@ -82,7 +82,7 @@
             v-model.number="dbInbound.deviceLimit"
             :min="0"
             style="width: 100%"
-            placeholder="0 = 不限制" />
+            placeholder="0 = 不限制"></a-input-number>
     </a-form-item>
 
         <a-form-item>
@@ -156,7 +156,7 @@
 </template>
 
 <!-- socks -->
-<template v-if="inbound.protocol === Protocols.SOCKS">
+<template v-if="inbound.protocol === Protocols.SOCKS || inbound.protocol === Protocols.MIXED">
     {{template "form/socks"}}
 </template>
 
@@ -170,6 +170,11 @@
     {{template "form/wireguard"}}
 </template>
 
+<template v-if="inbound.protocol === Protocols.HYSTERIA">{{template "form/hysteria"}}</template>
+<template v-if="inbound.isHelperProtocol()">{{template "form/helpers"}}</template>
+<template v-if="inbound.protocol === Protocols.TUN">{{template "form/tun"}}</template>
+<template v-if="inbound.protocol === Protocols.MIXED"><a-alert type="info" show-icon message="同一个端口支持 HTTP 和 SOCKS5；默认仅监听本机并启用密码。流量按入站统计，不提供独立用户配额。"></a-alert></template>
+
 <!-- stream settings -->
 <template v-if="inbound.canEnableStream()">
     {{template "form/streamSettings"}}
@@ -182,7 +187,7 @@
 </template>
 
 <!-- sniffing -->
-<a-collapse>
+<a-collapse v-if="!inbound.isHelperProtocol()">
     <a-collapse-panel header='Sniffing'>
         {{template "form/sniffing"}}
     </a-collapse-panel>

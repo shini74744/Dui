@@ -4,7 +4,7 @@
   <a-divider :style="{ margin: '3px 0' }"></a-divider>
   <a-form-item label='{{ i18n "security" }}'>
     <a-radio-group v-model="inbound.stream.security" button-style="solid">
-      <a-radio-button value="none">{{ i18n "none" }}</a-radio-button>
+      <a-radio-button v-if="inbound.protocol !== Protocols.HYSTERIA" value="none">{{ i18n "none" }}</a-radio-button>
       <a-radio-button v-if="inbound.canEnableReality() && !inbound.settings.encryption" value="reality">Reality</a-radio-button>
       <a-radio-button value="tls">TLS</a-radio-button>
     </a-radio-group>
@@ -15,13 +15,14 @@
     <a-form-item label="SNI" placeholder="Server Name Indication">
       <a-input v-model.trim="inbound.stream.tls.sni"></a-input>
     </a-form-item>
-    <a-form-item label="Cipher Suites">
+    <a-form-item v-if="inbound.protocol !== Protocols.HYSTERIA" label="Cipher Suites">
       <a-select v-model="inbound.stream.tls.cipherSuites" :dropdown-class-name="themeSwitcher.currentTheme">
         <a-select-option value="">Auto</a-select-option>
         <a-select-option v-for="key,value in TLS_CIPHER_OPTION" :value="key">[[ value ]]</a-select-option>
       </a-select>
     </a-form-item>
-    <a-form-item label="Min/Max Version">
+    <a-form-item v-if="inbound.protocol === Protocols.HYSTERIA" label="TLS">TLS 1.3（QUIC）</a-form-item>
+    <a-form-item v-else label="Min/Max Version">
       <a-input-group compact>
         <a-select v-model="inbound.stream.tls.minVersion" :style="{ width: '50%' }"
           :dropdown-class-name="themeSwitcher.currentTheme">
@@ -33,7 +34,7 @@
         </a-select>
       </a-input-group>
     </a-form-item>
-    <a-form-item label="uTLS">
+    <a-form-item v-if="inbound.protocol !== Protocols.HYSTERIA" label="uTLS">
       <a-select v-model="inbound.stream.tls.settings.fingerprint" :style="{ width: '100%' }"
         :dropdown-class-name="themeSwitcher.currentTheme">
         <a-select-option value=''>None</a-select-option>
@@ -41,7 +42,7 @@
       </a-select>
     </a-form-item>
     <a-form-item label="ALPN">
-      <a-select mode="multiple" :dropdown-class-name="themeSwitcher.currentTheme" v-model="inbound.stream.tls.alpn">
+      <a-select mode="multiple" :disabled="inbound.protocol === Protocols.HYSTERIA" :dropdown-class-name="themeSwitcher.currentTheme" v-model="inbound.stream.tls.alpn">
         <a-select-option v-for="alpn in ALPN_OPTION" :value="alpn">[[ alpn ]]</a-select-option>
       </a-select>
     </a-form-item>

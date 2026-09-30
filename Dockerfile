@@ -1,7 +1,7 @@
 # ========================================================
 # Stage: Builder
 # ========================================================
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27.1-alpine AS builder
 WORKDIR /app
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -10,7 +10,8 @@ RUN apk --no-cache --update add \
   build-base \
   gcc \
   wget \
-  unzip
+  unzip \
+  python3
 
 COPY . .
 

@@ -47,6 +47,7 @@ type swapApplyForm struct {
 }
 
 func (a *ServerController) initRouter(g *gin.RouterGroup) {
+	g.GET("/helperCapabilities", func(c *gin.Context) { jsonObj(c, service.GetHelperCapabilities(), nil) })
 	g.GET("/status", a.status)
 	g.GET("/swap/status", a.getSwapStatus)
 	g.POST("/swap/apply", a.applySwap)

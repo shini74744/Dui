@@ -144,6 +144,10 @@
         },  
         getClientId(protocol, client) {
             switch (protocol) {
+                case Protocols.TUIC: return client.uuid || client.id;
+                case Protocols.MTPROTO: return client.secret;
+                case Protocols.AMNEZIAWG: return client.id || client.publicKey;
+                case Protocols.HYSTERIA: return client.auth;
                 case Protocols.TROJAN: return client.password;
                 case Protocols.SHADOWSOCKS: return client.email;
                 default: return client.id;
@@ -153,6 +157,10 @@
             switch (inbound.protocol) {
                 case Protocols.VMESS: return clients.push(new Inbound.VmessSettings.VMESS());
                 case Protocols.VLESS: return clients.push(new Inbound.VLESSSettings.VLESS());
+                case Protocols.TUIC:
+                case Protocols.MTPROTO:
+                case Protocols.AMNEZIAWG: return clients.push(Inbound.HelperClient.create(inbound.protocol,inbound.settings));
+                case Protocols.HYSTERIA: return clients.push(new Inbound.HysteriaSettings.Client());
                 case Protocols.TROJAN: return clients.push(new Inbound.TrojanSettings.Trojan());
                 case Protocols.SHADOWSOCKS: return clients.push(new Inbound.ShadowsocksSettings.Shadowsocks(clients[0].method, RandomUtil.randomShadowsocksPassword(inbound.settings.method)));
                 default: return null;

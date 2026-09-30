@@ -711,6 +711,186 @@
  	}
  	if c.PinnedPeerCertSha256 != "" {
  		for v := range strings.SplitSeq(c.PinnedPeerCertSha256, ",") {
+--- a/proxy/hysteria/account/config.go
++++ b/proxy/hysteria/account/config.go
+@@ -40,9 +40,10 @@
+ }
+ 
+ type Validator struct {
+-	users sync.Map
+-	ids   sync.Map
+-	mu    sync.Mutex
++	users   sync.Map
++	ids     sync.Map
++	mu      sync.Mutex
++	revoked map[string]chan struct{}
+ }
+ 
+ func NewValidator() *Validator {
+@@ -51,6 +52,14 @@
+ 
+ func (v *Validator) Add(user *protocol.MemoryUser) (err error) {
+ 	v.mu.Lock()
++	key := revocationKey(user.Account.(*MemoryAccount).Auth)
++	if v.revoked == nil {
++		v.revoked = make(map[string]chan struct{})
++	}
++	if old := v.revoked[key]; old != nil {
++		close(old)
++	}
++	v.revoked[key] = make(chan struct{})
+ 	v.users.Store(user.Account.(*MemoryAccount).Auth, user)
+ 	if id, err := uuid.Parse(user.Account.(*MemoryAccount).Auth); err == nil {
+ 		id[6] = 0
+@@ -65,6 +74,11 @@
+ 	v.mu.Lock()
+ 	if user := v.GetByEmail(email); user != nil {
+ 		auth := user.Account.(*MemoryAccount).Auth
++		key := revocationKey(auth)
++		if signal := v.revoked[key]; signal != nil {
++			close(signal)
++			delete(v.revoked, key)
++		}
+ 		v.users.Delete(auth)
+ 		if id, err := uuid.Parse(auth); err == nil {
+ 			id[6] = 0
+@@ -74,6 +88,35 @@
+ 	}
+ 	v.mu.Unlock()
+ 	return
++}
++
++// DUI: a QUIC connection can carry new TCP/UDP requests long after its initial
++// HTTP authentication. Notify all sessions when their user is removed/replaced,
++// including quota expiry and rate changes. No polling timers are needed.
++func (v *Validator) Revoked(user *protocol.MemoryUser) <-chan struct{} {
++	v.mu.Lock()
++	defer v.mu.Unlock()
++	if user != nil {
++		auth := user.Account.(*MemoryAccount).Auth
++		current := v.Get(auth)
++		if current != nil && current.Email == user.Email && current.Level == user.Level {
++			if signal := v.revoked[revocationKey(auth)]; signal != nil {
++				return signal
++			}
++		}
++	}
++	closed := make(chan struct{})
++	close(closed)
++	return closed
++}
++
++func revocationKey(auth string) string {
++	if id, err := uuid.Parse(auth); err == nil {
++		// Xray reserves these bytes for per-connection VLESS routing.
++		id[6], id[7] = 0, 0
++		return id.String()
++	}
++	return auth
+ }
+ 
+ func (v *Validator) Get(auth string) (user *protocol.MemoryUser) {
+--- /dev/null
++++ b/proxy/hysteria/account/dui_revocation_test.go
+@@ -0,0 +1,98 @@
++package account
++
++import (
++	"github.com/xtls/xray-core/common/protocol"
++	"sync"
++	"testing"
++)
++
++func TestDUIQUICAuthenticationRevocation(t *testing.T) {
++	v := NewValidator()
++	user := &protocol.MemoryUser{Email: "test", Level: 100, Account: &MemoryAccount{Auth: "secret"}}
++	v.Add(user)
++	old := v.Revoked(user)
++	select {
++	case <-old:
++		t.Fatal("new user revoked")
++	default:
++	}
++	v.DelByEmail("different")
++	select {
++	case <-old:
++		t.Fatal("unrelated removal revoked user")
++	default:
++	}
++	v.DelByEmail("test")
++	select {
++	case <-old:
++	default:
++		t.Fatal("removed user's QUIC sessions remain authorized")
++	}
++	select {
++	case <-v.Revoked(user):
++	default:
++		t.Fatal("subscription after deletion remains authorized")
++	}
++	v.Add(user)
++	restored := v.Revoked(user)
++	select {
++	case <-restored:
++		t.Fatal("restored user revoked")
++	default:
++	}
++	changed := &protocol.MemoryUser{Email: "test", Level: 200, Account: &MemoryAccount{Auth: "secret"}}
++	v.Add(changed)
++	select {
++	case <-restored:
++	default:
++		t.Fatal("old rate/session not revoked")
++	}
++	select {
++	case <-v.Revoked(user):
++	default:
++		t.Fatal("old rate accepted while racing update")
++	}
++	select {
++	case <-v.Revoked(changed):
++		t.Fatal("updated user revoked")
++	default:
++	}
++}
++func TestDUIRevocationTracksVlessRouteAuth(t *testing.T) {
++	v := NewValidator()
++	user := &protocol.MemoryUser{Email: "route", Account: &MemoryAccount{Auth: "82de13e6-2df5-4dd4-b2b0-4c8878b8dc09"}}
++	v.Add(user)
++	routed := v.Get("82de13e6-2df5-1122-b2b0-4c8878b8dc09")
++	if routed == nil {
++		t.Fatal("routing auth rejected")
++	}
++	revoked := v.Revoked(routed)
++	select {
++	case <-revoked:
++		t.Fatal("routed session prematurely revoked")
++	default:
++	}
++	v.DelByEmail("route")
++	select {
++	case <-revoked:
++	default:
++		t.Fatal("routed session survived removal")
++	}
++}
++func TestDUIRevocationConcurrentChanges(t *testing.T) {
++	v := NewValidator()
++	u := &protocol.MemoryUser{Email: "concurrent", Account: &MemoryAccount{Auth: "secret"}}
++	var wg sync.WaitGroup
++	for range 4 {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for range 200 {
++				v.Add(u)
++				_ = v.Revoked(u)
++				v.DelByEmail(u.Email)
++			}
++		}()
++	}
++	wg.Wait()
++}
 --- a/proxy/proxy.go
 +++ b/proxy/proxy.go
 @@ -18,6 +18,7 @@
@@ -1079,6 +1259,47 @@
 +	}
 +	t.Logf("SS2022 UDP 48 intact packets, upload/download 48 KB each: %v", elapsed)
 +}
+--- a/transport/internet/hysteria/hub.go
++++ b/transport/internet/hysteria/hub.go
+@@ -68,6 +68,17 @@
+ 		if user != nil || ok {
+ 			h.auth = true
+ 			h.user = user
++			if user != nil {
++				revoked := h.validator.Revoked(user)
++				conn := h.conn
++				go func() {
++					select {
++					case <-revoked:
++						_ = conn.CloseWithError(closeErrCodeOK, "authentication revoked")
++					case <-conn.Context().Done():
++					}
++				}()
++			}
+ 
+ 			conn := h.conn
+ 			quicParams := h.quicParams
+@@ -118,7 +129,10 @@
+ }
+ 
+ func (h *httpHandler) StreamDispatcher(ft http3.FrameType, stream *quic.Stream, err error) (bool, error) {
+-	if err != nil || !h.auth {
++	h.Lock()
++	auth, user := h.auth, h.user
++	h.Unlock()
++	if err != nil || !auth {
+ 		return false, nil
+ 	}
+ 
+@@ -133,7 +147,7 @@
+ 			local:  h.conn.LocalAddr(),
+ 			remote: h.conn.RemoteAddr(),
+ 
+-			user: h.user,
++			user: user,
+ 		})
+ 		return true, nil
+ 	default:
 --- a/transport/internet/reality/config.go
 +++ b/transport/internet/reality/config.go
 @@ -16,7 +16,8 @@

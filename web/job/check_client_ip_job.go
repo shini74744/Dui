@@ -875,6 +875,9 @@ func (j *CheckDeviceLimitJob) checkAllClientsLimit() {
 
 func deviceLimitAPIUser(client model.Client, cipher string, banned bool) (map[string]any, error) {
 	if banned {
+		if client.Auth != "" {
+			client.Auth = RandomUUID()
+		}
 		if client.ID != "" {
 			client.ID = RandomUUID()
 		}

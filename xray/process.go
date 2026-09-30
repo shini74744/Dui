@@ -2,6 +2,7 @@ package xray
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,7 +98,9 @@ func NewProcess(xrayConfig *Config) *Process {
 }
 
 type process struct {
-	cmd *exec.Cmd
+	lifecycle sync.Mutex
+	cmd       *exec.Cmd
+	done      chan struct{}
 
 	version string
 	apiPort int
@@ -121,24 +124,31 @@ func newProcess(config *Config) *process {
 }
 
 func (p *process) IsRunning() bool {
-	if p.cmd == nil || p.cmd.Process == nil {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	if p.done == nil {
 		return false
 	}
-	if p.cmd.ProcessState == nil {
+	select {
+	case <-p.done:
+		return false
+	default:
 		return true
 	}
-	return false
 }
 
 func (p *process) GetErr() error {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
 	return p.exitErr
 }
 
 func (p *process) GetResult() string {
-	if len(p.logWriter.lastLine) == 0 && p.exitErr != nil {
-		return p.exitErr.Error()
+	line, err := p.logWriter.LastLine(), p.GetErr()
+	if len(line) == 0 && err != nil {
+		return err.Error()
 	}
-	return p.logWriter.lastLine
+	return line
 }
 
 func (p *process) GetVersion() string {
@@ -181,7 +191,9 @@ func (p *process) refreshAPIPort() {
 }
 
 func (p *process) refreshVersion() {
-	cmd := exec.Command(GetBinaryPath(), "-version")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, GetBinaryPath(), "-version")
 	data, err := cmd.Output()
 	if err != nil {
 		p.version = "Unknown"
@@ -196,6 +208,8 @@ func (p *process) refreshVersion() {
 }
 
 func (p *process) Start() (err error) {
+	p.lifecycle.Lock()
+	defer p.lifecycle.Unlock()
 	if p.IsRunning() {
 		return errors.New("xray is already running")
 	}
@@ -203,7 +217,9 @@ func (p *process) Start() (err error) {
 	defer func() {
 		if err != nil {
 			logger.Error("Failure in running xray-core process: ", err)
+			p.mutex.Lock()
 			p.exitErr = err
+			p.mutex.Unlock()
 		}
 	}()
 
@@ -218,40 +234,84 @@ func (p *process) Start() (err error) {
 	}
 
 	configPath := GetConfigPath()
-	err = os.WriteFile(configPath, data, fs.ModePerm)
+	err = os.WriteFile(configPath, data, fs.FileMode(0600))
 	if err != nil {
 		return common.NewErrorf("Failed to write configuration file: %v", err)
 	}
 
 	cmd := exec.Command(GetBinaryPath(), "-c", configPath)
-	p.cmd = cmd
-
 	cmd.Stdout = p.logWriter
 	cmd.Stderr = p.logWriter
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	p.mutex.Lock()
+	p.cmd = cmd
+	p.done = done
+	p.exitErr = nil
+	p.mutex.Unlock()
 
 	go func() {
-		err := cmd.Run()
+		err := cmd.Wait()
 		if err != nil {
 			logger.Error("Failure in running xray-core:", err)
+			p.mutex.Lock()
 			p.exitErr = err
+			p.mutex.Unlock()
 		}
+		close(done)
 	}()
 
 	p.refreshVersion()
 	p.refreshAPIPort()
-
-	return nil
+	select {
+	case <-done:
+		if err := p.GetErr(); err != nil {
+			return err
+		}
+		return errors.New("xray exited during startup")
+	case <-time.After(300 * time.Millisecond):
+		return nil
+	}
 }
 
 func (p *process) Stop() error {
-	if !p.IsRunning() {
+	p.lifecycle.Lock()
+	defer p.lifecycle.Unlock()
+	p.mutex.RLock()
+	cmd, done := p.cmd, p.done
+	p.mutex.RUnlock()
+	if cmd == nil || done == nil {
 		return errors.New("xray is not running")
 	}
-	
+	select {
+	case <-done:
+		return nil
+	default:
+	}
+	var err error
 	if runtime.GOOS == "windows" {
-		return p.cmd.Process.Kill()
+		err = cmd.Process.Kill()
 	} else {
-		return p.cmd.Process.Signal(syscall.SIGTERM)
+		err = cmd.Process.Signal(syscall.SIGTERM)
+	}
+	if err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	select {
+	case <-done:
+		return nil
+	case <-time.After(5 * time.Second):
+		if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			return err
+		}
+		select {
+		case <-done:
+			return nil
+		case <-time.After(5 * time.Second):
+			return errors.New("xray did not stop")
+		}
 	}
 }
 

@@ -2223,7 +2223,7 @@ func (t *Tgbot) BuildInboundClientDataMessage(inbound_remark string, protocol mo
 	case model.VMESS, model.VLESS:
 		message = t.I18nBot("tgbot.messages.inbound_client_data_id", "InboundRemark=="+inbound_remark, "ClientId=="+client_Id, "ClientEmail=="+client_Email, "ClientTraffic=="+traffic_value, "ClientExp=="+expiryTime, "IpLimit=="+ip_limit, "ClientComment=="+client_Comment)
 
-	case model.Trojan:
+	case model.Trojan, model.Hysteria:
 		message = t.I18nBot("tgbot.messages.inbound_client_data_pass", "InboundRemark=="+inbound_remark, "ClientPass=="+client_TrPassword, "ClientEmail=="+client_Email, "ClientTraffic=="+traffic_value, "ClientExp=="+expiryTime, "IpLimit=="+ip_limit, "ClientComment=="+client_Comment)
 
 	case model.Shadowsocks:
@@ -2274,7 +2274,7 @@ func (t *Tgbot) BuildJSONForProtocol(protocol model.Protocol) (string, error) {
             }]
         }`, client_Id, client_Flow, client_Email, client_LimitIP, client_TotalGB, client_ExpiryTime, client_Enable, client_TgID, client_SubID, client_Comment, client_Reset)
 
-	case model.Trojan:
+	case model.Trojan, model.Hysteria:
 		jsonString = fmt.Sprintf(`{
             "clients": [{
                 "password": "%s",
@@ -2311,6 +2311,19 @@ func (t *Tgbot) BuildJSONForProtocol(protocol model.Protocol) (string, error) {
 		return "", errors.New("unknown protocol")
 	}
 
+	if protocol == model.Hysteria {
+		var settings map[string]any
+		if err := json.Unmarshal([]byte(jsonString), &settings); err != nil {
+			return "", err
+		}
+		for _, raw := range settings["clients"].([]any) {
+			client := raw.(map[string]any)
+			client["auth"] = client["password"]
+			delete(client, "password")
+		}
+		data, err := json.Marshal(settings)
+		return string(data), err
+	}
 	return jsonString, nil
 }
 
@@ -3181,7 +3194,7 @@ func (t *Tgbot) addClient(chatId int64, msg string, messageID ...int) {
 		} else {
 			t.SendMsgToTgbot(chatId, msg, inlineKeyboard)
 		}
-	case model.Trojan:
+	case model.Trojan, model.Hysteria:
 		inlineKeyboard := tu.InlineKeyboard(
 			tu.InlineKeyboardRow(
 				tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.change_email")).WithCallbackData("add_client_ch_default_email"),

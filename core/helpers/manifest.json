@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "components": {
+    "tuic-server": {
+      "repository": "tuic-protocol/tuic",
+      "tag": "tuic-server-1.0.0",
+      "source": "https://github.com/tuic-protocol/tuic/tree/tuic-server-1.0.0",
+      "license": "licenses/tuic-server.txt",
+      "license_sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "platforms": {
+        "amd64": {
+          "url": "https://github.com/tuic-protocol/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-x86_64-unknown-linux-musl",
+          "sha256": "adb808944ca829857bf408d2ee438a156e8171543dbbed3e94964b66b4135393",
+          "kind": "binary"
+        },
+        "arm64": {
+          "url": "https://github.com/tuic-protocol/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-aarch64-unknown-linux-musl",
+          "sha256": "6ac43186b5197afaf0bc707c1241f2b3931d61356fc8354807884b68861a4892",
+          "kind": "binary"
+        },
+        "armv7": {
+          "url": "https://github.com/tuic-protocol/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-armv7-unknown-linux-musleabihf",
+          "sha256": "67ad440cedfa2a5a13f35b46697710ac07da4dd973a7e07a3dcddff54a593911",
+          "kind": "binary"
+        },
+        "386": {
+          "url": "https://github.com/tuic-protocol/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-i686-unknown-linux-musl",
+          "sha256": "be8d94aa39c3a544f0dfa25f305a4a3a8a77c72f3650f93734c6111b97edce48",
+          "kind": "binary"
+        }
+      }
+    },
+    "mtg": {
+      "repository": "MHSanaei/mtg-multi",
+      "tag": "v1.15.0",
+      "source": "https://github.com/MHSanaei/mtg-multi/tree/v1.15.0",
+      "license": "licenses/mtg.txt",
+      "license_sha256": "efd1e8f02057f54978148461bc7796c7c9e73e5ace00c630522d52cb48f315db",
+      "platforms": {
+        "386": {
+          "url": "https://github.com/MHSanaei/mtg-multi/releases/download/v1.15.0/mtg-multi-1.15.0-linux-386.tar.gz",
+          "sha256": "83caf214fdd9d11630dcc81f797c9d03c4cf9a8758f6435189391a4a3118f662",
+          "kind": "tar.gz",
+          "member": "mtg-multi"
+        },
+        "amd64": {
+          "url": "https://github.com/MHSanaei/mtg-multi/releases/download/v1.15.0/mtg-multi-1.15.0-linux-amd64.tar.gz",
+          "sha256": "f1f8763504753fb863a0ddff83eab19c856747289c376275c44b717f1747908e",
+          "kind": "tar.gz",
+          "member": "mtg-multi"
+        },
+        "arm64": {
+          "url": "https://github.com/MHSanaei/mtg-multi/releases/download/v1.15.0/mtg-multi-1.15.0-linux-arm64.tar.gz",
+          "sha256": "9ed776b2052b95e8344896d43fbe01250014f36d7cfdd7f29f7903179bce4bed",
+          "kind": "tar.gz",
+          "member": "mtg-multi"
+        },
+        "armv5": {
+          "url": "https://github.com/MHSanaei/mtg-multi/releases/download/v1.15.0/mtg-multi-1.15.0-linux-armv5.tar.gz",
+          "sha256": "a200d3c56d3055bfb4f5b936b320698aa137b91fdf349f66b047155f63821aba",
+          "kind": "tar.gz",
+          "member": "mtg-multi"
+        },
+        "armv6": {
+          "url": "https://github.com/MHSanaei/mtg-multi/releases/download/v1.15.0/mtg-multi-1.15.0-linux-armv6.tar.gz",
+          "sha256": "432fbf0214e1e279741a75fdefb9584de4ffe0e5f23350337528e4df88aabbae",
+          "kind": "tar.gz",
+          "member": "mtg-multi"
+        },
+        "armv7": {
+          "url": "https://github.com/MHSanaei/mtg-multi/releases/download/v1.15.0/mtg-multi-1.15.0-linux-armv7.tar.gz",
+          "sha256": "b74c5297ed4018809d90ea7247ad6a6179d02eddbbf9a39948e56cf6b0a205c6",
+          "kind": "tar.gz",
+          "member": "mtg-multi"
+        },
+        "s390x": {
+          "url": "https://github.com/MHSanaei/mtg-multi/releases/download/v1.15.0/mtg-multi-1.15.0-linux-s390x.tar.gz",
+          "sha256": "810d966b670fd48ad94f3bf1794d660248d123880f9d43fe5b0e87e00b1626a5",
+          "kind": "tar.gz",
+          "member": "mtg-multi"
+        }
+      }
+    }
+  }
+}

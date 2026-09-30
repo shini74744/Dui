@@ -97,16 +97,21 @@
         </table>
       </template>
     </a-col>
-    <template v-if="dbInbound.hasLink()">
+    <template v-if="inbound.isHelperProtocol()">
+      <a-tag color="green">[[ inbound.protocol === Protocols.TUIC ? 'TLS 1.3' : inbound.protocol === Protocols.MTPROTO ? 'FakeTLS' : 'AmneziaWG 3.1' ]]</a-tag>
+    </template>
+    <template v-if="dbInbound.hasLink() && !inbound.isHelperProtocol()">
       {{ i18n "security" }}
       <a-tag :color="inbound.stream.security == 'none' ? 'red' : 'green'">[[ inbound.stream.security ]]</a-tag>
       <br />
+      <template v-if="inbound.protocol === Protocols.VLESS">
         <td>Authentication</td>
         <a-tag :color="inbound.settings.selectedAuth ? 'green' : 'red'">[[ inbound.settings.selectedAuth ? inbound.settings.selectedAuth : '' ]]</a-tag>
       <br />
       {{ i18n "encryption" }}
         <a-tag :color="inbound.settings.encryption ? 'green' : 'red'">[[ inbound.settings.encryption ? inbound.settings.encryption : '' ]]</a-tag>
       <br />
+      </template>
       <template v-if="inbound.stream.security != 'none'">
         {{ i18n "domainName" }}
         <a-tag v-if="inbound.serverName" :color="inbound.serverName ? 'green' : 'orange'">[[ inbound.serverName ? inbound.serverName : '' ]]</a-tag>
@@ -168,6 +173,10 @@
             <a-tag color="orange">{{ i18n "none" }}</a-tag>
           </td>
         </tr>
+        <tr v-if="infoModal.clientSettings.secret"><td>Secret</td><td><a-tag class="info-large-tag">[[ infoModal.clientSettings.secret ]]</a-tag></td></tr>
+        <tr v-if="infoModal.clientSettings.publicKey"><td>PublicKey</td><td><a-tag class="info-large-tag">[[ infoModal.clientSettings.publicKey ]]</a-tag></td></tr>
+        <tr v-if="infoModal.clientSettings.allowedIPs"><td>隧道地址</td><td><a-tag>[[ infoModal.clientSettings.allowedIPs.join(', ') ]]</a-tag></td></tr>
+        <tr v-if="infoModal.clientSettings.auth"><td>Auth</td><td><a-tag class="info-large-tag">[[ infoModal.clientSettings.auth ]]</a-tag></td></tr>
         <tr v-if="infoModal.clientSettings.password">
           <td>{{ i18n "password" }}</td>
           <td>
@@ -237,7 +246,7 @@
             </a-tooltip>
           </td>
         </tr>
-        <tr v-if="app.ipLimitEnable">
+        <tr v-if="app.ipLimitEnable && !inbound.isHelperProtocol()">
           <td>{{ i18n "pages.inbounds.IPLimit" }}</td>
           <td>
             <a-tag>[[ infoModal.clientSettings.limitIp ]]</a-tag>
@@ -307,7 +316,7 @@
           </tr-info-title>
           <a :href="[[ infoModal.subLink ]]" target="_blank">[[ infoModal.subLink ]]</a>
         </tr-info-row>
-        <tr-info-row class="tr-info-row">
+        <tr-info-row v-if="!inbound.isHelperProtocol()" class="tr-info-row">
           <tr-info-title class="tr-info-title">
             <a-tag color="purple">Json Link</a-tag>
             <a-tooltip title='{{ i18n "copy" }}'>
@@ -530,7 +539,8 @@
           Protocols.VMESS, 
           Protocols.VLESS,
           Protocols.TROJAN, 
-          Protocols.SHADOWSOCKS
+          Protocols.HYSTERIA,
+          Protocols.SHADOWSOCKS, Protocols.TUIC, Protocols.MTPROTO, Protocols.AMNEZIAWG
         ].includes(this.inbound.protocol)
       ) {
         if (app.ipLimitEnable && this.clientSettings.limitIp) {

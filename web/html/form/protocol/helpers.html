@@ -1,0 +1,28 @@
+{{define "form/helpers"}}
+<a-alert v-if="inModal.helperCapabilities[inbound.protocol]?.available === false" type="warning" show-icon :message="inModal.helperCapabilities[inbound.protocol].reason"></a-alert>
+<a-alert v-if="inbound.protocol === Protocols.TUIC" type="info" show-icon message="TUIC v5 使用 UDP 和 TLS，出口直连。统计入站总流量，支持用户开关和到期时间；不提供单用户流量配额、用户限速或来源 IP 数限制。"></a-alert>
+<a-alert v-if="inbound.protocol === Protocols.MTPROTO" type="info" show-icon message="MTProto FakeTLS 供 Telegram 客户端使用，出口直连。支持多用户、流量配额和到期时间；不提供用户限速或来源 IP 数限制。"></a-alert>
+<a-alert v-if="inbound.protocol === Protocols.AMNEZIAWG" type="info" show-icon message="AmneziaWG 用户态隧道，出口经过 Xray 路由，客户端请导入专用配置。支持用户流量配额和到期时间；暂不提供用户限速、来源 IP 数限制和公网 IPv6 地址绑定。"></a-alert>
+<a-form :colon="false" :label-col="{ md: {span:8} }" :wrapper-col="{ md: {span:14} }">
+ <template v-if="inbound.protocol === Protocols.TUIC">
+  <a-form-item label="证书文件"><a-input v-model.trim="inbound.settings.certificate"></a-input></a-form-item>
+  <a-form-item label="私钥文件"><a-input v-model.trim="inbound.settings.private_key"></a-input></a-form-item>
+  <a-form-item label="服务器名称 SNI"><a-input v-model.trim="inbound.settings.sni"></a-input></a-form-item>
+  <a-form-item label="拥塞控制"><a-select v-model="inbound.settings.congestion_control"><a-select-option v-for="v in ['bbr','cubic','new_reno']" :value="v">[[v]]</a-select-option></a-select></a-form-item>
+  <a-form-item label="ALPN"><a-select mode="tags" v-model="inbound.settings.alpn"></a-select></a-form-item>
+  <a-form-item label="跳过证书验证"><a-switch v-model="inbound.settings.allowInsecure"></a-switch><div v-if="inbound.settings.allowInsecure" class="ant-form-explain" style="color:inherit">已跳过服务器证书验证，客户端无法确认服务器身份。</div></a-form-item>
+ </template>
+ <template v-if="inbound.protocol === Protocols.AMNEZIAWG">
+  <a-form-item label="服务端私钥"><a-input v-model.trim="inbound.settings.server.privateKey" @change="inbound.settings.server.publicKey = Wireguard.generateKeypair(inbound.settings.server.privateKey).publicKey"></a-input></a-form-item>
+  <a-form-item label="服务端公钥"><a-input v-model.trim="inbound.settings.server.publicKey"></a-input></a-form-item>
+  <a-form-item label="隧道网段"><a-input v-model.trim="inbound.settings.server.subnetIp"></a-input></a-form-item>
+  <a-form-item label="CIDR"><a-input-number v-model.number="inbound.settings.server.subnetCidr" :min="16" :max="30"></a-input-number></a-form-item>
+  <a-form-item label="MTU"><a-input-number v-model.number="inbound.settings.server.mtu" :min="576" :max="9000"></a-input-number></a-form-item>
+  <a-form-item label="DNS"><a-input v-model.trim="inbound.settings.server.primaryDns"></a-input></a-form-item>
+  <a-form-item v-for="v in ['jc','jmin','jmax','s1','s2','s3','s4']" :key="v" :label="v.toUpperCase()"><a-input-number v-model.number="inbound.settings.server[v]" :min="0"></a-input-number></a-form-item>
+  <a-form-item v-for="v in ['h1','h2','h3','h4']" :key="v" :label="v.toUpperCase()"><a-input v-model.trim="inbound.settings.server[v]"></a-input></a-form-item>
+ </template>
+</a-form>
+<a-collapse activeKey="0" v-for="(client,index) in inbound.settings.clients.slice(0,1)" v-if="!isEdit"><a-collapse-panel header="用户">{{template "form/client"}}</a-collapse-panel></a-collapse>
+<a-collapse v-else><a-collapse-panel :header="'用户数量：' + inbound.settings.clients.length"><div v-for="client in inbound.settings.clients" :key="client.email">[[client.email]]</div></a-collapse-panel></a-collapse>
+{{end}}

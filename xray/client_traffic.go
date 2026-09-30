@@ -1,6 +1,8 @@
 package xray
 
 type ClientTraffic struct {
+	// Runtime activity can be observed without per-user byte counters (TUIC).
+	Active     bool   `json:"-" form:"-" gorm:"-"`
 	Id         int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	InboundId  int    `json:"inboundId" form:"inboundId"`
 	Enable     bool   `json:"enable" form:"enable"`

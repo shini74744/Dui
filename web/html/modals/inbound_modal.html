@@ -15,6 +15,7 @@
         confirm: null,
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
+        helperCapabilities: {},
         ok() {
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
@@ -34,6 +35,9 @@
             this.confirm = confirm;
             this.visible = true;
             this.isEdit = isEdit;
+            HttpUtil.get('/dui/api/server/helperCapabilities').then(msg => {
+                if (msg.success) this.helperCapabilities = msg.obj || {};
+            });
         },
         close() {
             inModal.visible = false;

@@ -1,0 +1,12 @@
+{{define "form/hysteria"}}
+<a-alert type="info" show-icon message="Hysteria 2 使用 UDP、QUIC 和 TLS，需要放行 UDP 端口。认证、配额和用户限速按用户管理。"></a-alert>
+<a-collapse activeKey="0" v-for="(client, index) in inbound.settings.clients.slice(0,1)" v-if="!isEdit">
+  <a-collapse-panel header='{{ i18n "pages.inbounds.client" }}'>{{template "form/client"}}</a-collapse-panel>
+</a-collapse>
+<a-collapse v-else><a-collapse-panel :header="'用户数量：' + inbound.settings.clients.length">
+  <div v-for="client in inbound.settings.clients" :key="client.email">[[ client.email ]]</div>
+</a-collapse-panel></a-collapse>
+<a-form :colon="false" :label-col="{ md: {span:8} }" :wrapper-col="{ md: {span:14} }">
+  <a-form-item label="UDP 空闲超时（秒）"><a-input-number v-model.number="inbound.stream.hysteria.udpIdleTimeout" :min="2" :max="600"></a-input-number></a-form-item>
+</a-form>
+{{end}}
