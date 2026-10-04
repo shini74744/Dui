@@ -32,19 +32,47 @@ const DuiOutboundReferences = (() => {
 
     function inspect(config, tag) {
         const result = { routes: [], balancers: 0, observatories: 0, chains: 0, total: 0 };
-        if (!tag) return result;
+        const tags = [...new Set(list(Array.isArray(tag) ? tag : [tag]).filter(value => typeof value === 'string' && value))];
+        if (!tags.length) return result;
         visit(config || {}, (obj, key, kind, index) => {
-            if (obj[key] !== tag) return;
+            if (!tags.includes(obj[key])) return;
             if (kind === 'routes') result.routes.push(index);
             else result[kind]++;
             result.total++;
         }, (obj, key, kind) => {
-            if (matches(obj[key], tag)) { result[kind]++; result.total++; }
+            if (tags.some(value => matches(obj[key], value))) { result[kind]++; result.total++; }
         });
         return result;
     }
 
-    function prepare(config, index, outbound, mode = 'sync') {
+    // Draft-only history follows the tag, not a row index, and never enters the Xray payload.
+    function pruneRenames(history, config) {
+        const tags = new Set(list(config?.outbounds).map(item => item?.tag));
+        return list(history).filter(entry => entry && tags.has(entry.tag)).map(entry => ({
+            tag: entry.tag,
+            previousTags: [...new Set(list(entry.previousTags))].filter(tag =>
+                typeof tag === 'string' && tag && !tags.has(tag) && inspect(config, tag).total > 0)
+        })).filter(entry => entry.previousTags.length > 0);
+    }
+
+    function pendingTags(history, config, index) {
+        const tag = config?.outbounds?.[index]?.tag;
+        return pruneRenames(history, config).find(entry => entry.tag === tag)?.previousTags || [];
+    }
+
+    function rememberRename(history, config, index, next, mode) {
+        const oldTag = config.outbounds[index].tag;
+        const newTag = next.outbounds[index].tag;
+        const clean = pruneRenames(history, config);
+        const previousTags = pendingTags(clean, config, index);
+        const result = clean.filter(entry => entry.tag !== oldTag);
+        if (mode === 'replace') {
+            result.push({ tag: newTag, previousTags: [...previousTags, ...(oldTag !== newTag ? [oldTag] : [])] });
+        }
+        return pruneRenames(result, next);
+    }
+
+    function prepare(config, index, outbound, mode = 'sync', previousTags = []) {
         const original = config?.outbounds?.[index];
         if (!original) throw new Error('原出站已不存在，请关闭窗口后重新编辑。');
         const newTag = String(outbound?.tag || '').trim();
@@ -58,33 +86,33 @@ const DuiOutboundReferences = (() => {
         const next = clone(config);
         const edited = clone(outbound);
         edited.tag = newTag;
-        if (oldTag === newTag) {
-            next.outbounds[index] = edited;
-            return next;
-        }
         if (mode === 'replace') {
             next.outbounds[index] = edited;
             return next;
         }
         const oldTags = config.outbounds.map(item => item?.tag).filter(tag => typeof tag === 'string');
+        // Do not claim an old name now owned by another outbound.
+        const sourceTags = [oldTag, ...list(previousTags).filter(tag =>
+            typeof tag === 'string' && tag && !oldTags.includes(tag))];
         next.outbounds[index] = edited;
         visit(next, (obj, key) => {
-            if (obj[key] === oldTag) obj[key] = newTag;
+            if (sourceTags.includes(obj[key])) obj[key] = newTag;
         }, (obj, key) => {
             if (!Array.isArray(obj[key])) return;
             const before = obj[key].slice();
-            const wasSelected = matches(before, oldTag);
+            const wasSelected = sourceTags.some(tag => matches(before, tag));
             let after = before.slice();
             if (wasSelected) {
                 // A full tag can also be a prefix for other nodes. Retain that prefix when shared.
-                const sharedPrefix = oldTags.some(tag => tag !== oldTag && tag.startsWith(oldTag));
-                after = after.map(prefix => prefix === oldTag && !sharedPrefix ? newTag : prefix);
+                after = after.map(prefix => sourceTags.includes(prefix) &&
+                    !oldTags.some(tag => tag !== oldTag && tag.startsWith(prefix)) ? newTag : prefix);
                 if (!matches(after, newTag)) after.push(newTag);
             }
             // Preserve membership of every existing node; broad prefixes must not silently expand a group.
             for (const tag of oldTags) {
                 const renamed = tag === oldTag ? newTag : tag;
-                if (matches(before, tag) !== matches(after, renamed)) {
+                const selectedBefore = tag === oldTag ? wasSelected : matches(before, tag);
+                if (selectedBefore !== matches(after, renamed)) {
                     throw new Error('新标签会改变负载均衡或观测分组的前缀匹配范围。请换一个标签，或先手动调整分组。');
                 }
             }
@@ -93,5 +121,5 @@ const DuiOutboundReferences = (() => {
         return next;
     }
 
-    return { inspect, prepare };
+    return { inspect, prepare, pruneRenames, pendingTags, rememberRename };
 })();

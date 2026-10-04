@@ -7,8 +7,9 @@
              <div v-if="outModal.isEdit && outModal.references.total > 0" style="text-align: left; margin-bottom: 12px; overflow-wrap: anywhere;">
                  <div>已有 [[ outModal.references.routes.length ]] 条路由引用<span v-if="outModal.references.total > outModal.references.routes.length">，另有 [[ outModal.references.total - outModal.references.routes.length ]] 处关联引用</span>。“同步保存”会一并更新。</div>
                  <div>弹窗确认后，仍需点击页面“保存”才会生效。</div>
-                 <a-alert v-if="outModal.originalTag !== outbound.tag" type="info" show-icon style="margin-top: 8px;">
-                     <span slot="message" :style="{ color: themeSwitcher.currentTheme === 'dark' ? '#e8e8e8' : undefined }">普通“确定”不更新路由引用，改名后须手动调整。</span>
+                 <div v-if="outModal.previousTags.length > 0">还有未同步的旧标签引用，点击“同步保存”可一并更新。</div>
+                 <a-alert v-if="outModal.originalTag !== outbound.tag || outModal.previousTags.length > 0" type="info" show-icon style="margin-top: 8px;">
+                     <span slot="message" :style="{ color: themeSwitcher.currentTheme === 'dark' ? '#e8e8e8' : undefined }">普通“确定”不更新路由引用，可稍后重新编辑并“同步保存”。</span>
                  </a-alert>
                  <a-alert v-if="outModal.referenceError" type="warning" show-icon style="margin-top: 8px;">
                      <span slot="message" :style="{ color: themeSwitcher.currentTheme === 'dark' ? '#e8e8e8' : undefined }">[[ outModal.referenceError ]]</span>
@@ -41,6 +42,7 @@
         tags: [],
         originalTag: '',
         referenceSettings: null,
+        previousTags: [],
         outboundIndex: -1,
         references: { routes: [], balancers: 0, observatories: 0, chains: 0, total: 0 },
         referenceError: '',
@@ -49,7 +51,7 @@
             if (!outModal.isValid || (mode === 'sync' && outModal.referenceError)) return;
             ObjectUtil.execute(outModal.confirm, outModal.outbound.toJson(), mode);
         },
-        show({ title='', okText='{{ i18n "sure" }}', outbound, confirm=(outbound)=>{}, isEdit=false, tags=[], referenceSettings=null, outboundIndex=-1 }) {
+        show({ title='', okText='{{ i18n "sure" }}', outbound, confirm=(outbound)=>{}, isEdit=false, tags=[], referenceSettings=null, previousTags=[], outboundIndex=-1 }) {
             this.title = title;
             this.okText = okText;
             this.confirm = confirm;
@@ -63,7 +65,8 @@
             this.originalTag = isEdit ? String(outbound.tag || '') : '';
             this.referenceSettings = referenceSettings;
             this.outboundIndex = outboundIndex;
-            this.references = DuiOutboundReferences.inspect(referenceSettings, this.originalTag);
+            this.previousTags = previousTags.slice();
+            this.references = DuiOutboundReferences.inspect(referenceSettings, [this.originalTag, ...this.previousTags]);
             this.referenceError = '';
             this.check()
         },
@@ -80,7 +83,7 @@
             this.referenceError = '';
             if (!this.duplicateTag && this.isEdit && this.referenceSettings) {
                 try {
-                    DuiOutboundReferences.prepare(this.referenceSettings, this.outboundIndex, this.outbound.toJson(), 'sync');
+                    DuiOutboundReferences.prepare(this.referenceSettings, this.outboundIndex, this.outbound.toJson(), 'sync', this.previousTags);
                 } catch (error) {
                     this.referenceError = error.message;
                 }
