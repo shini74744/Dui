@@ -470,6 +470,8 @@
 "useComma" = "Item yang dipisahkan koma"
 
 [pages.xray.outbound]
+"dragSort" = "Seret untuk mengurutkan atau gunakan tombol panah atas/bawah"
+"orderHint" = "Seret pegangan untuk mengubah urutan, lalu klik Simpan. Outbound pertama digunakan jika tidak ada aturan perutean yang cocok."
 "addOutbound" = "Tambahkan Keluar"
 "addReverse" = "Tambahkan Revers"
 "editOutbound" = "Edit Keluar"

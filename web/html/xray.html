@@ -347,6 +347,7 @@
 {{template "page/body_scripts" .}}
 <script src="{{ .base_path }}assets/js/model/outbound.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/util/outbound-references.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/util/outbound-order.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/util/strategy-probes.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/util/strategy-probes-i18n.js?{{ .cur_ver }}"></script>
 {{template "settings/xray/strategyProbesComponent" .}}
@@ -1444,12 +1445,16 @@
         outbounds.splice(realIndex, 1);
         this.outboundSettings = JSON.stringify(outbounds);
       },
+      replaceOutbound(from, to) {
+        const settings = this.templateSettings;
+        if (!settings) return;
+        const reordered = DuiOutboundOrder.move(settings.outbounds, from, to);
+        if (reordered === settings.outbounds) return;
+        settings.outbounds = reordered;
+        this.templateSettings = settings;
+      },
       setFirstOutbound(index) {
-        outbounds = this.templateSettings.outbounds;
-        const row = this.outboundData[index];
-        const realIndex = row && row._physicalIndex !== undefined ? row._physicalIndex : index;
-        outbounds.splice(0, 0, outbounds.splice(realIndex, 1)[0]);
-        this.outboundSettings = JSON.stringify(outbounds);
+        this.replaceOutbound(index, 0);
       },
       addReverse() {
         reverseModal.show({

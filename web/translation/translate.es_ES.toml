@@ -470,6 +470,8 @@
 "useComma" = "Elementos separados por comas"
 
 [pages.xray.outbound]
+"dragSort" = "Arrastra para ordenar o usa las flechas arriba/abajo"
+"orderHint" = "Arrastra el control para cambiar el orden y pulsa Guardar. La primera salida se usa cuando no coincide ninguna regla de enrutamiento."
 "addOutbound" = "Agregar salida"
 "addReverse" = "Agregar reverso"
 "editOutbound" = "Editar salida"

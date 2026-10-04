@@ -470,6 +470,8 @@
 "useComma" = "カンマ区切りの項目"
 
 [pages.xray.outbound]
+"dragSort" = "ドラッグで並べ替え（上下矢印キーも使用可）"
+"orderHint" = "行のハンドルで並べ替え、ページの「保存」で適用します。ルーティング規則に一致しない場合は先頭のアウトバウンドを使用します。"
 "addOutbound" = "アウトバウンド追加"
 "addReverse" = "リバース追加"
 "editOutbound" = "アウトバウンド編集"

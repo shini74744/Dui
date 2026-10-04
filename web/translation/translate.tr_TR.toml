@@ -470,6 +470,8 @@
 "useComma" = "Virgülle ayrılmış öğeler"
 
 [pages.xray.outbound]
+"dragSort" = "Sıralamak için sürükleyin veya yukarı/aşağı oklarını kullanın"
+"orderHint" = "Sırayı değiştirmek için tutamacı sürükleyin, ardından Kaydet düğmesine basın. Hiçbir yönlendirme kuralı eşleşmezse ilk çıkış kullanılır."
 "addOutbound" = "Giden Ekle"
 "addReverse" = "Ters Ekle"
 "editOutbound" = "Gideni Düzenle"

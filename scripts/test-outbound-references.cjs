@@ -4,6 +4,7 @@ const read = name => fs.readFileSync(root + '/' + name, 'utf8');
 const plain = value => JSON.parse(JSON.stringify(value));
 const context = vm.createContext({ console });
 vm.runInContext(read('web/assets/js/util/outbound-references.js') + '\nthis.refs = DuiOutboundReferences;', context);
+vm.runInContext(read('web/assets/js/util/outbound-order.js') + '\nthis.outboundOrder = DuiOutboundOrder;', context);
 const { refs } = context;
 const oldTag = 'HK-HKT-B-DDG', newTag = 'HK-HKT-NEW';
 const node = tag => ({tag, protocol:'freedom', settings:{domainStrategy:'AsIs'}});
@@ -175,6 +176,7 @@ test('parameter-only ordinary edit and cancel preserve pending synchronization',
 });
 test('pending synchronization follows outbound through default-order changes',()=>{
     const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    app.replaceOutbound=outboundMethods.replaceOutbound.bind(app);
     outboundMethods.setFirstOutbound.call(app,1);
     assert.equal(app.templateSettings.outbounds[0].tag,newTag);
     methods.editOutbound.call(app,0);assert.equal(context.modal.references.routes.length,2);context.modal.ok('sync');

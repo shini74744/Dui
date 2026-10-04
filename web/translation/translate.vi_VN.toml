@@ -470,6 +470,8 @@
 "useComma" = "Các mục được phân tách bằng dấu phẩy"
 
 [pages.xray.outbound]
+"dragSort" = "Kéo để sắp xếp hoặc dùng phím mũi tên lên/xuống"
+"orderHint" = "Kéo tay nắm để đổi thứ tự, rồi nhấn Lưu trên trang. Đầu ra đầu tiên được dùng khi không khớp quy tắc định tuyến nào."
 "addOutbound" = "Thêm thư đi"
 "addReverse" = "Thêm đảo ngược"
 "editOutbound" = "Chỉnh sửa gửi đi"
