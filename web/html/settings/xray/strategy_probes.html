@@ -10,6 +10,9 @@
 .dui-probe-targets { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
 .dui-probe-targets .ant-tag { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 .dui-probe-json { font-family:monospace; direction:ltr; }
+.dui-probe-history { margin-top:24px; min-width:0; }
+.dui-probe-history .ant-table { overflow-wrap:anywhere; }
+.dui-probe-history .ant-select { width:240px; max-width:100%; }
 .dui-probe-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 </style>
 <script type="text/x-template" id="dui-strategy-probes-template">
@@ -73,6 +76,37 @@
     <a-alert v-if="errors[active] && errors[active]!=='pending'" type="error" show-icon :message="text.invalid"></a-alert>
     <a-alert v-if="rawDirty[active]" type="warning" show-icon :message="text.apply + ' · ' + text.saveHint"></a-alert>
     <p class="dui-probe-help">[[ text.saveHint ]]</p>
+    <section class="dui-probe-history">
+        <a-button @click="toggleHistory" :aria-expanded="showHistory">[[ text.history ]]</a-button>
+        <template v-if="showHistory">
+            <p class="dui-probe-help">[[ text.retention ]]</p>
+            <div class="dui-probe-actions">
+                <a-select v-model="historyTag" :aria-label="text.targets" @change="loadHistory(1)">
+                    <a-select-option value="">[[ text.allOutbounds ]]</a-select-option>
+                    <a-select-option v-for="tag in history.tags" :key="tag" :value="tag">[[ tag ]]</a-select-option>
+                </a-select>
+                <a-button :loading="historyLoading" @click="loadHistory(history.page)">[[ text.refreshHistory ]]</a-button>
+            </div>
+            <a-alert v-if="historyError || (history.state && history.state!=='ok')" type="warning" show-icon
+                :message="history.state==='unsupported' ? text.unsupportedHistory : text.unavailableHistory"></a-alert>
+            <a-alert v-if="history.gap" type="warning" show-icon :message="text.historyGap"></a-alert>
+            <a-table :columns="historyColumns" :data-source="history.rows" row-key="id" :pagination="false"
+                :loading="historyLoading" :scroll="{x:540}" :locale="{emptyText:text.emptyHistory}" size="small">
+                <template slot="time" slot-scope="value">[[ formatProbeTime(value) ]]</template>
+                <template slot="outbound" slot-scope="value,row">
+                    <span>[[ value ]]</span>
+                    <div v-if="row.strategy.startsWith('legacy')" class="dui-probe-help">[[ text.sharedHistory ]]</div>
+                </template>
+                <template slot="status" slot-scope="value"><a-tag :color="value==='success' ? 'green' : (value==='failed' ? 'red' : 'orange')">[[ text[value] ]]</a-tag></template>
+                <template slot="delay" slot-scope="value,row">[[ row.status==='success' ? Number(value).toFixed(1)+' ms' : '—' ]]</template>
+            </a-table>
+            <div class="dui-probe-actions">
+                <a-button :disabled="historyLoading || history.page<=1" @click="loadHistory(history.page-1)">[[ text.previousHistory ]]</a-button>
+                <span>[[ history.page ]] / [[ Math.max(1,Math.ceil(history.total/50)) ]]</span>
+                <a-button :disabled="historyLoading || history.page*50>=history.total" @click="loadHistory(history.page+1)">[[ text.nextHistory ]]</a-button>
+            </div>
+        </template>
+    </section>
 </div>
 </script>
 <script>
@@ -89,15 +123,24 @@ Vue.component('dui-strategy-probes', {
             rawDirty[type]=false; errors[type]=''; advanced[type]=false;
         }
         return {types, active:types.find(type=>DuiStrategyProbes.selectors(this.value,type).length)||'leastPing',
-            lang:LanguageManager.getLanguage(), drafts,raw,rawDirty,errors,advanced};
+            lang:LanguageManager.getLanguage(), drafts,raw,rawDirty,errors,advanced,
+            showHistory:false,historyLoading:false,historyError:false,historyTag:'',historyRequest:0,
+            history:{rows:[],tags:[],total:0,page:1,state:'',gap:false}};
     },
-    beforeDestroy() {this.$emit('validity',true)},
+    beforeDestroy() {this.historyRequest++;this.$emit('validity',true)},
     computed: {
         text() {return DuiProbeI18n.get(this.lang)},
+        historyColumns() {return [
+            {title:this.text.probeTime,dataIndex:'time',width:175,scopedSlots:{customRender:'time'}},
+            {title:this.text.targets,dataIndex:'outbound',width:165,scopedSlots:{customRender:'outbound'}},
+            {title:this.text.probeStatus,dataIndex:'status',width:140,scopedSlots:{customRender:'status'}},
+            {title:this.text.probeDelay,dataIndex:'delay',width:90,scopedSlots:{customRender:'delay'}}
+        ]},
         current() {return this.drafts[this.active]},
         targets() {return DuiStrategyProbes.selectors(this.value,this.active)}
     },
     watch: {
+        active() {this.historyRequest++;this.historyTag='';this.history={rows:[],tags:[],total:0,page:1,state:'',gap:false};if(this.showHistory)this.loadHistory(1)},
         value: {deep:true, handler() {
             for (const type of this.types) {
                 if (this.errors[type] || this.rawDirty[type]) continue;
@@ -108,6 +151,19 @@ Vue.component('dui-strategy-probes', {
         advanced: {deep:true, handler() {this.notifyValidity()}}
     },
     methods: {
+        toggleHistory() {this.showHistory=!this.showHistory;if(this.showHistory)this.loadHistory(1);else {this.historyRequest++;this.historyLoading=false}},
+        formatProbeTime(value) {return new Date(value).toLocaleString(this.lang,{hour12:false})},
+        async loadHistory(page) {
+            const request=++this.historyRequest;this.historyLoading=true;this.historyError=false;
+            try {
+                const query=new URLSearchParams({strategy:this.active,outbound:this.historyTag,page:String(page)});
+                const response=await HttpUtil.get('/dui/xray/probeHistory?'+query.toString());
+                if(request!==this.historyRequest)return;
+                if(!response.success||!response.obj)throw new Error('history unavailable');
+                this.history=response.obj;
+            } catch(_) {if(request===this.historyRequest)this.historyError=true}
+            finally {if(request===this.historyRequest)this.historyLoading=false}
+        },
         notifyValidity() {this.$emit('validity',this.types.every(type=>!this.errors[type]&&!this.rawDirty[type]))},
         formChange() {
             this.errors[this.active]=DuiStrategyProbes.validate(this.active,this.current);
