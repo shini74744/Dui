@@ -24,6 +24,7 @@
 .dui-product-title{font-size:16px;font-weight:500;line-height:1.5;min-width:0}
 .dui-update-check,.dui-update-install{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-size:12px;line-height:1.5;border-radius:16px;cursor:pointer;max-width:100%;white-space:normal;text-align:center;transition:background .2s,border-color .2s}
 .dui-update-check{margin-inline-start:auto;padding:5px 8px;border:1px solid transparent;background:transparent;color:#627080}
+.dui-update-check.has-update{color:#087e6d}
 .dui-update-check:hover{background:rgba(0,170,143,.08);color:#087e6d}
 .dui-update-check:disabled,.dui-update-install:disabled{cursor:default;opacity:.6}
 .dui-update-check:focus-visible,.dui-update-install:focus-visible{outline:2px solid #00aa8f;outline-offset:3px}
@@ -57,6 +58,7 @@
 .dui-product-link-list .ant-tag{white-space:normal;overflow-wrap:anywhere;margin-bottom:0}
 .dark .dui-updates{color:#dce4ec}
 .dark .dui-update-check{color:#b1bfcc}
+.dark .dui-update-check.has-update{color:#62dec5}
 .dark .dui-update-install,.dark .dui-update-available,.dark .dui-update-current-state{color:#62dec5}
 .dark .dui-update-hint,.dark .dui-update-byte-count{color:#9facb9}
 @media(max-width:575px){.dui-product-heading{gap:8px}.dui-update-entry{gap:8px 10px}.dui-update-install{padding:6px 9px}.dui-product-links{margin-top:24px}}

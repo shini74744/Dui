@@ -31,8 +31,9 @@ const DuiUpdateText = (() => {
   'ar-EG':['محدّث','تعذر فحص التحديثات. حاول مجددًا.'],
   'fa-IR':['به‌روز است','بررسی به‌روزرسانی ناموفق بود. دوباره تلاش کنید.']
  };
- keys.push('upToDate','checkFailed');
- Object.keys(rows).forEach(lang=>rows[lang].push(...inlineRows[lang]));
+ const updateLabels={'zh-CN':'更新版本','zh-TW':'更新版本','en-US':'Update version','ja-JP':'バージョンを更新','ru-RU':'Обновить версию','vi-VN':'Cập nhật phiên bản','es-ES':'Actualizar versión','id-ID':'Perbarui versi','uk-UA':'Оновити версію','tr-TR':'Sürümü güncelle','pt-BR':'Atualizar versão','ar-EG':'تحديث الإصدار','fa-IR':'به‌روزرسانی نسخه'};
+ keys.push('upToDate','checkFailed','updateVersion');
+ Object.keys(rows).forEach(lang=>rows[lang].push(...inlineRows[lang],updateLabels[lang]));
  const maps=Object.fromEntries(Object.entries(rows).map(([k,v])=>[k,Object.fromEntries(keys.map((key,i)=>[key,v[i]]))]));
  return {keys,maps,get:lang=>maps[lang]||maps['en-US']};
 })();
@@ -46,7 +47,7 @@ const DuiUpdates = {
   offers(){return ['panel','core'].filter(k=>this.state.items[k]?.available)},
   phase(){return this.t[this.job.phase]||this.job.phase||''},
   checking(){return this.state.checking||(!this.job.busy&&this.polling)},
-  detailsVisible(){return this.expanded||this.offers.length>0||!!this.job.id||this.starting||this.offline||!!this.state.checkError}
+  detailsVisible(){return this.expanded||!!this.job.id||this.starting||this.offline||!!this.state.checkError}
  },
  methods:{
   size(n){if(!Number.isFinite(n))return '—';return (n/1048576).toFixed(1)+' MB'},
@@ -96,8 +97,10 @@ const DuiUpdates = {
  <section class="dui-updates">
   <div class="dui-product-heading">
    <div class="dui-product-title"><slot name="title">[[t.title]]</slot></div>
-   <button type="button" class="dui-update-check" :disabled="checking||starting||job.busy" :aria-busy="checking" @click.stop="check">
-    <a-icon :type="checking?'loading':'sync'"/><span>[[checking?t.checking:t.check]]</span>
+   <button type="button" class="dui-update-check" :class="{'has-update':offers.length>0}" :disabled="checking||starting||job.busy" :aria-busy="checking" @click.stop="offers.length?show():check()">
+    <a-icon :type="checking?'loading':offers.length?'arrow-up':'sync'"/>
+    <span v-if="offers.length">[[t.updateVersion]]</span>
+    <span v-else>[[checking?t.checking:t.check]]</span>
    </button>
   </div>
   <div v-if="detailsVisible" class="dui-update-inline">
