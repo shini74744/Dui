@@ -1,8 +1,25 @@
 {{define "modals/outModal"}}
-<a-modal id="out-modal" v-model="outModal.visible" :title="outModal.title" @ok="outModal.ok"
+<a-modal id="out-modal" v-model="outModal.visible" :title="outModal.title" @ok="outModal.ok()"
          :confirm-loading="outModal.confirmLoading" :closable="true" :mask-closable="false"
          :ok-button-props="{ props: { disabled: !outModal.isValid } }" :style="{ overflow: 'hidden' }"
          :ok-text="outModal.okText" cancel-text='{{ i18n "close" }}' :class="themeSwitcher.currentTheme">
+         <template slot="footer">
+             <div v-if="outModal.isEdit && outModal.references.total > 0" style="text-align: left; margin-bottom: 12px; overflow-wrap: anywhere;">
+                 <div>已有 [[ outModal.references.routes.length ]] 条路由引用<span v-if="outModal.references.total > outModal.references.routes.length">，另有 [[ outModal.references.total - outModal.references.routes.length ]] 处关联引用</span>。“同步保存”会一并更新。</div>
+                 <div>弹窗确认后，仍需点击页面“保存”才会生效。</div>
+                 <a-alert v-if="outModal.originalTag !== outbound.tag" type="info" show-icon style="margin-top: 8px;">
+                     <span slot="message" :style="{ color: themeSwitcher.currentTheme === 'dark' ? '#e8e8e8' : undefined }">普通“确定”不更新路由引用，改名后须手动调整。</span>
+                 </a-alert>
+                 <a-alert v-if="outModal.referenceError" type="warning" show-icon style="margin-top: 8px;">
+                     <span slot="message" :style="{ color: themeSwitcher.currentTheme === 'dark' ? '#e8e8e8' : undefined }">[[ outModal.referenceError ]]</span>
+                 </a-alert>
+             </div>
+             <div style="display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px;">
+                 <a-button @click="outModal.close()">{{ i18n "close" }}</a-button>
+                 <a-button :type="outModal.isEdit && outModal.references.total > 0 ? 'default' : 'primary'" :disabled="!outModal.isValid" :loading="outModal.confirmLoading" @click="outModal.ok()">[[ outModal.okText ]]</a-button>
+                 <a-button v-if="outModal.isEdit && outModal.references.total > 0" type="primary" :disabled="!outModal.isValid || !!outModal.referenceError" :loading="outModal.confirmLoading" @click="outModal.ok('sync')">同步保存</a-button>
+             </div>
+         </template>
          {{template "form/outbound"}}
 </a-modal>
 <script>
@@ -22,10 +39,17 @@
         isValid: true,
         activeKey: '1',
         tags: [],
-        ok() {
-            ObjectUtil.execute(outModal.confirm, outModal.outbound.toJson());
+        originalTag: '',
+        referenceSettings: null,
+        outboundIndex: -1,
+        references: { routes: [], balancers: 0, observatories: 0, chains: 0, total: 0 },
+        referenceError: '',
+        ok(mode = 'replace') {
+            outModal.check();
+            if (!outModal.isValid || (mode === 'sync' && outModal.referenceError)) return;
+            ObjectUtil.execute(outModal.confirm, outModal.outbound.toJson(), mode);
         },
-        show({ title='', okText='{{ i18n "sure" }}', outbound, confirm=(outbound)=>{}, isEdit=false, tags=[]  }) {
+        show({ title='', okText='{{ i18n "sure" }}', outbound, confirm=(outbound)=>{}, isEdit=false, tags=[], referenceSettings=null, outboundIndex=-1 }) {
             this.title = title;
             this.okText = okText;
             this.confirm = confirm;
@@ -36,6 +60,11 @@
             this.outbound = isEdit ? Outbound.fromJson(outbound) : new Outbound();
             this.isEdit = isEdit;
             this.tags = tags;
+            this.originalTag = isEdit ? String(outbound.tag || '') : '';
+            this.referenceSettings = referenceSettings;
+            this.outboundIndex = outboundIndex;
+            this.references = DuiOutboundReferences.inspect(referenceSettings, this.originalTag);
+            this.referenceError = '';
             this.check()
         },
         close() {
@@ -46,13 +75,17 @@
             outModal.confirmLoading = loading;
         },
         check(){
-            if(outModal.outbound.tag == '' || outModal.tags.includes(outModal.outbound.tag)){
-                this.duplicateTag = true;
-                this.isValid = false;
-            } else {
-                this.duplicateTag = false;
-                this.isValid = true;
+            const tag = String(outModal.outbound.tag || '').trim();
+            this.duplicateTag = !tag || outModal.tags.some(value => String(value || '').trim() === tag);
+            this.referenceError = '';
+            if (!this.duplicateTag && this.isEdit && this.referenceSettings) {
+                try {
+                    DuiOutboundReferences.prepare(this.referenceSettings, this.outboundIndex, this.outbound.toJson(), 'sync');
+                } catch (error) {
+                    this.referenceError = error.message;
+                }
             }
+            this.isValid = !this.duplicateTag && !tag.startsWith('__dui_blacklist_');
         },
         toggleJson(jsonTab) {
             textAreaObj = document.getElementById('outboundJson');

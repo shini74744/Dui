@@ -42,6 +42,7 @@ jobs:
           node scripts/test-native-protocols.cjs
           node scripts/test-helper-protocols.cjs
           node scripts/test-close-wait.cjs
+          node scripts/test-outbound-references.cjs
       - name: Menu updater regression guards
         shell: bash
         run: |

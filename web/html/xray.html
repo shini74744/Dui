@@ -346,6 +346,7 @@
 </a-layout>
 {{template "page/body_scripts" .}}
 <script src="{{ .base_path }}assets/js/model/outbound.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/util/outbound-references.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/codemirror/codemirror.min.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/codemirror/javascript.js"></script>
 <script src="{{ .base_path }}assets/codemirror/jshint.js"></script>
@@ -1392,17 +1393,43 @@
       editOutbound(index) {
         const row = this.outboundData[index];
         const realIndex = row && row._physicalIndex !== undefined ? row._physicalIndex : index;
+        const settings = this.templateSettings;
+        const original = settings.outbounds[realIndex];
         outModal.show({
           title: '{{ i18n "pages.xray.outbound.editOutbound"}} ' + (index + 1),
-          outbound: app.templateSettings.outbounds[realIndex],
-          confirm: (outbound) => {
-            outModal.loading();
-            this.templateSettings.outbounds[realIndex] = outbound;
-            this.outboundSettings = JSON.stringify(this.templateSettings.outbounds);
-            outModal.close();
+          outbound: original,
+          referenceSettings: settings,
+          outboundIndex: realIndex,
+          confirm: (outbound, mode) => {
+            const current = this.templateSettings;
+            if (JSON.stringify(current.outbounds[realIndex]) !== JSON.stringify(original)) {
+              this.$message.warning('原出站已发生变化，请关闭窗口后重新编辑。');
+              return;
+            }
+            try {
+              const next = DuiOutboundReferences.prepare(current, realIndex, outbound, mode);
+              const nextSources = { ...this.routeSourceMap };
+              if (mode === 'sync' && original.tag !== outbound.tag) {
+                const groups = duiBuildRoutingGroups(current.routing?.rules || [], current.outbounds);
+                groups.forEach(group => {
+                  if (group.merged.outboundTag !== original.tag) return;
+                  const oldKey = duiRuleSourceFingerprint(group.merged);
+                  const ids = nextSources[oldKey];
+                  if (!Array.isArray(ids)) return;
+                  const newKey = duiRuleSourceFingerprint({ ...group.merged, outboundTag: String(outbound.tag).trim() });
+                  delete nextSources[oldKey];
+                  nextSources[newKey] = [...new Set([...(nextSources[newKey] || []), ...ids])];
+                });
+              }
+              this.templateSettings = next;
+              this.routeSourceMap = nextSources;
+              outModal.close();
+            } catch (error) {
+              this.$message.warning(error.message);
+            }
           },
           isEdit: true,
-          tags: this.outboundData.filter((o) => o._physicalIndex != realIndex).map(obj => obj.tag)
+          tags: settings.outbounds.filter((_, i) => i !== realIndex).map(obj => obj.tag)
         });
       },
       deleteOutbound(index) {
