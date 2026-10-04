@@ -1,19 +1,16 @@
 package service
 
 import (
-	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -315,7 +312,17 @@ func (s *ServerService) GetXrayVersions() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newDUICoreClient().versions(asset)
+	versions, err := newDUICoreClient().versions(asset)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(versions))
+	for _, v := range versions {
+		if strings.HasPrefix(v, "vx-") {
+			result = append(result, v)
+		}
+	}
+	return result, nil
 }
 
 func (s *ServerService) StopXrayService() error {
@@ -345,88 +352,8 @@ func (s *ServerService) downloadXRay(version string) (string, error) {
 }
 
 func (s *ServerService) UpdateXray(version string) error {
-	if !duiCoreTag.MatchString(version) {
-		return fmt.Errorf("只能安装 DUI 仓库提供的核心版本")
-	}
-	settings := &SettingService{}
-	template, err := settings.GetXrayConfigTemplate()
-	if err != nil {
-		return err
-	}
-	var cfg xray.Config
-	if err := json.Unmarshal([]byte(template), &cfg); err != nil {
-		return err
-	}
-	if err := xray.ValidateStrategyObservatoryTarget(&cfg, version); err != nil {
-		return err
-	}
-	if err := xray.ValidateCloseWaitTarget(&cfg, version); err != nil {
-		return err
-	}
-	// Download and verify the DUI package before interrupting the running core.
-	zipFileName, err := s.downloadXRay(version)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(zipFileName)
-
-	zipFile, err := os.Open(zipFileName)
-	if err != nil {
-		return err
-	}
-	defer zipFile.Close()
-
-	stat, err := zipFile.Stat()
-	if err != nil {
-		return err
-	}
-	reader, err := zip.NewReader(zipFile, stat.Size())
-	if err != nil {
-		return err
-	}
-
-	// The package has passed source, checksum and ZIP validation.
-	if err := s.StopXrayService(); err != nil {
-		logger.Warning("failed to stop xray before update:", err)
-	}
-
-	// 3. Helper to extract files
-
-	copyZipFile := func(zipName string, fileName string) error {
-		zipFile, err := reader.Open(zipName)
-		if err != nil {
-			return err
-		}
-		defer zipFile.Close()
-		os.MkdirAll(filepath.Dir(fileName), 0755)
-		os.Remove(fileName)
-		file, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.ModePerm)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		_, err = io.Copy(file, zipFile)
-		return err
-	}
-
-	// 4. Extract correct binary
-	if runtime.GOOS == "windows" {
-		targetBinary := filepath.Join("bin", "xray-windows-amd64.exe")
-		err = copyZipFile("xray.exe", targetBinary)
-	} else {
-		err = copyZipFile("xray", xray.GetBinaryPath())
-	}
-	if err != nil {
-		return err
-	}
-
-	// 5. Restart xray
-	if err := s.xrayService.RestartXray(true); err != nil {
-		logger.Error("start xray failed:", err)
-		return err
-	}
-
-	return nil
+	_, err := s.StartUpdate("core", version)
+	return err
 }
 
 func (s *ServerService) GetLogs(count string, level string, syslog string) []string {

@@ -475,7 +475,8 @@
 								</a-col>
 
 								<a-col :xs="24" :sm="24" :lg="8">
-									<a-card title='{{ i18n "pages.index.duiTitle" }}' hoverable :bordered="true" class="glass-card" :style="{ marginBottom: '16px' }">
+									<a-card title='{{ i18n "pages.index.duiTitle" }}' hoverable :bordered="true" class="glass-card dui-product-card" :style="{ marginBottom: '16px' }">
+                                        <template #extra><dui-updates ref="updates"></dui-updates></template>
 										<div style="white-space: nowrap; overflow-x: auto;">
 											<a rel="noopener" href="https://github.com/shini74744/Dui/releases" target="_blank">
 												<a-tag color="green"><span>v{{ .cur_ver }}</span></a-tag>
@@ -819,6 +820,7 @@
 {{template "component/aThemeSwitch" .}}
 {{template "component/aCustomStatistic" .}}
 {{template "modals/textModal"}}
+<script src="{{ .base_path }}assets/js/util/updates.js?v={{ .cur_ver }}"></script>
 
 <script>
     class CurTotal {
@@ -1241,7 +1243,11 @@ ${dateTime}
                     onOk: async () => {
                         versionModal.hide();
                         this.loading(true, '{{ i18n "pages.index.dontRefresh"}}');
-                        await HttpUtil.post(`/dui/api/server/installXray/${version}`);
+                        const msg = await HttpUtil.post(`/dui/api/server/installXray/${version}`);
+                        if (msg.success && this.$refs.updates) {
+                            this.$refs.updates.state.job = msg.obj;
+                            this.$refs.updates.show('core');
+                        }
                         this.loading(false);
                     },
                 });
