@@ -148,7 +148,7 @@
                 <a-row :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }">
                   <a-col :xs="24" :sm="10" :style="{ padding: '4px' }">
                     <a-space direction="horizontal">
-                      <a-button type="primary" :disabled="saveBtnDisable" @click="updateXraySetting">
+                      <a-button type="primary" :disabled="saveBtnDisable || !obsFormValid" @click="updateXraySetting">
                         {{ i18n "pages.xray.save" }}
                       </a-button>
                       <a-button type="danger" :disabled="!saveBtnDisable" @click="restartXray">
@@ -347,6 +347,9 @@
 {{template "page/body_scripts" .}}
 <script src="{{ .base_path }}assets/js/model/outbound.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/util/outbound-references.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/util/strategy-probes.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/util/strategy-probes-i18n.js?{{ .cur_ver }}"></script>
+{{template "settings/xray/strategyProbesComponent" .}}
 <script src="{{ .base_path }}assets/codemirror/codemirror.min.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/codemirror/javascript.js"></script>
 <script src="{{ .base_path }}assets/codemirror/jshint.js"></script>
@@ -663,6 +666,8 @@
       ],
       advSettings: 'xraySetting',
       obsSettings: '',
+      obsRevision: 0,
+      obsFormValid: true,
       cm: null,
       cmOptions: {
         lineNumbers: true,
@@ -802,6 +807,8 @@
 
           result = JSON.parse(msg.obj);
           xs = JSON.stringify(result.xraySetting, null, 2);
+          this.obsFormValid = true;
+          this.obsRevision++;
           this.pendingOutboundRenames = [];
           this.oldXraySetting = xs;
           this.xraySetting = xs;
@@ -845,6 +852,7 @@
         return false;
       },
       async updateXraySetting() {
+        if (this.obsFormValid === false) return;
         this.loading(true);
         try {
           const msg = await HttpUtil.post("/dui/xray/update", { xraySetting: this.xraySetting });
@@ -880,6 +888,8 @@
         const msg = await HttpUtil.get("/dui/setting/getDefaultJsonConfig");
         this.loading(false);
         if (msg.success) {
+          this.obsFormValid = true;
+          this.obsRevision++;
           this.pendingOutboundRenames = [];
           this.templateSettings = JSON.parse(JSON.stringify(msg.obj, null, 2));
           this.saveBtnDisable = true;
@@ -1324,20 +1334,8 @@
       changeObsCode() {
         if (this.cm != null) {
           this.cm.toTextArea();
-        }
-        if (this.obsSettings == '') {
           this.cm = null;
-          return
         }
-        textAreaObj = document.getElementById('obsSetting');
-        textAreaObj.value = this[this.obsSettings];
-        this.cm = CodeMirror.fromTextArea(textAreaObj, this.cmOptions);
-        this.cm.on('change', editor => {
-          value = editor.getValue();
-          if (this.isJsonString(value)) {
-            this[this.obsSettings] = value;
-          }
-        });
       },
       isJsonString(str) {
         try {
@@ -1658,7 +1656,7 @@
         );
         if (leastPings.length > 0) {
           if (!newTemplateSettings.observatory)
-            newTemplateSettings.observatory = this.defaultObservatory;
+            newTemplateSettings.observatory = DuiStrategyProbes.clone(this.defaultObservatory);
           newTemplateSettings.observatory.subjectSelector = [];
           leastPings.forEach((b) => {
             b.selector.forEach((s) => {
@@ -1671,7 +1669,7 @@
         }
         if (leastLoads.length > 0) {
           if (!newTemplateSettings.burstObservatory)
-            newTemplateSettings.burstObservatory = this.defaultBurstObservatory;
+            newTemplateSettings.burstObservatory = DuiStrategyProbes.clone(this.defaultBurstObservatory);
           newTemplateSettings.burstObservatory.subjectSelector = [];
           leastLoads.forEach((b) => {
             b.selector.forEach((s) => {
@@ -1682,7 +1680,7 @@
         } else {
           delete newTemplateSettings.burstObservatory
         }
-        this.templateSettings = newTemplateSettings;
+        this.templateSettings = DuiStrategyProbes.syncSelectors(newTemplateSettings);
         this.changeObsCode();
       },
       deleteBalancer(index) {

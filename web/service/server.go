@@ -357,6 +357,9 @@ func (s *ServerService) UpdateXray(version string) error {
 	if err := json.Unmarshal([]byte(template), &cfg); err != nil {
 		return err
 	}
+	if err := xray.ValidateStrategyObservatoryTarget(&cfg, version); err != nil {
+		return err
+	}
 	if err := xray.ValidateCloseWaitTarget(&cfg, version); err != nil {
 		return err
 	}

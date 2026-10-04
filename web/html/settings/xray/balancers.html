@@ -32,12 +32,8 @@
                 <a-tag class="info-large-tag" :style="{ margin: '1' }" v-for="sel in balancer.selector">[[ sel ]]</a-tag>
             </template>
         </a-table>
-        <a-radio-group v-if="observatoryEnable || burstObservatoryEnable" v-model="obsSettings" @change="changeObsCode"
-            button-style="solid" :size="isMobile ? 'small' : ''">
-            <a-radio-button value="observatory" v-if="observatoryEnable">Observatory</a-radio-button>
-            <a-radio-button value="burstObservatory" v-if="burstObservatoryEnable">Burst Observatory</a-radio-button>
-        </a-radio-group>
-        <textarea :style="{ position: 'absolute', left: '-800px' }" id="obsSetting"></textarea>
+        <dui-strategy-probes :key="obsRevision" :value="templateSettings"
+            @input="templateSettings=$event" @validity="obsFormValid=$event"></dui-strategy-probes>
     </a-space>
 </template>
 <template v-else>

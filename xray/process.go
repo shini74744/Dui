@@ -223,6 +223,9 @@ func (p *process) Start() (err error) {
 		}
 	}()
 
+	if err := ValidateStrategyObservatorySupport(p.config); err != nil {
+		return err
+	}
 	if err := ValidateCloseWaitSupport(p.config); err != nil {
 		return err
 	}
