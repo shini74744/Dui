@@ -1,8 +1,10 @@
-# DUI Xray vx-26.4
+# DUI Xray vx-26.5
 
 Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source, platform binaries and SHA256 checksums are published together.
 
 - REALITY defaults to accepting legacy X25519 and modern hybrid client fingerprints. Set `realitySettings.duiRequireHybridKeyShare: true` on a server inbound to require the upstream X25519MLKEM768 fingerprint. This changes the ClientHello requirement, not VLESS Encryption authentication, node keys, or normal TLS cipher negotiation. Key, short ID, SNI, user and time/version validation remain in effect. Both modes can coexist on different inbounds. The patched REALITY module is included in the source asset and verified independently during preparation.
+
+- Adds optional strategyObservatory: independent leastPing, leastLoad, random, and roundRobin probe settings and measurements, even when outbound selectors overlap. leastPing accepts the existing Observatory fields; the other three accept Burst Observatory fields. Burst intervals must be at least 10 seconds, timeouts positive, and sampling 1–1000. Old configurations are unchanged. When only some strategies have overrides, remaining active strategies retain legacy selector coverage. Random and round-robin still require a fallback tag to filter failures. This detects path health, not server CPU or bandwidth load. The panel prevents saving these settings on older cores and prevents a downgrade while they are in use.
 
 - Optional allowInsecure is restored, disabled by default, with a warning. Explicit certificate pin/name checks remain effective.
 - Real per-user upload and download rate limits, shared across all connections, are enforced independently. DUI stores speedLimitMbps; 300 means 300 Mbps upload and 300 Mbps download. Zero is unlimited. Legacy speedLimit KiB/s values are converted without changing units silently.

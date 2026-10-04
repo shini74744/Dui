@@ -16,6 +16,9 @@ const DuiOutboundReferences = (() => {
         for (const key of ['observatory', 'burstObservatory']) {
             if (config[key]) selector(config[key], 'subjectSelector', 'observatories');
         }
+        for (const observer of Object.values(config.strategyObservatory || {})) {
+            if (observer) selector(observer, 'subjectSelector', 'observatories');
+        }
         function streamRefs(stream) {
             if (!stream) return;
             if (stream.sockopt) exact(stream.sockopt, 'dialerProxy', 'chains');

@@ -63,6 +63,9 @@ func (s *XraySettingService) CheckXrayConfig(XrayTemplateConfig string) error {
 		return common.NewError("xray template config invalid:", err)
 	}
 
+	if err := xray.ValidateStrategyObservatorySupport(xrayConfig); err != nil {
+		return err
+	}
 	if err := xray.ValidateCloseWaitSupport(xrayConfig); err != nil {
 		return err
 	}

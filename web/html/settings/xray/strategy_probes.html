@@ -1,0 +1,143 @@
+{{define "settings/xray/strategyProbesComponent"}}
+<style>
+.dui-probes { width:100%; min-width:0; margin-top:16px; }
+.dui-probes h3 { color:inherit; }
+.dui-probes .ant-tabs-bar { margin-bottom:16px; }
+.dui-probe-form { max-width:900px; }
+.dui-probe-field { margin:16px 0; }
+.dui-probe-field > label { display:block; font-weight:500; margin-bottom:6px; }
+.dui-probe-help { font-size:12px; opacity:.7; margin-top:6px; overflow-wrap:anywhere; }
+.dui-probe-targets { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
+.dui-probe-targets .ant-tag { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.dui-probe-json { font-family:monospace; direction:ltr; }
+.dui-probe-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+</style>
+<script type="text/x-template" id="dui-strategy-probes-template">
+<div class="dui-probes">
+    <h3>[[ text.title ]]</h3>
+    <a-alert type="info" show-icon :message="text.independent"></a-alert>
+    <a-tabs v-model="active" :animated="false">
+        <a-tab-pane v-for="type in types" :key="type" :tab="text[type]"></a-tab-pane>
+    </a-tabs>
+    <p class="dui-probe-help" v-if="!value.strategyObservatory || !value.strategyObservatory[active]">[[ text.legacy ]]</p>
+    <div><strong>[[ text.targets ]]</strong></div>
+    <div class="dui-probe-targets">
+        <a-tag v-for="tag in targets" :key="tag">[[ tag ]]</a-tag>
+        <span v-if="!targets.length" class="dui-probe-help">[[ text.unused ]]</span>
+    </div>
+    <div class="dui-probe-actions">
+        <a-checkbox v-model="advanced[active]">[[ text.advanced ]]</a-checkbox>
+    </div>
+    <div v-if="advanced[active]">
+        <a-textarea class="dui-probe-json" :aria-label="text.advanced" v-model="raw[active]" @input="rawChange" :rows="13"></a-textarea>
+        <div class="dui-probe-actions">
+            <a-button type="primary" @click="applyRaw">[[ text.apply ]]</a-button>
+            <a-button @click="resetRaw">[[ text.reset ]]</a-button>
+        </div>
+    </div>
+    <div v-else class="dui-probe-form">
+        <div class="dui-probe-field">
+            <label :for="'probe-url-'+active">[[ text.destination ]]</label>
+            <a-input v-if="active==='leastPing'" :id="'probe-url-'+active" v-model.trim="current.probeURL" @input="formChange"></a-input>
+            <a-input v-else :id="'probe-url-'+active" v-model.trim="current.pingConfig.destination" @input="formChange"></a-input>
+        </div>
+        <div class="dui-probe-field">
+            <label :for="'probe-interval-'+active">[[ text.interval ]]</label>
+            <a-input v-if="active==='leastPing'" :id="'probe-interval-'+active" v-model.trim="current.probeInterval" @input="formChange" placeholder="10m"></a-input>
+            <a-input v-else :id="'probe-interval-'+active" v-model.trim="current.pingConfig.interval" @input="formChange" placeholder="30m"></a-input>
+            <div class="dui-probe-help">[[ text.units ]]</div>
+            <div v-if="active!=='leastPing'" class="dui-probe-help">[[ text.burstHint ]]</div>
+        </div>
+        <div v-if="active==='leastPing'" class="dui-probe-field">
+            <label :for="'probe-concurrent-'+active">[[ text.concurrent ]]</label>
+            <a-switch :id="'probe-concurrent-'+active" :aria-label="text.concurrent" v-model="current.enableConcurrency" @change="formChange"></a-switch>
+            <div class="dui-probe-help">[[ text.concurrencyHint ]]</div>
+        </div>
+        <template v-else>
+            <div class="dui-probe-field">
+                <label :for="'probe-timeout-'+active">[[ text.timeout ]]</label>
+                <a-input :id="'probe-timeout-'+active" v-model.trim="current.pingConfig.timeout" @input="formChange" placeholder="10s"></a-input>
+            </div>
+            <div class="dui-probe-field">
+                <label :for="'probe-sampling-'+active">[[ text.sampling ]]</label>
+                <a-input-number :id="'probe-sampling-'+active" v-model="current.pingConfig.sampling" :min="1" :max="1000" :precision="0" @change="formChange"></a-input-number>
+                <div class="dui-probe-help">[[ text.samplingHint ]]</div>
+            </div>
+            <div class="dui-probe-field">
+                <label :for="'probe-connectivity-'+active">[[ text.connectivity ]]</label>
+                <a-input :id="'probe-connectivity-'+active" v-model.trim="current.pingConfig.connectivity" @input="formChange"></a-input>
+                <div class="dui-probe-help">[[ text.connectivityHint ]]</div>
+            </div>
+        </template>
+    </div>
+    <a-alert v-if="errors[active] && errors[active]!=='pending'" type="error" show-icon :message="text.invalid"></a-alert>
+    <a-alert v-if="rawDirty[active]" type="warning" show-icon :message="text.apply + ' · ' + text.saveHint"></a-alert>
+    <p class="dui-probe-help">[[ text.saveHint ]]</p>
+</div>
+</script>
+<script>
+Vue.component('dui-strategy-probes', {
+    template: '#dui-strategy-probes-template',
+    delimiters: ['[[', ']]'],
+    props: {value: {type:Object, required:true}},
+    data() {
+        const types = DuiStrategyProbes.types;
+        const drafts={}, raw={}, rawDirty={}, errors={}, advanced={};
+        for (const type of types) {
+            drafts[type]=DuiStrategyProbes.read(this.value,type);
+            raw[type]=JSON.stringify(drafts[type],null,2);
+            rawDirty[type]=false; errors[type]=''; advanced[type]=false;
+        }
+        return {types, active:types.find(type=>DuiStrategyProbes.selectors(this.value,type).length)||'leastPing',
+            lang:LanguageManager.getLanguage(), drafts,raw,rawDirty,errors,advanced};
+    },
+    beforeDestroy() {this.$emit('validity',true)},
+    computed: {
+        text() {return DuiProbeI18n.get(this.lang)},
+        current() {return this.drafts[this.active]},
+        targets() {return DuiStrategyProbes.selectors(this.value,this.active)}
+    },
+    watch: {
+        value: {deep:true, handler() {
+            for (const type of this.types) {
+                if (this.errors[type] || this.rawDirty[type]) continue;
+                this.$set(this.drafts,type,DuiStrategyProbes.read(this.value,type));
+                this.$set(this.raw,type,JSON.stringify(this.drafts[type],null,2));
+            }
+        }},
+        advanced: {deep:true, handler() {this.notifyValidity()}}
+    },
+    methods: {
+        notifyValidity() {this.$emit('validity',this.types.every(type=>!this.errors[type]&&!this.rawDirty[type]))},
+        formChange() {
+            this.errors[this.active]=DuiStrategyProbes.validate(this.active,this.current);
+            if (!this.errors[this.active]) {
+                // A form edit intentionally replaces an unapplied JSON draft for this strategy.
+                this.rawDirty[this.active]=false;
+                this.raw[this.active]=JSON.stringify(this.current,null,2);
+                this.$emit('input',DuiStrategyProbes.update(this.value,this.active,this.current));
+            }
+            this.notifyValidity();
+        },
+        rawChange() {this.rawDirty[this.active]=true;this.errors[this.active]='pending';this.notifyValidity()},
+        applyRaw() {
+            try {
+                const parsed=JSON.parse(this.raw[this.active]);
+                const next=DuiStrategyProbes.update(this.value,this.active,parsed);
+                this.errors[this.active]='';this.rawDirty[this.active]=false;
+                this.$set(this.drafts,this.active,DuiStrategyProbes.read(next,this.active));
+                this.raw[this.active]=JSON.stringify(this.current,null,2);
+                this.$emit('input',next);
+            } catch (_) {this.errors[this.active]='invalid'}
+            this.notifyValidity();
+        },
+        resetRaw() {
+            this.raw[this.active]=JSON.stringify(DuiStrategyProbes.read(this.value,this.active),null,2);
+            this.rawDirty[this.active]=false;this.errors[this.active]='';
+            this.$set(this.drafts,this.active,DuiStrategyProbes.read(this.value,this.active));
+            this.notifyValidity();
+        }
+    }
+});
+</script>
+{{end}}

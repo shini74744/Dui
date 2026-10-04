@@ -43,6 +43,7 @@ jobs:
           node scripts/test-helper-protocols.cjs
           node scripts/test-close-wait.cjs
           node scripts/test-outbound-references.cjs
+          node scripts/test-strategy-probes.cjs
       - name: Menu updater regression guards
         shell: bash
         run: |
