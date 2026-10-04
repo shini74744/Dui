@@ -4,6 +4,10 @@ The homepage DUI card checks the public `shini74744/Dui` releases for stable pan
 (`v*`) and DUI core (`vx-*`) releases. Each component shows its installed and
 latest compatible version separately. It checks when the homepage is opened,
 caches results for one hour, and allows a manual refresh (one request per minute).
+The header button checks directly in the card. Panel/core versions, update
+actions, errors and background progress appear inline without a dialog. Closing
+or reloading the page does not cancel a server-side download.
+
 Only complete releases with the matching architecture archive and SHA-256 file
 are offered. A failed check is shown explicitly; it does not imply up-to-date.
 
