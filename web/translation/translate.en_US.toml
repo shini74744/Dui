@@ -543,6 +543,8 @@
 "BalancerTag" = "Load Balancing Tag"
 
 [pages.xray.outbound]
+"dragSort" = "Drag to reorder; or use the up/down arrow keys"
+"orderHint" = "Drag the handle to reorder, then click Save on this page to apply. The first outbound is the default when no routing rule matches."
 "addOutbound" = "Add Outbound"
 "addReverse" = "Add Reverse"
 "editOutbound" = "Edit Outbound"

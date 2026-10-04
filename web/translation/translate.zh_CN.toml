@@ -561,6 +561,8 @@
 "BalancerTag" = "负载均衡 Tag"
 
 [pages.xray.outbound]
+"dragSort" = "拖动排序；也可用上下方向键"
+"orderHint" = "拖动每行前的手柄调整顺序，点击页面“保存”后生效。首个出站是未命中路由时的默认出口。"
 "addOutbound" = "添加出站"
 "addReverse" = "添加反向"
 "editOutbound" = "编辑出站"

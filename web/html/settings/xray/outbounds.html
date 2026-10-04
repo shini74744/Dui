@@ -23,10 +23,14 @@
             </a-button-group>
         </a-col>
     </a-row>
-    <a-table :columns="outboundColumns" bordered :row-key="r => r.key" :data-source="outboundData"
+    <div class="dui-outbound-order-hint">{{ i18n "pages.xray.outbound.orderHint" }}</div>
+    <a-table class="dui-outbound-table" :columns="outboundColumns" bordered :row-key="r => r.key" :data-source="outboundData"
         :scroll="isMobile ? {} : { x: 800 }" :pagination="false" :indent-size="0"
         :locale='{ filterConfirm: `{{ i18n "confirm" }}`, filterReset: `{{ i18n "reset" }}` }'>
         <template slot="action" slot-scope="text, outbound, index">
+            <dui-outbound-sort-handle :index="index" :items="outboundData"
+                :label="`{{ i18n "pages.xray.outbound.dragSort" }}` + ' ' + (outbound.tag || index+1)"
+                @move="replaceOutbound"></dui-outbound-sort-handle>
             <span>[[ index+1 ]]</span>
             <a-dropdown :trigger="['click']">
                 <a-icon @click="e => e.preventDefault()" type="more"
@@ -35,6 +39,15 @@
                     <a-menu-item v-if="index>0" @click="setFirstOutbound(index)">
                         <a-icon type="vertical-align-top"></a-icon>
                         <span>{{ i18n "pages.xray.rules.first"}}</span>
+                    </a-menu-item>
+                    <a-menu-item v-if="index>0" @click="replaceOutbound(index,index-1)">
+                        <a-icon type="arrow-up"></a-icon>{{ i18n "pages.xray.rules.up" }}
+                    </a-menu-item>
+                    <a-menu-item v-if="index<outboundData.length-1" @click="replaceOutbound(index,index+1)">
+                        <a-icon type="arrow-down"></a-icon>{{ i18n "pages.xray.rules.down" }}
+                    </a-menu-item>
+                    <a-menu-item v-if="index<outboundData.length-1" @click="replaceOutbound(index,outboundData.length-1)">
+                        <a-icon type="vertical-align-bottom"></a-icon>{{ i18n "pages.xray.rules.last" }}
                     </a-menu-item>
                     <a-menu-item @click="editOutbound(index)">
                         <a-icon type="edit"></a-icon>

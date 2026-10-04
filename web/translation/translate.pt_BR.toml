@@ -470,6 +470,8 @@
 "useComma" = "Itens separados por vírgula"
 
 [pages.xray.outbound]
+"dragSort" = "Arraste para reordenar ou use as setas para cima/baixo"
+"orderHint" = "Arraste a alça para reordenar e clique em Salvar. A primeira saída é usada quando nenhuma regra de roteamento corresponde."
 "addOutbound" = "Adicionar Saída"
 "addReverse" = "Adicionar Reverso"
 "editOutbound" = "Editar Saída"
