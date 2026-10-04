@@ -18,34 +18,46 @@
 .dui-outbound-drop-before > td { box-shadow: inset 0 3px #008771; }
 .dui-outbound-drop-after > td { box-shadow: inset 0 -3px #008771; }
 
-/* Verified updater: compact header controls, responsive and theme-neutral. */
-.dui-product-card .ant-card-head-wrapper{align-items:flex-start;gap:12px;flex-wrap:wrap}
-.dui-product-card .ant-card-head-title{flex:0 1 auto;white-space:normal;min-width:120px}
-.dui-product-card .ant-card-extra{float:none;margin-inline-start:auto;max-width:100%;padding:18px 0}
-.dui-update-pills{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:100%}
-.dui-update-pill,.dui-update-check{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:1px solid rgba(0,170,143,.35);background:rgba(0,170,143,.09);color:inherit;border-radius:16px;padding:5px 9px;line-height:1.4;font:inherit;font-size:12px;cursor:pointer;max-width:100%;white-space:normal}
-.dui-update-pill b{font-size:11px;font-weight:500;opacity:.8}
-.dui-update-pill:hover,.dui-update-check:hover{background:rgba(0,170,143,.2);border-color:#00aa8f}
-.dui-update-check{border-color:transparent;background:transparent;opacity:.72}
-.dui-update-pill.is-busy{border-color:rgba(61,150,245,.4);background:rgba(61,150,245,.1)}
-.dui-update-pill.is-error{border-color:rgba(225,111,58,.45);background:rgba(225,111,58,.1)}
-.dui-update-pill:focus-visible,.dui-update-check:focus-visible{outline:2px solid #00aa8f;outline-offset:3px}
-.dui-update-dialog{color:inherit;min-width:0}
-.dui-update-tabs{display:flex;gap:6px;padding:4px;border-radius:12px;background:rgba(128,128,128,.08)}
-.dui-update-tabs button{flex:1;background:transparent;border:0;border-radius:9px;padding:9px;color:inherit;cursor:pointer}
-.dui-update-tabs button.active{background:rgba(0,170,143,.13);color:#009d85;font-weight:600}
-.dui-update-dot{display:inline-block;width:6px;height:6px;background:#00aa8f;border-radius:50%;margin-inline-start:7px;vertical-align:middle}
-.dui-update-versions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0}
-.dui-update-versions div{display:flex;flex-direction:column;gap:5px;min-width:0}
-.dui-update-versions strong{font-size:20px;overflow-wrap:anywhere}
-.dui-update-versions small,.dui-update-hint,.dui-update-byte-count{opacity:.68;font-size:12px}
-.dui-update-hint{line-height:1.8;margin:16px 0}
-.dui-update-progress{border:1px solid rgba(128,128,128,.2);border-radius:12px;padding:14px;margin-top:18px}
-.dui-update-progress-head{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;font-size:12px}
-.dui-update-progress .ant-progress{margin:10px 0 3px}
+/* Verified updater: all actions and job progress remain in the homepage card. */
+.dui-updates{min-width:0;color:#2f4554}
+.dui-product-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 16px}
+.dui-product-title{font-size:16px;font-weight:500;line-height:1.5;min-width:0}
+.dui-update-check,.dui-update-install{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-size:12px;line-height:1.5;border-radius:16px;cursor:pointer;max-width:100%;white-space:normal;text-align:center;transition:background .2s,border-color .2s}
+.dui-update-check{margin-inline-start:auto;padding:5px 8px;border:1px solid transparent;background:transparent;color:#627080}
+.dui-update-check:hover{background:rgba(0,170,143,.08);color:#087e6d}
+.dui-update-check:disabled,.dui-update-install:disabled{cursor:default;opacity:.6}
+.dui-update-check:focus-visible,.dui-update-install:focus-visible{outline:2px solid #00aa8f;outline-offset:3px}
+.dui-update-inline{margin-top:16px;min-width:0}
+.dui-update-entry{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 14px;padding:13px 0;border-top:1px solid rgba(128,128,128,.15)}
+.dui-update-entry-info{flex:1 1 120px;min-width:0}
+.dui-update-entry-title{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px;font-size:13px}
+.dui-update-entry-title strong{font-weight:600}
+.dui-update-current{font-size:12px;opacity:.72;overflow-wrap:anywhere}
+.dui-update-latest{font-size:11px;opacity:.72;line-height:1.6;margin-top:4px;overflow-wrap:anywhere}
+.dui-update-latest b{font-weight:500;margin-inline-start:3px}
+.dui-update-entry-action{display:flex;align-items:flex-end;flex-direction:column;gap:5px;max-width:100%;margin-inline-start:auto}
+.dui-update-available,.dui-update-current-state{font-size:11px;color:#087e6d}
+.dui-update-install{padding:6px 11px;border:1px solid rgba(0,151,127,.4);background:rgba(0,170,143,.09);color:#087e6d}
+.dui-update-install:hover:not(:disabled){background:rgba(0,170,143,.18);border-color:#009d85}
+.dui-update-hint,.dui-update-byte-count{font-size:11px;line-height:1.8;color:#6e7e8d}
+.dui-update-hint{margin:4px 0 12px}
+.dui-update-progress{border:1px solid rgba(0,170,143,.22);border-radius:12px;padding:12px;margin-top:10px;background:rgba(0,170,143,.035)}
+.dui-update-progress-head{display:flex;gap:5px 10px;justify-content:space-between;flex-wrap:wrap;font-size:12px;overflow-wrap:anywhere}
+.dui-update-progress-head strong{font-weight:500}
+.dui-update-progress .ant-progress{margin:8px 0 2px}
 .dui-update-byte-count{font-variant-numeric:tabular-nums}
-.dui-update-dialog .ant-alert{margin-top:12px;overflow-wrap:anywhere}
-.dui-update-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:22px}
-@media(max-width:575px){.dui-product-card .ant-card-head-wrapper{gap:0 8px}.dui-product-card .ant-card-extra{padding:8px 0 12px}.dui-product-card .ant-card-head-title{padding-bottom:8px}.dui-update-pill{padding:5px 8px}.dui-update-pills{max-width:100%}.dui-update-versions strong{font-size:18px}}
-
-.dui-update-pill{color:#087e6d}.dui-update-check{color:#627080}.dark .dui-update-pill{color:#62dec5}.dark .dui-update-check{color:#b1bfcc}.dark .dui-update-dialog{color:#dce4ec}.dark .dui-update-tabs button.active{color:#62dec5}
+.dui-update-inline .ant-alert{margin-top:10px;font-size:12px;overflow-wrap:anywhere}
+.dui-update-reload{margin-top:10px}
+.dui-update-indeterminate{height:6px;overflow:hidden;border-radius:5px;background:rgba(0,170,143,.12);margin:12px 0 6px}
+.dui-update-indeterminate:after{content:"";display:block;height:100%;width:40%;border-radius:inherit;background:#00aa8f;animation:dui-update-loading 1.4s ease-in-out infinite}
+@keyframes dui-update-loading{from{transform:translateX(-100%)}to{transform:translateX(350%)}}
+.dui-product-links{margin-top:28px;min-width:0}
+.dui-product-link-list{display:flex;flex-wrap:wrap;gap:6px 0;align-items:center}
+.dui-product-link-list a{min-width:0;max-width:100%}
+.dui-product-link-list .ant-tag{white-space:normal;overflow-wrap:anywhere;margin-bottom:0}
+.dark .dui-updates{color:#dce4ec}
+.dark .dui-update-check{color:#b1bfcc}
+.dark .dui-update-install,.dark .dui-update-available,.dark .dui-update-current-state{color:#62dec5}
+.dark .dui-update-hint,.dark .dui-update-byte-count{color:#9facb9}
+@media(max-width:575px){.dui-product-heading{gap:8px}.dui-update-entry{gap:8px 10px}.dui-update-install{padding:6px 9px}.dui-product-links{margin-top:24px}}
+@media(prefers-reduced-motion:reduce){.dui-update-indeterminate:after{animation:none;transform:translateX(75%)}}

@@ -16,39 +16,67 @@ const DuiUpdateText = (() => {
  'ar-EG':['تحديثات البرنامج','اللوحة','النواة','تحديث متاح','المثبت','الأحدث','فحص التحديثات','جارٍ الفحص','تنزيل وتحديث','إغلاق','لا يتم الاستبدال إلا بعد اكتمال التنزيل والتحقق. تستمر الخدمات أثناء التنزيل وتُعاد لفترة قصيرة عند التثبيت. يمكنك إغلاق الصفحة.','تحديث الويب غير متاح؛ استخدم برنامج التثبيت.','إعادة الاتصال؛ تستمر المهمة في الخلفية.','إعادة المحاولة','إعادة تحميل','لم يُفحص','في الانتظار','جارٍ الاتصال','جارٍ التنزيل','التحقق من السلامة والإصدار','نسخ احتياطي','جارٍ التثبيت','إعادة التشغيل والتحقق','استعادة الإصدار السابق','اكتمل التحديث','تمت استعادة الإصدار السابق','فشل التحديث'],
  'fa-IR':['به‌روزرسانی','پنل','هسته','به‌روزرسانی موجود','نصب‌شده','جدیدترین','بررسی به‌روزرسانی','در حال بررسی','دانلود و به‌روزرسانی','بستن','جایگزینی فقط پس از دانلود کامل و تأیید انجام می‌شود. سرویس‌ها هنگام دانلود فعال می‌مانند و برای نصب کوتاه راه‌اندازی مجدد می‌شوند. می‌توانید صفحه را ببندید.','به‌روزرسانی وب پشتیبانی نمی‌شود؛ از نصب‌کننده استفاده کنید.','اتصال مجدد؛ کار پس‌زمینه ادامه دارد.','تلاش مجدد','بازخوانی','بررسی نشده','در صف','در حال اتصال','در حال دانلود','تأیید صحت و نسخه','پشتیبان‌گیری','در حال نصب','راه‌اندازی مجدد و بررسی','بازیابی نسخه قبل','به‌روزرسانی کامل شد','نسخه قبل بازیابی شد','به‌روزرسانی ناموفق']
  };
+ const inlineRows={
+  'zh-CN':['已是最新','检查失败，请重试'],
+  'zh-TW':['已是最新','檢查失敗，請重試'],
+  'en-US':['Up to date','Could not check for updates. Please retry.'],
+  'ja-JP':['最新です','更新を確認できません。再試行してください。'],
+  'ru-RU':['Обновлено','Не удалось проверить обновления. Повторите попытку.'],
+  'vi-VN':['Đã cập nhật','Không thể kiểm tra. Vui lòng thử lại.'],
+  'es-ES':['Actualizado','No se pudo comprobar. Inténtalo de nuevo.'],
+  'id-ID':['Sudah terbaru','Gagal memeriksa pembaruan. Coba lagi.'],
+  'uk-UA':['Оновлено','Не вдалося перевірити оновлення. Спробуйте знову.'],
+  'tr-TR':['Güncel','Güncellemeler denetlenemedi. Yeniden deneyin.'],
+  'pt-BR':['Atualizado','Não foi possível verificar. Tente novamente.'],
+  'ar-EG':['محدّث','تعذر فحص التحديثات. حاول مجددًا.'],
+  'fa-IR':['به‌روز است','بررسی به‌روزرسانی ناموفق بود. دوباره تلاش کنید.']
+ };
+ keys.push('upToDate','checkFailed');
+ Object.keys(rows).forEach(lang=>rows[lang].push(...inlineRows[lang]));
  const maps=Object.fromEntries(Object.entries(rows).map(([k,v])=>[k,Object.fromEntries(keys.map((key,i)=>[key,v[i]]))]));
  return {keys,maps,get:lang=>maps[lang]||maps['en-US']};
 })();
 const DuiUpdates = {
  delimiters:['[[',']]'],
- data(){return {open:false,selected:'panel',state:{items:{panel:{},core:{}}},starting:false,offline:false,requestError:'',lang:LanguageManager.getLanguage(),timer:null,stopped:false,polling:false}},
+ data(){return {expanded:false,state:{items:{panel:{},core:{}}},starting:false,startingKind:'',offline:false,requestError:'',lang:LanguageManager.getLanguage(),timer:null,stopped:false,polling:false,refreshRequested:false}},
  computed:{
   t(){return DuiUpdateText.get(this.lang)},
-  themeClass(){return typeof themeSwitcher!=="undefined"?themeSwitcher.currentTheme:""},
   job(){return this.state.job||{}},
-  percent(){return this.job.total ? Math.min(100,Math.floor(this.job.downloaded/this.job.total*100)):0},
+  percent(){return this.job.total ? Math.max(0,Math.min(100,Math.floor((this.job.downloaded||0)/this.job.total*100))):0},
   offers(){return ['panel','core'].filter(k=>this.state.items[k]?.available)},
   phase(){return this.t[this.job.phase]||this.job.phase||''},
-  selectedItem(){return this.state.items[this.selected]||{}}
+  checking(){return this.state.checking||(!this.job.busy&&this.polling)},
+  detailsVisible(){return this.expanded||this.offers.length>0||!!this.job.id||this.starting||this.offline||!!this.state.checkError}
  },
  methods:{
   size(n){if(!Number.isFinite(n))return '—';return (n/1048576).toFixed(1)+' MB'},
-  show(kind){this.selected=kind||this.job.kind||this.offers[0]||'panel';this.open=true;this.poll()},
+  // The legacy core selector reveals this same inline status, never a second dialog.
+  show(){this.expanded=true;this.poll();this.$nextTick(()=>this.$el.scrollIntoView({behavior:'smooth',block:'nearest'}))},
+  check(){this.expanded=true;return this.poll(true)},
   async poll(force=false){
-   if(this.polling||this.stopped)return;
+   if(this.stopped)return;
+   if(this.polling){if(force)this.refreshRequested=true;return}
    this.polling=true;
    try{
     const r=force?await axios.post('/dui/api/server/updates/check',{}, {timeout:10000}):await axios.get('/dui/api/server/updates',{timeout:10000});
     if(!r.data?.success||!r.data.obj?.items)throw Error('unavailable');
-    this.state=r.data.obj;this.offline=false;
-   }catch(e){this.offline=true}finally{this.polling=false}
+    if(!this.stopped){this.state=r.data.obj;this.offline=false}
+   }catch(e){if(!this.stopped)this.offline=true}
+   finally{
+    this.polling=false;
+    if(this.refreshRequested&&!this.stopped){this.refreshRequested=false;await this.poll(true)}
+    else this.schedulePoll()
+   }
   },
-  async start(){
-   if(this.starting||this.job.busy)return;
-   this.starting=true;this.requestError='';
-   // Immediate feedback, including the initial request before the worker connects.
+  schedulePoll(){
+   clearTimeout(this.timer);
+   if(!this.stopped)this.timer=setTimeout(()=>this.poll(),this.job.busy||this.starting||this.state.checking||this.offline?2000:60000)
+  },
+  async start(kind){
+   if(this.starting||this.job.busy||!this.state.supported||!this.state.items[kind]?.available)return;
+   this.expanded=true;this.starting=true;this.startingKind=kind;this.requestError='';
    try{
-    const r=await axios.post('/dui/api/server/updates/start',{kind:this.selected,version:this.selectedItem.latest},{timeout:15000});
+    const r=await axios.post('/dui/api/server/updates/start',{kind,version:this.state.items[kind].latest},{timeout:15000});
     if(!r.data?.success)throw Error(r.data?.msg||this.t.failed);
     this.$set(this.state,'job',r.data.obj);
    }catch(e){this.requestError=e.message}
@@ -62,40 +90,45 @@ const DuiUpdates = {
   },
   reload(){window.location.reload()}
  },
- mounted(){this.poll();const tick=async()=>{await this.poll();if(!this.stopped)this.timer=setTimeout(tick,this.job.busy||this.state.checking||this.open?2000:60000)};this.timer=setTimeout(tick,2000)},
+ mounted(){this.poll()},
  beforeDestroy(){this.stopped=true;clearTimeout(this.timer)},
  template:`
- <div class="dui-updates">
-  <div class="dui-update-pills">
-   <button v-for="kind in offers" :key="kind" type="button" class="dui-update-pill" @click.stop="show(kind)">
-    <a-icon type="arrow-up"/><span>[[ t[kind] ]] [[t.available]]</span><b>[[state.items[kind].latest]]</b>
+ <section class="dui-updates">
+  <div class="dui-product-heading">
+   <div class="dui-product-title"><slot name="title">[[t.title]]</slot></div>
+   <button type="button" class="dui-update-check" :disabled="checking||starting||job.busy" :aria-busy="checking" @click.stop="check">
+    <a-icon :type="checking?'loading':'sync'"/><span>[[checking?t.checking:t.check]]</span>
    </button>
-   <button v-if="job.busy" type="button" class="dui-update-pill is-busy" @click.stop="show(job.kind)"><a-icon type="loading"/><span>[[phase]]</span><b v-if="job.phase==='downloading'">[[percent]]%</b></button>
-   <button v-else-if="!offers.length" type="button" class="dui-update-check" @click.stop="show()"><a-icon :type="state.checking?'loading':'sync'"/><span>[[t.check]]</span></button>
-   <button v-if="job.phase==='failed'||job.phase==='rolled_back'" type="button" class="dui-update-pill is-error" @click.stop="show(job.kind)"><a-icon type="exclamation-circle"/>[[ t[job.phase] ]]</button>
   </div>
-  <a-modal v-model="open" :title="t.title" :footer="null" :width="520" :class="themeClass">
-   <div class="dui-update-dialog">
-    <div class="dui-update-tabs"><button v-for="kind in ['panel','core']" :key="kind" :class="{active:selected===kind}" @click="selected=kind">[[ t[kind] ]]<span v-if="state.items[kind].available" class="dui-update-dot"></span></button></div>
-    <div class="dui-update-versions"><div><small>[[t.current]]</small><strong>[[selectedItem.current||'—']]</strong></div><a-icon type="arrow-right"/><div><small>[[t.latest]]</small><strong>[[selectedItem.latest||t.unknown]]</strong></div></div>
-    <p class="dui-update-hint">[[t.hint]]</p>
-    <a-alert v-if="!state.supported" type="info" show-icon :message="t.unsupported"/>
-    <a-alert v-if="offline" type="info" show-icon :message="t.reconnecting"/>
-    <div v-if="job.id||starting" class="dui-update-progress" aria-live="polite">
-     <div class="dui-update-progress-head"><span>[[starting?t.queued:t[job.kind ] ]] [[starting?'':job.version]]</span><strong>[[starting?t.connecting:phase]]</strong></div>
-     <a-progress v-if="starting||job.busy||job.phase==='complete'" :percent="starting?0:percent" :status="job.phase==='complete'?'success':'active'" :show-info="job.phase==='downloading'"/>
-     <div v-if="job.total" class="dui-update-byte-count">[[size(job.downloaded)]] / [[size(job.total)]] <span v-if="job.phase==='downloading'">· [[percent]]%</span></div>
-     <a-alert v-if="job.error" type="error" show-icon :message="error(job.error)"/>
+  <div v-if="detailsVisible" class="dui-update-inline">
+   <div v-for="kind in ['panel','core']" :key="kind" class="dui-update-entry" :data-kind="kind">
+    <div class="dui-update-entry-info">
+     <div class="dui-update-entry-title"><strong>[[t[kind] ]]</strong><span class="dui-update-current" :title="t.current">[[state.items[kind].current||'—']]</span></div>
+     <div class="dui-update-latest"><span>[[t.latest]]</span> <b>[[state.items[kind].latest||t.unknown]]</b></div>
     </div>
-    <a-alert v-if="requestError||state.checkError" type="warning" show-icon :message="error(requestError||state.checkError)"/>
-    <div class="dui-update-actions">
-     <a-button :loading="state.checking" @click="poll(true)">[[t.check]]</a-button>
-     <a-button v-if="offline||(job.phase==='complete'&&job.kind==='panel')" type="primary" @click="reload">[[t.reload]]</a-button>
-     <a-button v-else type="primary" :loading="starting" :disabled="job.busy||!state.supported||!selectedItem.available" @click="start">[[t.start]]</a-button>
+    <div class="dui-update-entry-action">
+     <span v-if="state.items[kind].available" class="dui-update-available">[[t.available]]</span>
+     <button v-if="state.items[kind].available&&state.supported" type="button" class="dui-update-install" :disabled="starting||job.busy" :aria-label="t[kind]+': '+t.start" @click="start(kind)">
+      <a-icon :type="starting&&startingKind===kind?'loading':'download'"/><span>[[t.start]]</span>
+     </button>
+     <span v-else-if="!checking&&!offline&&!state.checkError&&state.items[kind].latest&&!state.items[kind].available" class="dui-update-current-state" role="status"><a-icon type="check-circle"/> [[t.upToDate]]</span>
     </div>
    </div>
-  </a-modal>
- </div>`
+   <p v-if="offers.length||job.busy||starting" class="dui-update-hint">[[t.hint]]</p>
+   <a-alert v-if="state.supported===false" type="info" show-icon :message="t.unsupported"/>
+   <a-alert v-if="offline" type="warning" show-icon :message="job.busy?t.reconnecting:t.checkFailed"/>
+   <div v-if="job.id||starting" class="dui-update-progress" aria-live="polite" role="status">
+    <div class="dui-update-progress-head"><span>[[t[starting?startingKind:job.kind ] ]] [[starting?state.items[startingKind].latest:job.version]]</span><strong>[[starting?t.connecting:phase]]</strong></div>
+    <a-progress v-if="job.total&&(job.busy||job.phase==='complete')&&!starting" :percent="percent" :status="job.phase==='complete'?'success':'active'" :show-info="job.phase==='downloading'"/>
+    <div v-else-if="starting||job.busy" class="dui-update-indeterminate" role="progressbar" :aria-label="starting?t.connecting:phase"></div>
+    <div v-if="!starting&&(job.total||job.downloaded)" class="dui-update-byte-count">[[size(job.downloaded||0)]]<template v-if="job.total"> / [[size(job.total)]] <span v-if="job.phase==='downloading'">· [[percent]]%</span></template></div>
+    <a-alert v-if="job.error&&!starting" type="error" show-icon :message="error(job.error)"/>
+    <button v-if="job.phase==='complete'&&job.kind==='panel'" type="button" class="dui-update-install dui-update-reload" @click="reload"><a-icon type="reload"/>[[t.reload]]</button>
+   </div>
+   <a-alert v-if="requestError||state.checkError" type="warning" show-icon :message="error(requestError||state.checkError)"/>
+  </div>
+  <div class="dui-product-links"><slot></slot></div>
+ </section>`
 };
 if(typeof Vue!=='undefined')Vue.component('dui-updates',DuiUpdates);
 if(typeof module!=='undefined')module.exports={DuiUpdates,DuiUpdateText};

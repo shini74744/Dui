@@ -475,9 +475,10 @@
 								</a-col>
 
 								<a-col :xs="24" :sm="24" :lg="8">
-									<a-card title='{{ i18n "pages.index.duiTitle" }}' hoverable :bordered="true" class="glass-card dui-product-card" :style="{ marginBottom: '16px' }">
-                                        <template #extra><dui-updates ref="updates"></dui-updates></template>
-										<div style="white-space: nowrap; overflow-x: auto;">
+									<a-card hoverable :bordered="true" class="glass-card dui-product-card" :style="{ marginBottom: '16px' }">
+                                        <dui-updates ref="updates">
+                                            <template #title>{{ i18n "pages.index.duiTitle" }}</template>
+										<div class="dui-product-link-list">
 											<a rel="noopener" href="https://github.com/shini74744/Dui/releases" target="_blank">
 												<a-tag color="green"><span>v{{ .cur_ver }}</span></a-tag>
 											</a>
@@ -488,7 +489,8 @@
 												<a-tag color="purple"><span>{{ i18n "pages.index.tgGroupChat" }}</span></a-tag>
 											</a>
 										</div>
-									</a-card>
+                                        </dui-updates>
+                                    </a-card>
 
 									<a-card hoverable :bordered="true" class="glass-card runtime-card" :style="{ marginBottom: '16px' }">
 										<template #title>{{ i18n "pages.index.operationHours" }}</template>
