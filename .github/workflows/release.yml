@@ -61,6 +61,14 @@ jobs:
           fi
       - name: Go tests
         run: go test ./...
+      - name: Verified updater race checks
+        run: go test -race ./internal/update
+      - name: Updater layout and progress tests
+        shell: bash
+        run: |
+          npm install --prefix /tmp/dui-updater-ui playwright
+          /tmp/dui-updater-ui/node_modules/.bin/playwright install --with-deps chromium
+          PLAYWRIGHT_MODULE=/tmp/dui-updater-ui/node_modules/playwright node scripts/test-updates-ui.cjs
 
   test-docker:
     name: Docker amd64 smoke test

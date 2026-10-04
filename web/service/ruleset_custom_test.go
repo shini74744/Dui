@@ -9,8 +9,9 @@ import (
 )
 
 func TestCustomRuleListsCRUD(t *testing.T) {
-	oldPath := customRuleListsPath
-	defer func() { customRuleListsPath = oldPath }()
+	oldPath, oldSourcePath := customRuleListsPath, routeRuleSourcesPath
+	defer func() { customRuleListsPath = oldPath; routeRuleSourcesPath = oldSourcePath }()
+	routeRuleSourcesPath = filepath.Join(t.TempDir(), "route_rule_sources.json")
 	customRuleListsPath = filepath.Join(t.TempDir(), "custom_rule_lists.json")
 
 	svc := &RuleSetService{}

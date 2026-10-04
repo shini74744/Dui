@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"time"
 
@@ -49,6 +50,20 @@ type swapApplyForm struct {
 func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.GET("/helperCapabilities", func(c *gin.Context) { jsonObj(c, service.GetHelperCapabilities(), nil) })
 	g.GET("/status", a.status)
+	g.GET("/updates", a.checkLogin, func(c *gin.Context) { jsonObj(c, a.serverService.UpdateStatus(false), nil) })
+	g.POST("/updates/check", a.checkLogin, checkUpdateOrigin, func(c *gin.Context) { jsonObj(c, a.serverService.UpdateStatus(true), nil) })
+	g.POST("/updates/start", a.checkLogin, checkUpdateOrigin, func(c *gin.Context) {
+		var form struct {
+			Kind    string `json:"kind" form:"kind"`
+			Version string `json:"version" form:"version"`
+		}
+		if err := c.ShouldBindJSON(&form); err != nil {
+			jsonObj(c, nil, err)
+			return
+		}
+		job, err := a.serverService.StartUpdate(form.Kind, form.Version)
+		jsonObj(c, job, err)
+	})
 	g.GET("/swap/status", a.getSwapStatus)
 	g.POST("/swap/apply", a.applySwap)
 	g.GET("/getXrayVersion", a.getXrayVersion)
@@ -62,7 +77,7 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 
 	g.POST("/stopXrayService", a.stopXrayService)
 	g.POST("/restartXrayService", a.restartXrayService)
-	g.POST("/installXray/:version", a.installXray)
+	g.POST("/installXray/:version", a.checkLogin, checkUpdateOrigin, a.installXray)
 	g.POST("/updateGeofile", a.updateGeofile)
 	g.POST("/updateGeofile/:fileName", a.updateGeofile)
 	g.POST("/logs/:count", a.getLogs)
@@ -137,8 +152,8 @@ func (a *ServerController) getXrayVersion(c *gin.Context) {
 
 func (a *ServerController) installXray(c *gin.Context) {
 	version := c.Param("version")
-	err := a.serverService.UpdateXray(version)
-	jsonMsg(c, I18nWeb(c, "pages.index.xraySwitchVersionPopover"), err)
+	job, err := a.serverService.StartUpdate("core", version)
+	jsonObj(c, job, err)
 }
 
 func (a *ServerController) updateGeofile(c *gin.Context) {
@@ -409,4 +424,19 @@ func (a *ServerController) openPort(c *gin.Context) {
 	// 【中文注释】: 3. 因为服务层方法是异步的，不再检查它的 error 返回值。
 	//    直接向前端返回一个成功的消息，告知用户指令已发送。
 	jsonMsg(c, "端口放行指令已成功发送，正在后台执行...", nil)
+}
+
+func checkUpdateOrigin(c *gin.Context) {
+	if c.GetHeader("Sec-Fetch-Site") == "cross-site" {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	if origin := c.GetHeader("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host != c.Request.Host {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+	}
+	c.Next()
 }

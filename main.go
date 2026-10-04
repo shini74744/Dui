@@ -13,8 +13,10 @@ import (
 	// 中文注释: 新增了 time 和 x-ui/job 的导入，这是运行定时任务所必需的
 	"time"
 
+	"path/filepath"
 	"x-ui/config"
 	"x-ui/database"
+	"x-ui/internal/update"
 	"x-ui/logger"
 	"x-ui/sub"
 	"x-ui/util/crypto"
@@ -129,6 +131,8 @@ func runWebServer() {
 		log.Fatalf("Error starting sub server: %v", err)
 		return
 	}
+
+	update.Ready(filepath.Join(config.GetDBFolderPath(), "updates"), xrayService.IsXrayRunning())
 
 	// 中文注释: 在面板服务启动后，我们在这里启动设备限制的后台任务
 	go func() {
@@ -545,6 +549,9 @@ func migrateDb() {
 }
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "update-worker" {
+		os.Exit(update.Run(os.Args[2], os.Args[3]))
+	}
 	if len(os.Args) < 2 {
 		runWebServer()
 		return

@@ -17,3 +17,35 @@
 .dui-outbound-drag-source { opacity: .5; }
 .dui-outbound-drop-before > td { box-shadow: inset 0 3px #008771; }
 .dui-outbound-drop-after > td { box-shadow: inset 0 -3px #008771; }
+
+/* Verified updater: compact header controls, responsive and theme-neutral. */
+.dui-product-card .ant-card-head-wrapper{align-items:flex-start;gap:12px;flex-wrap:wrap}
+.dui-product-card .ant-card-head-title{flex:0 1 auto;white-space:normal;min-width:120px}
+.dui-product-card .ant-card-extra{float:none;margin-inline-start:auto;max-width:100%;padding:18px 0}
+.dui-update-pills{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:100%}
+.dui-update-pill,.dui-update-check{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:1px solid rgba(0,170,143,.35);background:rgba(0,170,143,.09);color:inherit;border-radius:16px;padding:5px 9px;line-height:1.4;font:inherit;font-size:12px;cursor:pointer;max-width:100%;white-space:normal}
+.dui-update-pill b{font-size:11px;font-weight:500;opacity:.8}
+.dui-update-pill:hover,.dui-update-check:hover{background:rgba(0,170,143,.2);border-color:#00aa8f}
+.dui-update-check{border-color:transparent;background:transparent;opacity:.72}
+.dui-update-pill.is-busy{border-color:rgba(61,150,245,.4);background:rgba(61,150,245,.1)}
+.dui-update-pill.is-error{border-color:rgba(225,111,58,.45);background:rgba(225,111,58,.1)}
+.dui-update-pill:focus-visible,.dui-update-check:focus-visible{outline:2px solid #00aa8f;outline-offset:3px}
+.dui-update-dialog{color:inherit;min-width:0}
+.dui-update-tabs{display:flex;gap:6px;padding:4px;border-radius:12px;background:rgba(128,128,128,.08)}
+.dui-update-tabs button{flex:1;background:transparent;border:0;border-radius:9px;padding:9px;color:inherit;cursor:pointer}
+.dui-update-tabs button.active{background:rgba(0,170,143,.13);color:#009d85;font-weight:600}
+.dui-update-dot{display:inline-block;width:6px;height:6px;background:#00aa8f;border-radius:50%;margin-inline-start:7px;vertical-align:middle}
+.dui-update-versions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0}
+.dui-update-versions div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.dui-update-versions strong{font-size:20px;overflow-wrap:anywhere}
+.dui-update-versions small,.dui-update-hint,.dui-update-byte-count{opacity:.68;font-size:12px}
+.dui-update-hint{line-height:1.8;margin:16px 0}
+.dui-update-progress{border:1px solid rgba(128,128,128,.2);border-radius:12px;padding:14px;margin-top:18px}
+.dui-update-progress-head{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;font-size:12px}
+.dui-update-progress .ant-progress{margin:10px 0 3px}
+.dui-update-byte-count{font-variant-numeric:tabular-nums}
+.dui-update-dialog .ant-alert{margin-top:12px;overflow-wrap:anywhere}
+.dui-update-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:22px}
+@media(max-width:575px){.dui-product-card .ant-card-head-wrapper{gap:0 8px}.dui-product-card .ant-card-extra{padding:8px 0 12px}.dui-product-card .ant-card-head-title{padding-bottom:8px}.dui-update-pill{padding:5px 8px}.dui-update-pills{max-width:100%}.dui-update-versions strong{font-size:18px}}
+
+.dui-update-pill{color:#087e6d}.dui-update-check{color:#627080}.dark .dui-update-pill{color:#62dec5}.dark .dui-update-check{color:#b1bfcc}.dark .dui-update-dialog{color:#dce4ec}.dark .dui-update-tabs button.active{color:#62dec5}
