@@ -96,6 +96,9 @@ const splitStart=rule.indexOf('  function ruleAdvancedSplit('), splitEnd=rule.in
 assert(splitStart>=0&&splitEnd>splitStart);
 vm.runInContext(rule.slice(splitStart,splitEnd)+rule.slice(rule.indexOf('  function duiBlacklistHash('),rule.indexOf('  function duiEnsureBlacklistOutbound(')),context);
 const methods=vm.runInContext('({'+page.slice(page.indexOf('      editOutbound(index) {'),page.indexOf('      deleteOutbound(index) {'))+'})',context);
+const outboundMethods=vm.runInContext('({'+page.slice(page.indexOf('      deleteOutbound(index) {'),page.indexOf('      addReverse() {'))+'})',context);
+const computed=vm.runInContext('({'+page.slice(page.indexOf('      templateSettings: {'),page.indexOf('      inboundSettings: {'))+page.slice(page.indexOf('      outboundSettings: {'),page.indexOf('      reverseData: {'))+'})',context);
+const draftWatcher=vm.runInContext('({'+page.slice(page.indexOf('      xraySetting(value) {'),page.indexOf('    computed: {')).replace(/    },\s*$/, '')+'})',context);
 const modal=read('web/html/modals/xray_outbound_modal.html');
 context.Outbound=class {static fromJson(value){return Object.assign(new this(),plain(value));}toJson(){return plain({...this});}};
 context.ObjectUtil={execute:(fn,...args)=>fn(...args)};
@@ -106,6 +109,8 @@ function appFixture() {
     const merged=context.duiBuildRoutingGroups(before.routing.rules,before.outbounds)[0].merged;
     const oldKey=context.duiRuleSourceFingerprint(merged);
     const app={templateSettings:before,outboundData:[{_physicalIndex:0},{_physicalIndex:2}],routeSourceMap:{[oldKey]:['list-1']},warnings:[]};
+    app.xraySetting=JSON.stringify(before);
+    for (const key of ['templateSettings','outboundSettings','outboundData']) Object.defineProperty(app,key,{...computed[key],configurable:true});
     app.$message={warning:message=>app.warnings.push(message)};
     return {app,oldKey};
 }
@@ -128,12 +133,147 @@ test('real ordinary confirm leaves routes and source metadata unchanged',()=>{
 test('cancel and invalid duplicate cannot modify draft configuration',()=>{
     const {app}=appFixture();const before=plain(app.templateSettings);methods.editOutbound.call(app,1);
     context.modal.outbound.tag='direct';context.modal.ok('sync');assert.equal(context.modal.isValid,false);
-    assert.deepEqual(app.templateSettings,before);context.modal.close();assert.deepEqual(app.templateSettings,before);
+    assert.deepEqual(plain(app.templateSettings),before);context.modal.close();assert.deepEqual(plain(app.templateSettings),before);
 });
 test('stale edit is rejected instead of overwriting a changed outbound',()=>{
     const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;
-    app.templateSettings=plain(app.templateSettings);app.templateSettings.outbounds[2].settings.domainStrategy='UseIPv6';
+    const changed=plain(app.templateSettings);changed.outbounds[2].settings.domainStrategy='UseIPv6';app.templateSettings=changed;
     const before=plain(app.templateSettings);context.modal.ok('sync');
-    assert.deepEqual(app.templateSettings,before);assert.equal(app.warnings.length,1);assert.equal(context.modal.visible,true);
+    assert.deepEqual(plain(app.templateSettings),before);assert.equal(app.warnings.length,1);assert.equal(context.modal.visible,true);
 });
-console.log(`Outbound reference synchronization: ${cases} cases passed`);
+test('ordinary rename can be reopened and synchronized without another rename',()=>{
+    const {app,oldKey}=appFixture();
+    methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    methods.editOutbound.call(app,1);
+    assert.equal(context.modal.references.routes.length,2,'old-tag routes must remain available for synchronization');
+    context.modal.ok('sync');
+    assert(app.templateSettings.routing.rules.every(r=>r.outboundTag===newTag));
+    const merged=context.duiBuildRoutingGroups(app.templateSettings.routing.rules,app.templateSettings.outbounds)[0].merged;
+    assert.deepEqual(plain(app.routeSourceMap[context.duiRuleSourceFingerprint(merged)]),['list-1']);
+    assert.equal(app.routeSourceMap[oldKey],undefined);
+    assert.deepEqual(plain(app.pendingOutboundRenames),[]);
+});
+test('repeated ordinary renames retain original and intermediate references',()=>{
+    const {app}=appFixture();
+    methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    let settings=app.templateSettings;settings.routing.rules.push({type:'field',domain:['domain:intermediate.test'],outboundTag:newTag});app.templateSettings=settings;
+    methods.editOutbound.call(app,1);context.modal.outbound.tag='THIRD';context.modal.ok();
+    methods.editOutbound.call(app,1);assert.equal(context.modal.references.routes.length,3);
+    context.modal.outbound.tag='FINAL';context.modal.ok('sync');
+    assert(app.templateSettings.routing.rules.every(r=>r.outboundTag==='FINAL'));assert.equal(app.warnings.length,0);
+    assert.deepEqual(plain(app.pendingOutboundRenames),[]);
+});
+test('parameter-only ordinary edit and cancel preserve pending synchronization',()=>{
+    const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    const history=plain(app.pendingOutboundRenames);
+    methods.editOutbound.call(app,1);context.modal.outbound.tag='CANCELLED';context.modal.close();
+    assert.deepEqual(plain(app.pendingOutboundRenames),history);
+    methods.editOutbound.call(app,1);context.modal.outbound.settings.domainStrategy='UseIPv6';context.modal.ok();
+    methods.editOutbound.call(app,1);assert.equal(context.modal.references.routes.length,2);context.modal.ok('sync');
+    assert.equal(app.templateSettings.outbounds[2].settings.domainStrategy,'UseIPv6');
+    assert(app.templateSettings.routing.rules.every(r=>r.outboundTag===newTag));
+});
+test('pending synchronization follows outbound through default-order changes',()=>{
+    const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    outboundMethods.setFirstOutbound.call(app,1);
+    assert.equal(app.templateSettings.outbounds[0].tag,newTag);
+    methods.editOutbound.call(app,0);assert.equal(context.modal.references.routes.length,2);context.modal.ok('sync');
+    assert(app.templateSettings.routing.rules.every(r=>r.outboundTag===newTag));assert.equal(app.warnings.length,0);
+});
+test('deleting the renamed outbound does not transfer history to a replacement',()=>{
+    const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    outboundMethods.deleteOutbound.call(app,1);assert.deepEqual(plain(app.pendingOutboundRenames),[]);
+    const settings=app.templateSettings;settings.outbounds.push(node(newTag));app.templateSettings=settings;
+    methods.editOutbound.call(app,2);assert.equal(context.modal.references.total,0);
+});
+test('reusing an old tag discards its history and never steals that outbound references',()=>{
+    const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    const settings=app.templateSettings;settings.outbounds.push(node(oldTag));app.templateSettings=settings;
+    assert.deepEqual(plain(app.pendingOutboundRenames),[]);
+    methods.editOutbound.call(app,1);assert.equal(context.modal.references.total,0);context.modal.ok('sync');
+    assert(app.templateSettings.routing.rules.every(r=>r.outboundTag===oldTag));
+    outboundMethods.deleteOutbound.call(app,3);
+    methods.editOutbound.call(app,1);assert.equal(context.modal.references.total,0);
+});
+test('manual route correction clears pending history and preserves unrelated references',()=>{
+    const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    const settings=app.templateSettings;settings.routing.rules.forEach(r=>r.outboundTag='other');app.templateSettings=settings;
+    assert.deepEqual(plain(app.pendingOutboundRenames),[]);
+    methods.editOutbound.call(app,1);assert.equal(context.modal.references.total,0);context.modal.ok('sync');
+    assert(app.templateSettings.routing.rules.every(r=>r.outboundTag==='other'));
+});
+test('deferred synchronization migrates chain and selector references without double counting',()=>{
+    const before=fixture();before.outbounds.push(node(oldTag+'-2'));
+    before.routing.balancers=[{tag:'group',selector:[oldTag]}];before.observatory={subjectSelector:['HK-']};
+    before.outbounds[2].proxySettings={tag:oldTag};
+    const renamed=refs.prepare(before,1,node('JP-NEW'),'replace');
+    const pending=refs.rememberRename([],before,1,renamed,'replace');
+    const aliases=refs.pendingTags(pending,renamed,1);
+    const info=refs.inspect(renamed,['JP-NEW',...aliases]);
+    assert.equal(info.balancers,1);assert.equal(info.observatories,1);assert.equal(info.chains,1);
+    const synced=plain(refs.prepare(renamed,1,node('JP-NEW'),'sync',aliases));
+    assert.deepEqual(synced.routing.balancers[0].selector,[oldTag,'JP-NEW']);
+    assert.deepEqual(synced.observatory.subjectSelector,['HK-','JP-NEW']);
+    assert.equal(synced.outbounds[2].proxySettings.tag,'JP-NEW');
+});
+test('deferred synchronization still rejects unsafe prefix expansion atomically',()=>{
+    const before=fixture();before.outbounds.push(node(newTag+'-unrelated'));
+    before.routing.balancers=[{tag:'group',selector:[oldTag]}];
+    const renamed=refs.prepare(before,1,node(newTag),'replace'), snapshot=plain(renamed);
+    const pending=refs.rememberRename([],before,1,renamed,'replace');
+    assert.throws(()=>refs.prepare(renamed,1,node(newTag),'sync',refs.pendingTags(pending,renamed,1)),/前缀匹配/);
+    assert.deepEqual(plain(renamed),snapshot);
+});
+test('multiple pending outbound renames remain independent',()=>{
+    let before=fixture();before.routing.rules.push({type:'field',domain:['domain:second.test'],outboundTag:'other'});
+    let next=refs.prepare(before,1,node(newTag),'replace');
+    let pending=refs.rememberRename([],before,1,next,'replace');before=next;
+    next=refs.prepare(before,2,node('OTHER-NEW'),'replace');pending=refs.rememberRename(pending,before,2,next,'replace');before=next;
+    next=refs.prepare(before,1,node(newTag),'sync',refs.pendingTags(pending,before,1));pending=refs.rememberRename(pending,before,1,next,'sync');
+    assert.equal(next.routing.rules[11].outboundTag,newTag);assert.equal(next.routing.rules[12].outboundTag,'other');
+    assert.equal(pending.length,1);assert.equal(pending[0].tag,'OTHER-NEW');
+    assert(!JSON.stringify(next).includes('previousTags'));
+});
+test('advanced JSON changes prune stale history without losing it during incomplete input',()=>{
+    const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    const history=plain(app.pendingOutboundRenames);draftWatcher.xraySetting.call(app,'{');
+    assert.deepEqual(plain(app.pendingOutboundRenames),history);
+    const settings=app.templateSettings;settings.outbounds=settings.outbounds.filter(o=>o.tag!==newTag);
+    draftWatcher.xraySetting.call(app,JSON.stringify(settings));assert.deepEqual(plain(app.pendingOutboundRenames),[]);
+});
+test('renaming back to the original tag removes obsolete pending history',()=>{
+    const {app}=appFixture();methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    methods.editOutbound.call(app,1);context.modal.outbound.tag=oldTag;context.modal.ok();
+    assert.deepEqual(plain(app.pendingOutboundRenames),[]);
+    methods.editOutbound.call(app,1);assert.equal(context.modal.references.routes.length,2);
+});
+const persistence=vm.runInContext('({'+
+    page.slice(page.indexOf('      async getXraySetting() {'),page.indexOf('      async loadRouteSourceMap() {'))+
+    page.slice(page.indexOf('      async updateXraySetting() {'),page.indexOf('      async restartXray() {'))+
+    page.slice(page.indexOf('      async resetXrayConfigToDefault() {'),page.indexOf('      async loadManagedBlacklist() {'))+'})',context);
+(async()=>{
+    const {app}=appFixture();
+    methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    app.loading=()=>{};app.loadingStates={fetched:true};app.persistRouteSourceMap=async()=>{};app.getXrayResult=async()=>{};
+    app.getXraySetting=()=>persistence.getXraySetting.call(app);
+    context.PromiseUtil={sleep:async()=>{}};
+    context.HttpUtil={post:async()=>({success:false})};
+    const history=plain(app.pendingOutboundRenames);
+    await persistence.updateXraySetting.call(app);
+    assert.deepEqual(plain(app.pendingOutboundRenames),history);
+    methods.editOutbound.call(app,1);assert.equal(context.modal.references.routes.length,2);context.modal.ok('sync');cases++;
+    methods.editOutbound.call(app,1);context.modal.outbound.tag='NEXT';context.modal.ok();
+    let posted;
+    context.HttpUtil={post:async(url,body)=>{
+        if(url==='/dui/xray/update'){posted=JSON.parse(body.xraySetting);return {success:true};}
+        return {success:true,obj:JSON.stringify({xraySetting:fixture(),inboundTags:[]})};
+    }};
+    await persistence.updateXraySetting.call(app);
+    assert.deepEqual(plain(app.pendingOutboundRenames),[]);assert(!JSON.stringify(posted).includes('previousTags'));cases++;
+    methods.editOutbound.call(app,1);context.modal.outbound.tag=newTag;context.modal.ok();
+    assert(app.pendingOutboundRenames.length>0);
+    context.HttpUtil={get:async()=>({success:true,obj:fixture()})};
+    await persistence.resetXrayConfigToDefault.call(app);
+    assert.deepEqual(plain(app.pendingOutboundRenames),[]);cases++;
+    console.log(`Outbound reference synchronization: ${cases} cases passed`);
+})().catch(error=>{console.error(error);process.exit(1)});
