@@ -394,6 +394,7 @@ func (s *XrayService) RestartXray(isForce bool) error {
 	var previous *xray.Config
 	if s.IsXrayRunning() {
 		previous = p.GetConfig()
+		CollectProbeHistory(p.GetAPIPort())
 		if err := p.Stop(); err != nil {
 			return err
 		}
@@ -427,6 +428,7 @@ func (s *XrayService) StopXray() error {
 	helperMu.Unlock()
 	logger.Debug("Attempting to stop Xray...")
 	if s.IsXrayRunning() {
+		CollectProbeHistory(p.GetAPIPort())
 		return p.Stop()
 	}
 	return errors.New("xray is not running")

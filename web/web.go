@@ -312,6 +312,7 @@ func (s *Server) startTask() {
 	// check client ips from log file every 10 sec
 	s.cron.AddJob("@every 10s", job.NewCheckClientIpJob())
 	s.cron.AddJob("@every 10s", job.NewHelperProtocolJob())
+	s.cron.AddJob("@every 5s", job.NewProbeHistoryJob())
 
 	// check client ips from log file every day
 	s.cron.AddJob("@daily", job.NewClearLogsJob())

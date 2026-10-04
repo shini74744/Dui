@@ -14,6 +14,7 @@ function html(lang,width,theme){
  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+styles+'<style>body.dark{background:#101114;color:rgba(255,255,255,.85)}</style></head><body class="'+theme+'">'+scripts+
  '<script>const LanguageManager={getLanguage:()=>'+JSON.stringify(lang)+'};</script>'+component+
  '<main id="app" style="padding:16px;max-width:1000px;margin:auto" class="'+theme+'"><a-button id="save" :disabled="!valid" @click="save">Save</a-button><dui-strategy-probes ref="probes" :key="revision" :value="config" @input="config=$event" @validity="valid=$event"></dui-strategy-probes></main>'+
+ '<script>window.historyCalls=[];const HttpUtil={async get(url){const q=new URL(url,\"http://test.local\").searchParams;const strategy=q.get(\"strategy\"),page=Number(q.get(\"page\")),tag=q.get(\"outbound\");historyCalls.push({strategy,page,tag});await new Promise(resolve=>setTimeout(resolve,strategy===\"leastPing\"?80:5));return {success:true,obj:{rows:[{id:page*10,time:1780000000000,strategy,outbound:tag||strategy+\"-node\",status:\"success\",delay:12.3},{id:page*10+1,time:1780000001000,strategy,outbound:tag||strategy+\"-node\",status:\"network_unavailable\",delay:0}],page,total:55,tags:[strategy+\"-node\"],state:\"ok\",gap:false}}}};</script>'+
  '<script>window.app=new Vue({el:"#app",data:{config:'+JSON.stringify(base)+',valid:true,revision:0},methods:{save(){window.saved=JSON.stringify(this.config)},reload(){this.revision++;this.valid=true;this.config=JSON.parse(window.saved)}}});</script></body></html>';
 }
 (async()=>{
@@ -31,6 +32,9 @@ function html(lang,width,theme){
   await page.getByRole('tab',{name:txt.random,exact:true}).click();
   assert.equal(await page.locator('label[for="probe-timeout-random"]').innerText(),txt.timeout);
   assert.equal(await page.evaluate(()=>JSON.stringify(app.config)),JSON.stringify(base));
+  await page.getByRole('button',{name:txt.history,exact:true}).click();
+  await page.waitForSelector('.dui-probe-history .ant-table-row');
+  assert(await page.locator('.dui-probe-history').getByText(txt.network_unavailable,{exact:true}).isVisible());
   results.push({case:'locale',lang});await page.close();
  }
  for(const width of [320,390,1100])for(const theme of ['', 'dark']){
@@ -69,6 +73,19 @@ function html(lang,width,theme){
   await page.locator('#probe-timeout-random').fill('7s');await page.locator('#probe-timeout-random').blur();
   assert.equal(await page.evaluate(()=>app.config.strategyObservatory.random.customFuture.keep),true);
   assert.equal(await page.evaluate(()=>app.config.strategyObservatory.leastLoad.pingConfig.interval),'2m');
+  await page.getByRole('button',{name:t.history,exact:true}).click();
+  await page.waitForSelector('.dui-probe-history .ant-table-row');
+  assert(await page.locator('.dui-probe-history').getByText('12.3 ms',{exact:true}).isVisible());
+  await page.getByRole('button',{name:t.nextHistory,exact:true}).click();
+  await page.waitForFunction(()=>app.$refs.probes.history.page===2);
+  await page.getByRole('tab',{name:t.leastPing,exact:true}).click();
+  await page.getByRole('tab',{name:t.roundRobin,exact:true}).click();
+  await page.waitForFunction(()=>app.$refs.probes.history.rows[0]?.strategy==='roundRobin');
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(()=>app.$refs.probes.history.rows[0].strategy),'roundRobin');
+  await page.getByRole('button',{name:t.refreshHistory,exact:true}).click();
+  await page.waitForFunction(()=>!app.$refs.probes.historyLoading);
+  assert.equal(await page.evaluate(()=>app.$refs.probes.history.page),1);
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
   assert(!overflow,'horizontal overflow at '+width);
   if(theme==='dark'&&(width===390||width===1100))await page.screenshot({path:work+'/strategy-probes-'+width+'.png',fullPage:true});

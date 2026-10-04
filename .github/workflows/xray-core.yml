@@ -30,7 +30,7 @@ jobs:
       - name: Close and half-close regression tests
         working-directory: ${{ runner.temp }}/xray/source
         run: |
-          go test -race ./app/observatory ./app/observatory/strategy ./app/router -run TestDUI -count=1 -timeout=120s
+          go test -race ./common/duiprobehistory ./app/stats/command ./app/observatory ./app/observatory/strategy ./app/router -run TestDUI -count=1 -timeout=120s
           go test -race ./common/duiclosewait ./transport/internet ./proxy/hysteria/account ./transport/internet/hysteria ./common/duilimit ./common/singbridge ./transport/pipe ./app/dispatcher ./app/policy -count=1 -timeout=180s
           # Upstream Vision uses uintptr reflection (vless/outbound.go:286), which trips checkptr under -race.
           # Run complete protocol integration with the same compiler flags as production binaries.
@@ -47,6 +47,7 @@ jobs:
           go build -o "$RUNNER_TEMP/dui-closewait-panel" .
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-close-wait-integration.py
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-strategy-probes-integration.py
+          DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-probe-history-integration.py
       - name: Package complete modified source
         run: |
           mkdir -p source-assets

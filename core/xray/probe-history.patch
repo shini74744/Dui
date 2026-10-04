@@ -1,0 +1,405 @@
+diff --git a/app/observatory/burst/healthping.go b/app/observatory/burst/healthping.go
+index b5cc021..a50ea1e 100644
+--- a/app/observatory/burst/healthping.go
++++ b/app/observatory/burst/healthping.go
+@@ -9,6 +9,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/xtls/xray-core/common/dice"
++	"github.com/xtls/xray-core/common/duiprobehistory"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/features/routing"
+ )
+@@ -187,6 +188,7 @@ func (h *HealthPing) doCheck(ctx context.Context, tags []string, duration time.D
+ 				errors.LogDebug(h.ctx, "checking ", handler)
+ 				delay, err := client.MeasureDelay(h.Settings.HttpMethod)
+ 				if err == nil {
++					duiprobehistory.Record(h.ctx, "legacyBurst", handler, "success", float64(delay)/float64(time.Millisecond))
+ 					ch <- &rtt{
+ 						handler: handler,
+ 						value:   delay,
+@@ -194,6 +196,7 @@ func (h *HealthPing) doCheck(ctx context.Context, tags []string, duration time.D
+ 					return
+ 				}
+ 				if !h.checkConnectivity() {
++					duiprobehistory.Record(h.ctx, "legacyBurst", handler, "network_unavailable", 0)
+ 					errors.LogWarning(h.ctx, "network is down")
+ 					ch <- &rtt{
+ 						handler: handler,
+@@ -201,6 +204,7 @@ func (h *HealthPing) doCheck(ctx context.Context, tags []string, duration time.D
+ 					}
+ 					return
+ 				}
++				duiprobehistory.Record(h.ctx, "legacyBurst", handler, "failed", 0)
+ 				errors.LogWarning(h.ctx, fmt.Sprintf(
+ 					"error ping %s with %s: %s",
+ 					h.Settings.Destination,
+diff --git a/app/observatory/observer.go b/app/observatory/observer.go
+index 5e4bfed..58aab80 100644
+--- a/app/observatory/observer.go
++++ b/app/observatory/observer.go
+@@ -11,6 +11,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/duiprobehistory"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	v2net "github.com/xtls/xray-core/common/net"
+ 	"github.com/xtls/xray-core/common/session"
+@@ -204,6 +205,12 @@ func (o *Observer) probe(outbound string) ProbeResult {
+ }
+ 
+ func (o *Observer) updateStatusForResult(outbound string, result *ProbeResult) {
++	state, delay := "success", float64(result.Delay)
++	if !result.Alive {
++		state = "failed"
++		delay = 0
++	}
++	duiprobehistory.Record(o.ctx, "legacyPing", outbound, state, delay)
+ 	o.statusLock.Lock()
+ 	defer o.statusLock.Unlock()
+ 	var status *OutboundStatus
+diff --git a/app/observatory/strategy/observer.go b/app/observatory/strategy/observer.go
+index 5e4674d..4509699 100644
+--- a/app/observatory/strategy/observer.go
++++ b/app/observatory/strategy/observer.go
+@@ -8,6 +8,7 @@ import (
+ 
+ 	"github.com/xtls/xray-core/app/observatory"
+ 	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/duiprobehistory"
+ 	"github.com/xtls/xray-core/features/extension"
+ 	"google.golang.org/protobuf/proto"
+ )
+@@ -79,7 +80,7 @@ func New(ctx context.Context, config *Config) (*Observer, error) {
+ 		if err != nil {
+ 			return nil, err
+ 		}
+-		child, err := common.CreateObject(ctx, msg)
++		child, err := common.CreateObject(duiprobehistory.WithStrategy(ctx, name), msg)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+diff --git a/app/stats/command/command.go b/app/stats/command/command.go
+index aa7d660..80bb42b 100644
+--- a/app/stats/command/command.go
++++ b/app/stats/command/command.go
+@@ -7,6 +7,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/duiprobehistory"
+ 	"github.com/xtls/xray-core/core"
+ 	feature_stats "github.com/xtls/xray-core/features/stats"
+ 	grpc "google.golang.org/grpc"
+@@ -208,12 +209,14 @@ func (s *statsServer) GetSysStats(ctx context.Context, request *SysStatsRequest)
+ func (s *statsServer) mustEmbedUnimplementedStatsServiceServer() {}
+ 
+ type service struct {
++	recorder     *duiprobehistory.Recorder
+ 	statsManager feature_stats.Manager
+ }
+ 
+ func (s *service) Register(server *grpc.Server) {
+ 	ss := NewStatsServer(s.statsManager)
+ 	RegisterStatsServiceServer(server, ss)
++	registerProbeHistory(server, s.recorder)
+ 
+ 	// For compatibility purposes
+ 	vCoreDesc := StatsService_ServiceDesc
+@@ -223,7 +226,7 @@ func (s *service) Register(server *grpc.Server) {
+ 
+ func init() {
+ 	common.Must(common.RegisterConfig((*Config)(nil), func(ctx context.Context, cfg interface{}) (interface{}, error) {
+-		s := new(service)
++		s := &service{recorder: duiprobehistory.FromContext(ctx)}
+ 
+ 		core.RequireFeatures(ctx, func(sm feature_stats.Manager) {
+ 			s.statsManager = sm
+diff --git a/app/stats/command/dui_probe_history.go b/app/stats/command/dui_probe_history.go
+new file mode 100644
+index 0000000..e41e2d5
+--- /dev/null
++++ b/app/stats/command/dui_probe_history.go
+@@ -0,0 +1,57 @@
++package command
++
++import (
++	"context"
++	"encoding/json"
++	"github.com/xtls/xray-core/common/duiprobehistory"
++	"google.golang.org/grpc"
++	"google.golang.org/protobuf/types/known/structpb"
++)
++
++const probeHistoryMethod = "/xray.app.stats.command.DUIProbeHistoryService/GetProbeHistory"
++
++type probeHistoryAPI interface {
++	GetProbeHistory(context.Context, *structpb.Struct) (*structpb.Struct, error)
++}
++type probeHistoryServer struct{ recorder *duiprobehistory.Recorder }
++
++func (s *probeHistoryServer) GetProbeHistory(ctx context.Context, request *structpb.Struct) (*structpb.Struct, error) {
++	fields := request.GetFields()
++	session := fields["session"].GetStringValue()
++	after := fields["after"].GetNumberValue()
++	if after < 0 {
++		after = 0
++	}
++	batch := s.recorder.Read(session, uint64(after), 500)
++	payload, err := json.Marshal(batch)
++	if err != nil {
++		return nil, err
++	}
++	values := map[string]interface{}{}
++	if err = json.Unmarshal(payload, &values); err != nil {
++		return nil, err
++	}
++	return structpb.NewStruct(values)
++}
++func registerProbeHistory(server *grpc.Server, recorder *duiprobehistory.Recorder) {
++	if recorder == nil {
++		return
++	}
++	server.RegisterService(&grpc.ServiceDesc{
++		ServiceName: "xray.app.stats.command.DUIProbeHistoryService",
++		HandlerType: (*probeHistoryAPI)(nil),
++		Methods: []grpc.MethodDesc{{MethodName: "GetProbeHistory", Handler: func(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
++			request := new(structpb.Struct)
++			if err := dec(request); err != nil {
++				return nil, err
++			}
++			handler := func(ctx context.Context, req interface{}) (interface{}, error) {
++				return srv.(probeHistoryAPI).GetProbeHistory(ctx, req.(*structpb.Struct))
++			}
++			if interceptor == nil {
++				return handler(ctx, request)
++			}
++			return interceptor(ctx, request, &grpc.UnaryServerInfo{Server: srv, FullMethod: probeHistoryMethod}, handler)
++		}}},
++	}, &probeHistoryServer{recorder: recorder})
++}
+diff --git a/app/stats/command/dui_probe_history_test.go b/app/stats/command/dui_probe_history_test.go
+new file mode 100644
+index 0000000..5b931dd
+--- /dev/null
++++ b/app/stats/command/dui_probe_history_test.go
+@@ -0,0 +1,43 @@
++package command
++
++import (
++	"context"
++	"github.com/xtls/xray-core/common/duiprobehistory"
++	"google.golang.org/grpc"
++	"google.golang.org/grpc/credentials/insecure"
++	"google.golang.org/grpc/test/bufconn"
++	"google.golang.org/protobuf/types/known/structpb"
++	"net"
++	"testing"
++)
++
++func TestDUIProbeHistoryRPC(t *testing.T) {
++	recorder := duiprobehistory.New()
++	recorder.Add(duiprobehistory.Event{Strategy: "random", Outbound: "shared", Status: "failed", Time: 1234})
++	listener := bufconn.Listen(1024 * 1024)
++	server := grpc.NewServer()
++	registerProbeHistory(server, recorder)
++	go server.Serve(listener)
++	defer server.Stop()
++	conn, err := grpc.NewClient("passthrough:///history", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	out := new(structpb.Struct)
++	if err = conn.Invoke(context.Background(), probeHistoryMethod, &structpb.Struct{}, out); err != nil {
++		t.Fatal(err)
++	}
++	fields := out.GetFields()
++	events := fields["events"].GetListValue().Values
++	if len(events) != 1 || events[0].GetStructValue().Fields["status"].GetStringValue() != "failed" {
++		t.Fatal("real RPC lost raw result")
++	}
++	request, _ := structpb.NewStruct(map[string]interface{}{"session": fields["session"].GetStringValue(), "after": float64(1)})
++	if err = conn.Invoke(context.Background(), probeHistoryMethod, request, out); err != nil {
++		t.Fatal(err)
++	}
++	if len(out.GetFields()["events"].GetListValue().Values) != 0 {
++		t.Fatal("cursor repeated event")
++	}
++}
+diff --git a/common/duiprobehistory/history.go b/common/duiprobehistory/history.go
+new file mode 100644
+index 0000000..05e960b
+--- /dev/null
++++ b/common/duiprobehistory/history.go
+@@ -0,0 +1,100 @@
++// Package duiprobehistory buffers completed probes without changing routing measurements.
++package duiprobehistory
++
++import (
++	"context"
++	"crypto/rand"
++	"sync"
++	"time"
++)
++
++const Capacity = 4096
++
++type Event struct {
++	Sequence uint64  `json:"sequence"`
++	Time     int64   `json:"time"`
++	Strategy string  `json:"strategy"`
++	Outbound string  `json:"outbound"`
++	Status   string  `json:"status"`
++	Delay    float64 `json:"delay"`
++}
++type Batch struct {
++	Session string  `json:"session"`
++	Events  []Event `json:"events"`
++	Next    uint64  `json:"next"`
++	Latest  uint64  `json:"latest"`
++	Missed  bool    `json:"missed"`
++}
++type Recorder struct {
++	mu       sync.Mutex
++	session  string
++	sequence uint64
++	events   []Event
++}
++type recorderKey struct{}
++type strategyKey struct{}
++
++func New() *Recorder { return &Recorder{session: rand.Text()} }
++func WithRecorder(ctx context.Context, r *Recorder) context.Context {
++	return context.WithValue(ctx, recorderKey{}, r)
++}
++func FromContext(ctx context.Context) *Recorder {
++	if ctx == nil {
++		return nil
++	}
++	r, _ := ctx.Value(recorderKey{}).(*Recorder)
++	return r
++}
++func WithStrategy(ctx context.Context, name string) context.Context {
++	return context.WithValue(ctx, strategyKey{}, name)
++}
++func Record(ctx context.Context, fallback, tag, state string, delay float64) {
++	r := FromContext(ctx)
++	if r == nil {
++		return
++	}
++	name, _ := ctx.Value(strategyKey{}).(string)
++	if name == "" {
++		name = fallback
++	}
++	r.Add(Event{Time: time.Now().UnixMilli(), Strategy: name, Outbound: tag, Status: state, Delay: delay})
++}
++func (r *Recorder) Add(e Event) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.sequence++
++	e.Sequence = r.sequence
++	if r.events == nil {
++		r.events = make([]Event, Capacity)
++	}
++	r.events[(e.Sequence-1)%Capacity] = e
++}
++func (r *Recorder) Read(session string, after uint64, limit int) Batch {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if limit < 1 || limit > 500 {
++		limit = 500
++	}
++	out := Batch{Session: r.session, Events: []Event{}, Latest: r.sequence}
++	if session != r.session {
++		after = 0
++	}
++	first := uint64(1)
++	if r.sequence > Capacity {
++		first = r.sequence - Capacity + 1
++	}
++	out.Missed = after+1 < first
++	if after >= r.sequence {
++		out.Next = r.sequence
++		return out
++	}
++	if after+1 < first {
++		after = first - 1
++	}
++	out.Next = after
++	for n := after + 1; n <= r.sequence && len(out.Events) < limit; n++ {
++		out.Events = append(out.Events, r.events[(n-1)%Capacity])
++		out.Next = n
++	}
++	return out
++}
+diff --git a/common/duiprobehistory/history_test.go b/common/duiprobehistory/history_test.go
+new file mode 100644
+index 0000000..98b238f
+--- /dev/null
++++ b/common/duiprobehistory/history_test.go
+@@ -0,0 +1,43 @@
++package duiprobehistory
++
++import (
++	"context"
++	"sync"
++	"testing"
++)
++
++func TestDUIBoundedHistoryCursorAndIsolation(t *testing.T) {
++	r := New()
++	ctx := WithRecorder(context.Background(), r)
++	for i := 0; i < Capacity+5; i++ {
++		Record(WithStrategy(ctx, "random"), "legacyBurst", "shared", "success", float64(i))
++	}
++	b := r.Read("", 0, 500)
++	if !b.Missed || len(b.Events) != 500 || b.Events[0].Sequence != 6 || b.Events[0].Strategy != "random" {
++		t.Fatalf("bad batch: %+v", b)
++	}
++	next := r.Read(b.Session, b.Next, 500)
++	if next.Events[0].Sequence != b.Next+1 {
++		t.Fatal("cursor lost records")
++	}
++	if len(New().Read(b.Session, 0, 500).Events) != 0 {
++		t.Fatal("instance leak")
++	}
++	restarted := New()
++	restarted.Add(Event{Strategy: "leastPing"})
++	if len(restarted.Read(b.Session, b.Next, 500).Events) != 1 {
++		t.Fatal("restart cursor not reset")
++	}
++	var wg sync.WaitGroup
++	for i := 0; i < 4; i++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for j := 0; j < 100; j++ {
++				r.Add(Event{})
++				r.Read("", 0, 5)
++			}
++		}()
++	}
++	wg.Wait()
++}
+diff --git a/core/xray.go b/core/xray.go
+index a8f802b..fbdb119 100644
+--- a/core/xray.go
++++ b/core/xray.go
+@@ -3,6 +3,7 @@ package core
+ import (
+ 	"context"
+ 	"github.com/xtls/xray-core/common/duiclosewait"
++	"github.com/xtls/xray-core/common/duiprobehistory"
+ 	"reflect"
+ 	"sync"
+ 
+@@ -192,6 +193,7 @@ func initInstanceWithConfig(config *Config, server *Instance) (bool, error) {
+ 	if err := platform.ReloadEnvSettings(); err != nil {
+ 		return true, errors.New("failed to reload environment settings").Base(err)
+ 	}
++	server.ctx = duiprobehistory.WithRecorder(server.ctx, duiprobehistory.New())
+ 	server.closeWaitGuard = duiclosewait.New()
+ 	server.ctx = duiclosewait.WithContext(server.ctx, server.closeWaitGuard)
+ 	server.ctx = context.WithValue(server.ctx, "cone",

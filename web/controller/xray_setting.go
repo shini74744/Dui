@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"strconv"
 
 	"x-ui/web/service"
 
@@ -30,6 +31,7 @@ func (a *XraySettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/", a.getXraySetting)
 	g.POST("/update", a.updateSetting)
 	g.GET("/getXrayResult", a.getXrayResult)
+	g.GET("/probeHistory", a.getProbeHistory)
 	g.GET("/getDefaultJsonConfig", a.getDefaultXrayConfig)
 	g.POST("/warp/:action", a.warp)
 	g.GET("/getOutboundsTraffic", a.getOutboundsTraffic)
@@ -410,5 +412,15 @@ func (a *XraySettingController) resolveRuleSetMany(c *gin.Context) {
 		return
 	}
 	result, err := a.RuleSetService.ResolveMany(form.Paths)
+	jsonObj(c, result, err)
+}
+
+func (a *XraySettingController) getProbeHistory(c *gin.Context) {
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil {
+		jsonObj(c, nil, fmt.Errorf("invalid history page"))
+		return
+	}
+	result, err := service.QueryProbeHistory(c.Query("strategy"), c.Query("outbound"), page)
 	jsonObj(c, result, err)
 }

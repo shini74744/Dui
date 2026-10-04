@@ -1,4 +1,4 @@
-# DUI Xray vx-26.5
+# DUI Xray vx-26.6
 
 Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source, platform binaries and SHA256 checksums are published together.
 
@@ -20,3 +20,5 @@ Tests cover limiter sharing and independent directions, cancellation, UDP buffer
 This release does not incorporate post-v26.9.9 upstream commits such as the later SS2022 rewrite. An RSS reduction is not guaranteed.
 
 Hysteria 2, Mixed and TUN use the corresponding Xray v26.9.9 implementations. TUIC, MTProto and AmneziaWG are panel-managed components, not additional Xray protocols. See `core/helpers/README.md` in the DUI repository for packaging and capability boundaries.
+
+DUI vx-26.6 records completed strategy probes in a bounded per-instance buffer and exposes a read-only history API through the existing StatsService listener. DUI 26.9.45 stores these records for seven days, up to 100,000 rows, for authenticated panel viewing. Probe URLs, credentials, and connection addresses are not included in history records.

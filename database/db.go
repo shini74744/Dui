@@ -38,6 +38,7 @@ func initModels() error {
 		&model.TelegramNotificationHistory{},
 		&model.ManagedBlacklistEntry{},
 		&model.Setting{},
+		&model.ProbeHistory{},
 		&model.InboundClientIps{},
 		&xray.ClientTraffic{},
 		&model.HistoryOfSeeders{},

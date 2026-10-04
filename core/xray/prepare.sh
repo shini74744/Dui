@@ -13,6 +13,7 @@ mv "$DEST/Xray-core-26.9.9" "$DEST/source"
 patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/dui.patch"
 patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/closewait.patch"
 patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/strategy-observatory.patch"
+patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/probe-history.patch"
 REALITY_URL=$(jq -r .reality_source_url "$META/manifest.json")
 REALITY_HASH=$(jq -r .reality_source_sha256 "$META/manifest.json")
 REALITY_PREFIX=$(jq -r .reality_source_prefix "$META/manifest.json")
