@@ -76,3 +76,5 @@ loopback-only panel and disposable DB. It tests the real download/install/restar
 cycle using the published vx-26.6 core and intentionally installs panel v26.9.46
 inside that test unit to exercise readiness failure and recovery. It never
 replaces the installed business panel or core.
+
+When an update is available, the card header displays a green localized "Update version" label. The user clicks it to reveal which component has an update and its version inline. With no available update it retains the existing check-for-updates label.

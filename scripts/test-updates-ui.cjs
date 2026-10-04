@@ -4,17 +4,17 @@ const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p
 const {DuiUpdateText}=require(root+'/web/assets/js/util/updates.js');
 for(const [lang,map] of Object.entries(DuiUpdateText.maps))for(const key of DuiUpdateText.keys)assert.equal(typeof map[key],'string',lang+key);
 const sourceCard=read('web/html/index.html').match(/<a-card [^>]*class="glass-card dui-product-card"[\s\S]*?<\/a-card>/)[0];
-const card=sourceCard.replace(/{{\s*\.cur_ver\s*}}/g,'26.9.48')
+const card=sourceCard.replace(/{{\s*\.cur_ver\s*}}/g,'26.9.49')
  .replace(/{{\s*i18n "pages.index.duiTitle"\s*}}/g,'〔DUI-PRO面板〕')
  .replace(/{{\s*i18n "pages.index.tgPrivateChat"\s*}}/g,'Shlii网站')
  .replace(/{{\s*i18n "pages.index.tgGroupChat"\s*}}/g,'〔DUI-PRO 面板〕交流群');
 function html(theme,lang){
  const css=['web/assets/ant-design-vue/antd.min.css','web/assets/css/custom.min.css'].map(p=>'<style>'+read(p)+'</style>').join('');
  const libs=['web/assets/vue/vue.min.js','web/assets/ant-design-vue/antd.min.js'].map(p=>'<script>'+read(p)+'</script>').join('');
- const state={supported:true,items:{panel:{current:'v26.9.47',latest:'v26.9.47',available:false},core:{current:'vx-26.6',latest:'vx-26.6',available:false}},checking:false};
+ const state={supported:true,items:{panel:{current:'v26.9.48',latest:'v26.9.48',available:false},core:{current:'vx-26.6',latest:'vx-26.6',available:false}},checking:false};
  return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'+css+
  '<style>body{margin:0;padding:20px;background:'+(theme==='dark'?'#212529':'#f0f2f7')+'}body.dark{color:#ddd}#app{max-width:560px}.dui-product-card{border-radius:24px}</style></head><body class="'+theme+'">'+libs+
- '<script>const LanguageManager={getLanguage:()=>'+JSON.stringify(lang)+'};let serverState='+JSON.stringify(state)+';let requests=[],checkHasOffers=true,failStatus=false;const clone=o=>JSON.parse(JSON.stringify(o));const axios={get:async()=>{if(failStatus)throw Error("network");return {data:{success:true,obj:clone(serverState)}}},post:async(url,data)=>{requests.push({url,data});if(url.endsWith("/start")){await new Promise(r=>setTimeout(r,500));serverState.job={id:"persisted",kind:data.kind,version:data.version,phase:"connecting",downloaded:0,total:60000000,busy:true};return {data:{success:true,obj:clone(serverState.job)}}}serverState.checking=true;setTimeout(()=>{serverState.checking=false;if(checkHasOffers){serverState.items.panel.latest="v26.9.48";serverState.items.panel.available=true;serverState.items.core.latest="vx-26.7";serverState.items.core.available=true}},180);return {data:{success:true,obj:clone(serverState)}}}};</script>'+
+ '<script>const LanguageManager={getLanguage:()=>'+JSON.stringify(lang)+'};let serverState='+JSON.stringify(state)+';let requests=[],checkHasOffers=true,failStatus=false;const clone=o=>JSON.parse(JSON.stringify(o));const axios={get:async()=>{if(failStatus)throw Error("network");return {data:{success:true,obj:clone(serverState)}}},post:async(url,data)=>{requests.push({url,data});if(url.endsWith("/start")){await new Promise(r=>setTimeout(r,500));serverState.job={id:"persisted",kind:data.kind,version:data.version,phase:"connecting",downloaded:0,total:60000000,busy:true};return {data:{success:true,obj:clone(serverState.job)}}}serverState.checking=true;setTimeout(()=>{serverState.checking=false;if(checkHasOffers){serverState.items.panel.latest="v26.9.49";serverState.items.panel.available=true;serverState.items.core.latest="vx-26.7";serverState.items.core.available=true}},180);return {data:{success:true,obj:clone(serverState)}}}};</script>'+
  '<script>'+read('web/assets/js/util/updates.js')+'</script><div id="app"><div v-if="visible">'+card+'</div></div><script>window.app=new Vue({el:"#app",data:{visible:true}});</script></body></html>';
 }
 async function noDialog(page){
@@ -39,6 +39,8 @@ async function noOverflow(page){
   page.on('pageerror',e=>errors.push(e.message));
   await page.setContent(html(theme,'zh-CN'));await page.waitForFunction(()=>app.$refs.updates.state.items.panel.current);
   assert.equal(await page.locator('.dui-update-inline').count(),0);
+  assert.equal(await page.locator('.dui-update-check').innerText(),'检查更新');
+  assert.equal(await page.locator('.dui-update-check.has-update').count(),0);
   await page.locator('.dui-update-check').click();
   assert.equal(await page.evaluate(()=>requests.filter(r=>r.url.endsWith('/check')).length),1,'one click must call check directly');
   assert.match(await page.locator('.dui-product-heading').innerText(),/正在检查/);
@@ -46,6 +48,8 @@ async function noOverflow(page){
   // The initial idle poll schedules 60 seconds; checking must accelerate it to 2 seconds.
   await page.waitForFunction(()=>app.$refs.updates.state.items.panel.available,null,{timeout:5000});
   assert.equal(await page.locator('.dui-update-entry').count(),2);
+  assert.equal(await page.locator('.dui-update-check').innerText(),'更新版本');
+  assert.equal(await page.locator('.dui-update-check').evaluate(e=>getComputedStyle(e).color),theme?'rgb(98, 222, 197)':'rgb(8, 126, 109)');
   await noOverflow(page);await capture(page,'offers-'+width+'-'+(theme||'light'));
   const kind=theme?'core':'panel', row=page.locator('.dui-update-entry[data-kind="'+kind+'"]');
   await row.locator('.dui-update-install').click();
@@ -53,7 +57,7 @@ async function noOverflow(page){
   assert.equal(await page.locator('.dui-update-entry .dui-update-install:disabled').count(),2,'all update actions disabled while starting');
   await page.waitForFunction(()=>serverState.job?.id==='persisted');
   await page.evaluate(()=>app.$refs.updates.poll());
-  assert.deepEqual(await page.evaluate(()=>requests.filter(r=>r.url.endsWith('/start')).map(r=>r.data)),[{kind,version:kind==='panel'?'v26.9.48':'vx-26.7'}]);
+  assert.deepEqual(await page.evaluate(()=>requests.filter(r=>r.url.endsWith('/start')).map(r=>r.data)),[{kind,version:kind==='panel'?'v26.9.49':'vx-26.7'}]);
   await page.evaluate(()=>{serverState.job.phase='downloading';serverState.job.downloaded=24500000});
   await page.waitForFunction(()=>app.$refs.updates.job.downloaded===24500000,null,{timeout:5000});
   assert.match(await page.locator('.dui-update-byte-count').innerText(),/40%/);
@@ -77,12 +81,27 @@ async function noOverflow(page){
   await page.evaluate(()=>app.$refs.updates.poll());
   await noDialog(page);await noOverflow(page);await page.close();
  }
+ // Discovering an update must only change the header until the user opens it.
+ const availablePage=await browser.newPage({viewport:{width:390,height:900}});
+ availablePage.on('pageerror',e=>errors.push(e.message));
+ await availablePage.setContent(html('dark','zh-CN'));await availablePage.waitForFunction(()=>app.$refs.updates.state.items.panel.current);
+ await availablePage.evaluate(async()=>{serverState.items.core.available=true;serverState.items.core.latest='vx-26.7';await app.$refs.updates.poll()});
+ assert.equal(await availablePage.locator('.dui-update-check').innerText(),'更新版本');
+ assert.equal(await availablePage.locator('.dui-update-inline').count(),0,'do not automatically expand offers');
+ await capture(availablePage,'available-collapsed-390-dark');
+ await availablePage.locator('.dui-update-check').click();
+ await availablePage.locator('.dui-update-inline').waitFor();
+ assert.match(await availablePage.locator('.dui-update-entry[data-kind="core"]').innerText(),/vx-26.7/);
+ assert.equal(await availablePage.evaluate(()=>requests.filter(r=>r.url.endsWith('/check')).length),0,'open known offer immediately');
+ await noDialog(availablePage);await noOverflow(availablePage);await availablePage.close();
  const page=await browser.newPage({viewport:{width:390,height:900}});
  page.on('pageerror',e=>errors.push(e.message));
  await page.setContent(html('dark','zh-CN'));await page.waitForFunction(()=>app.$refs.updates.state.items.panel.current);
  await page.evaluate(()=>checkHasOffers=false);await page.locator('.dui-update-check').click();
  await page.waitForFunction(()=>!serverState.checking);await page.evaluate(()=>app.$refs.updates.poll());
  assert.equal(await page.locator('.dui-update-current-state').count(),2);
+ assert.equal(await page.locator('.dui-update-check').innerText(),'检查更新');
+ assert.equal(await page.locator('.dui-update-check.has-update').count(),0);
  await capture(page,'current-390-dark');
  await page.evaluate(async()=>{serverState.checkError='network_error';await app.$refs.updates.poll()});
  assert.equal(await page.locator('.dui-update-current-state').count(),0,'failed check cannot claim current');
@@ -92,10 +111,10 @@ async function noOverflow(page){
  await page.evaluate(async()=>{serverState.supported=true;serverState.job={id:'unknown-length',kind:'core',phase:'downloading',busy:true,downloaded:1000,total:0};await app.$refs.updates.poll()});
  assert.equal(await page.locator('.dui-update-indeterminate').count(),1);
  assert.doesNotMatch(await page.locator('.dui-update-progress').innerText(),/%/,'unknown length must not invent percentage');
- await page.evaluate(async()=>{serverState.job={id:'done',kind:'panel',phase:'complete',version:'v26.9.48',busy:false,downloaded:1000,total:1000};await app.$refs.updates.poll()});
+ await page.evaluate(async()=>{serverState.job={id:'done',kind:'panel',phase:'complete',version:'v26.9.49',busy:false,downloaded:1000,total:1000};await app.$refs.updates.poll()});
  assert.equal(await page.locator('.dui-update-reload').count(),1);
  await page.evaluate(()=>app.$refs.updates.show('core'));await noDialog(page);await noOverflow(page);
  await page.close();assert.deepEqual(errors,[]);
- console.log(JSON.stringify({cases:results,locales:13,currentResult:true,checkFailure:true,unsupported:true,unknownLength:true,panelReload:true,noDialogs:true,errors},null,2));
+ console.log(JSON.stringify({cases:results,locales:13,greenUpdateLabel:true,offersExpandOnClick:true,unchangedWithoutUpdates:true,currentResult:true,checkFailure:true,unsupported:true,unknownLength:true,panelReload:true,noDialogs:true,errors},null,2));
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});
