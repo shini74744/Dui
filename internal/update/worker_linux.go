@@ -238,11 +238,19 @@ func rollback(j *Job) error {
 		if e := restoreFile(filepath.Join(j.Dir, "database.backup"), j.DB, 0600); e != nil {
 			return errors.New("rollback_failed")
 		}
-		if e := restoreFile(filepath.Join(j.Dir, "config.backup"), j.Config, 0600); e != nil {
+		if j.ConfigAbsent {
+			if e := os.Remove(j.Config); e != nil && !os.IsNotExist(e) {
+				return errors.New("rollback_failed")
+			}
+		} else if e := restoreFile(filepath.Join(j.Dir, "config.backup"), j.Config, 0600); e != nil {
 			return errors.New("rollback_failed")
 		}
 	}
-	if e := restartAndWait(j, j.OldHash); e != nil {
+	previous := *j
+	if j.PreviousCoreRunning != nil {
+		previous.CoreRunning = *j.PreviousCoreRunning
+	}
+	if e := restartAndWait(&previous, j.OldHash); e != nil {
 		return errors.New("rollback_failed")
 	}
 	j.Applied = false
@@ -274,8 +282,15 @@ func install(j *Job) error {
 	if e = backupDB(j); e != nil {
 		return recoverBeforeApply(errors.New("backup_failed"))
 	}
-	if e = Copy(j.Config, filepath.Join(j.Dir, "config.backup"), 0600); e != nil {
+	if st, err := os.Lstat(j.Config); os.IsNotExist(err) {
+		j.ConfigAbsent = true
+	} else if err != nil || !st.Mode().IsRegular() {
 		return recoverBeforeApply(errors.New("backup_failed"))
+	} else {
+		j.ConfigAbsent = false
+		if e = Copy(j.Config, filepath.Join(j.Dir, "config.backup"), 0600); e != nil {
+			return recoverBeforeApply(errors.New("backup_failed"))
+		}
 	}
 	j.BackupReady = true
 	// Persist intent first; crash recovery can always restore the previous binary.

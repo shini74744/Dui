@@ -11,7 +11,7 @@ const card=sourceCard.replace(/{{\s*\.cur_ver\s*}}/g,'26.9.49')
 function html(theme,lang){
  const css=['web/assets/ant-design-vue/antd.min.css','web/assets/css/custom.min.css'].map(p=>'<style>'+read(p)+'</style>').join('');
  const libs=['web/assets/vue/vue.min.js','web/assets/ant-design-vue/antd.min.js'].map(p=>'<script>'+read(p)+'</script>').join('');
- const state={supported:true,items:{panel:{current:'v26.9.48',latest:'v26.9.48',available:false},core:{current:'vx-26.6',latest:'vx-26.6',available:false}},checking:false};
+ const state={supported:true,items:{panel:{current:'v26.9.48',latest:'v26.9.48',available:false,currentKnown:true,upToDate:true},core:{current:'vx-26.6',latest:'vx-26.6',available:false,currentKnown:true,upToDate:true}},checking:false};
  return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'+css+
  '<style>body{margin:0;padding:20px;background:'+(theme==='dark'?'#212529':'#f0f2f7')+'}body.dark{color:#ddd}#app{max-width:560px}.dui-product-card{border-radius:24px}</style></head><body class="'+theme+'">'+libs+
  '<script>const LanguageManager={getLanguage:()=>'+JSON.stringify(lang)+'};let serverState='+JSON.stringify(state)+';let requests=[],checkHasOffers=true,failStatus=false;const clone=o=>JSON.parse(JSON.stringify(o));const axios={get:async()=>{if(failStatus)throw Error("network");return {data:{success:true,obj:clone(serverState)}}},post:async(url,data)=>{requests.push({url,data});if(url.endsWith("/start")){await new Promise(r=>setTimeout(r,500));serverState.job={id:"persisted",kind:data.kind,version:data.version,phase:"connecting",downloaded:0,total:60000000,busy:true};return {data:{success:true,obj:clone(serverState.job)}}}serverState.checking=true;setTimeout(()=>{serverState.checking=false;if(checkHasOffers){serverState.items.panel.latest="v26.9.49";serverState.items.panel.available=true;serverState.items.core.latest="vx-26.7";serverState.items.core.available=true}},180);return {data:{success:true,obj:clone(serverState)}}}};</script>'+
@@ -103,6 +103,16 @@ async function noOverflow(page){
  assert.equal(await page.locator('.dui-update-check').innerText(),'检查更新');
  assert.equal(await page.locator('.dui-update-check.has-update').count(),0);
  await capture(page,'current-390-dark');
+ await page.evaluate(async()=>{serverState.items.core={current:'Unknown',latest:'vx-26.7',available:false,upToDate:true};await app.$refs.updates.poll()});
+ assert.equal(await page.locator('.dui-update-entry[data-kind="core"] .dui-update-current-state').count(),0,'unknown current version must never claim latest, even with inconsistent status');
+ assert.match(await page.locator('.dui-update-entry[data-kind="core"]').innerText(),/无法识别当前版本/);
+ await page.evaluate(async()=>{serverState.items.core={current:'',latest:'vx-26.7',available:true,currentKnown:false,upToDate:false};await app.$refs.updates.poll()});
+ assert.equal(await page.locator('.dui-update-entry[data-kind="core"] .dui-update-install').isEnabled(),true,'unreadable installed version must not hide recovery update');
+ await noOverflow(page);await capture(page,'unknown-core-390-dark');
+ await page.evaluate(async()=>{serverState.items.core={current:'vx-26.6',latest:'vx-26.7',available:true,currentKnown:true,upToDate:false};await app.$refs.updates.poll()});
+ assert.match(await page.locator('.dui-update-entry[data-kind="core"]').innerText(),/vx-26.6/,'stopped installed core version still visible');
+ assert.equal(await page.locator('.dui-update-entry[data-kind="core"] .dui-update-install').isEnabled(),true);
+
  await page.evaluate(async()=>{serverState.checkError='network_error';await app.$refs.updates.poll()});
  assert.equal(await page.locator('.dui-update-current-state').count(),0,'failed check cannot claim current');
  await page.evaluate(async()=>{serverState.checkError='';serverState.supported=false;serverState.items.core.available=true;serverState.items.core.latest='vx-26.7';await app.$refs.updates.poll()});

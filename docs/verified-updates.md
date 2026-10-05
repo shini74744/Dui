@@ -78,3 +78,33 @@ inside that test unit to exercise readiness failure and recovery. It never
 replaces the installed business panel or core.
 
 When an update is available, the card header displays a green localized "Update version" label. The user clicks it to reveal which component has an update and its version inline. With no available update it retains the existing check-for-updates label.
+
+
+### Stopped cores and legacy upgrades (v26.9.50)
+
+Update status reads the installed core executable independently of its running process.
+Unknown or malformed installed versions never claim to be current and do not hide a
+verified DUI release. Official Xray version numbers are treated as a migration to
+DUI rather than compared numerically with the unrelated vx-* release series.
+
+When the live core configuration has never been generated, core update preflight
+stages a complete configuration from the existing database in the private update
+job. It does not write the live config or perform traffic maintenance. The staged
+binary must still pass configuration validation and the post-restart health check.
+If a config appears during the download, validation uses that live file instead.
+Rollback preserves whether the old config existed and whether the old core ran.
+Panel updates also permit an absent generated core config.
+
+Legacy upgrade regression (isolated DBs, non-root processes and loopback ports):
+
+```sh
+DUI_TEST_PANEL=/path/to/new-panel DUI_TEST_CORE=/path/to/vx-26.7 \
+DUI_TEST_OLD_CORE=/path/to/vx-26.6 \
+DUI_TEST_OLD_PANELS=/path/to/v26.9.43:/path/to/v26.9.49 \
+python3 scripts/test-updates-legacy.py
+```
+
+The isolated systemd worker regression accepts DUI_TEST_MISSING_CONFIG=1 with
+vx-26.6 as DUI_TEST_CORE to exercise the missing-config download, validation,
+replacement and recovery path. It maps only its private test unit, never the
+installed x-ui service.

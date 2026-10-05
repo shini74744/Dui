@@ -236,6 +236,9 @@ type Job struct {
 	Offer                                                             Offer
 	OldHash, NewHash                                                  string
 	CoreRunning                                                       bool
+	PreviousCoreRunning                                               *bool
+	ConfigAbsent                                                      bool
+	ValidationConfig                                                  json.RawMessage
 	Applied                                                           bool
 	BackupReady                                                       bool
 }
@@ -510,22 +513,45 @@ func Extract(j *Job) error {
 	}
 	return nil
 }
+
+var upstreamCoreVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
+
+func KnownVersion(kind, version string) bool {
+	if kind == "panel" {
+		return panelTag.MatchString(version)
+	}
+	return kind == "core" && (coreTag.MatchString(version) || upstreamCoreVersion.MatchString(version))
+}
+
 func BinaryVersion(path, kind string) (string, error) {
+	return binaryVersion(path, kind, 15*time.Second)
+}
+
+// Keep dashboard requests bounded without shortening staged-binary verification.
+func InstalledVersion(path, kind string) (string, error) {
+	return binaryVersion(path, kind, 5*time.Second)
+}
+
+func binaryVersion(path, kind string, timeout time.Duration) (string, error) {
 	arg := "-v"
 	if kind == "core" {
 		arg = "-version"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	b, e := exec.CommandContext(ctx, path, arg).Output()
 	if e != nil {
 		return "", errors.New("binary_unusable")
 	}
 	if kind == "panel" {
-		return "v" + strings.TrimPrefix(strings.TrimSpace(string(b)), "v"), nil
+		v := "v" + strings.TrimPrefix(strings.TrimSpace(string(b)), "v")
+		if !KnownVersion(kind, v) {
+			return "", errors.New("binary_unusable")
+		}
+		return v, nil
 	}
 	f := strings.Fields(string(b))
-	if len(f) < 2 {
+	if len(f) < 2 || f[0] != "Xray" || !KnownVersion(kind, f[1]) {
 		return "", errors.New("binary_unusable")
 	}
 	return f[1], nil
@@ -541,7 +567,10 @@ func ValidateBinary(j *Job) error {
 	}
 	if j.Kind == "core" {
 		data, e := os.ReadFile(j.Config)
-		if e != nil {
+		if os.IsNotExist(e) && len(j.ValidationConfig) > 0 {
+			data, e = j.ValidationConfig, nil
+		}
+		if e != nil || !json.Valid(data) {
 			return errors.New("config_unavailable")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

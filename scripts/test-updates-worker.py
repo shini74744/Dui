@@ -67,6 +67,9 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
         'outbounds': [{'tag': 'direct', 'protocol': 'freedom'}, {'tag': 'api', 'protocol': 'blackhole'}],
         'routing': {'rules': [{'type': 'field', 'inboundTag': ['api'], 'outboundTag': 'api'}]},
         'policy': {'levels': {'0': {'bufferSize': 64}}, 'system': {'statsInboundUplink': True}}}
+    missing_config = os.environ.get('DUI_TEST_MISSING_CONFIG') == '1'
+    if missing_config:
+        template['outbounds'].append({'tag':'plain-vless-compat','protocol':'vless','settings':{'vnext':[{'address':'8.8.8.8','port':443,'users':[{'id':str(uuid.uuid4()),'encryption':'none'}]}]},'streamSettings':{'network':'tcp','security':'none'}})
     db = root/'db/x-ui.db'
     with sqlite3.connect(db) as conn:
         conn.execute('INSERT INTO settings(key,value) VALUES(?,?)', ('xrayTemplateConfig', json.dumps(template)))
@@ -95,13 +98,17 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
         worker_env=env.copy();worker_env['PATH']=str(root/'shim')+':'+env['PATH'];worker_env['DUI_TEST_UNIT']=unit+'.service'
         before=hashlib.sha256((root/'x-ui').read_bytes()).hexdigest()
         reports=[]
-        for kind,version,expected in [('core','vx-26.6','complete'),('panel','v26.9.46','rolled_back')]:
+        for kind,version,expected in [('core','vx-26.7','complete'),('panel','v26.9.46','rolled_back')]:
             ident=uuid.uuid4().hex
             stage=root/('stage-'+ident);stage.mkdir(mode=0o700)
             meta={'id':ident,'kind':kind,'version':version,'phase':'queued','Root':str(state),'Dir':str(stage),
               'Target':str(binary if kind=='core' else root/'x-ui'),'Panel':str(root/'x-ui'),'Core':str(binary),
               'DB':str(db),'Config':str(root/'bin/config.json'),'WorkDir':str(root),'CoreRunning':True,
               'Unit':'unused-test-worker','Worker':str(stage/'worker-copy')}
+            meta['PreviousCoreRunning'] = not (missing_config and kind == 'core')
+            if missing_config and kind == 'core':
+                assert not (root/'bin/config.json').exists(), 'missing config scenario not reproduced'
+                meta['ValidationConfig'] = template
             (state/'job.json').write_text(json.dumps(meta))
             log=(stage/'worker.log').open('w')
             proc=subprocess.Popen([str(worker),'update-worker',str(state),ident],cwd=root,env=worker_env,stdout=log,stderr=log)
@@ -120,7 +127,9 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
             assert result['phase']==expected,{'phase':result['phase'],'error':result.get('error')}
             assert subprocess.check_output(['systemctl','is-active',unit],text=True).strip()=='active'
             assert hashlib.sha256((root/'x-ui').read_bytes()).hexdigest()==before
-            reports.append({'kind':kind,'result':result['phase'],'phases':sorted(seen),'restoredPanelHash':True})
+            with sqlite3.connect(db) as check:
+                assert json.loads(check.execute("SELECT value FROM settings WHERE key='xrayTemplateConfig'").fetchone()[0]) == template
+            reports.append({'missingConfigRecovery':missing_config and kind=='core','kind':kind,'result':result['phase'],'phases':sorted(seen),'restoredPanelHash':True})
         print(json.dumps({'realSystemdWorkerTests':reports}),flush=True)
     finally:
         subprocess.run(['systemctl','stop',unit],capture_output=True,timeout=30)
