@@ -114,16 +114,24 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
             opener.open(req,timeout=10)
             raise AssertionError('cross-origin request accepted')
         except urllib.error.HTTPError as err:assert err.code==403
-        req=urllib.request.Request(base+'/dui/api/server/updates/start',data=body,headers={'Content-Type':'application/json'})
-        with opener.open(req,timeout=10) as response:data=json.load(response)
-        assert not data['success'] and 'unsupported_installation' in data['msg'],data
+        accepted_encodings=[]
+        for kind,version in [('panel','v99.1.1'),('core','vx-99.1')]:
+            payload={'kind':kind,'version':version}
+            for content_type,body in [
+                ('application/json',json.dumps(payload).encode()),
+                ('application/x-www-form-urlencoded; charset=UTF-8',urllib.parse.urlencode(payload).encode()),
+            ]:
+                req=urllib.request.Request(base+'/dui/api/server/updates/start',data=body,headers={'Content-Type':content_type,'Origin':base})
+                with opener.open(req,timeout=10) as response:data=json.load(response)
+                assert not data['success'] and 'unsupported_installation' in data['msg'],data
+                accepted_encodings.append({'kind':kind,'contentType':content_type})
         assert not (root/'db/updates/job.json').exists()
         with opener.open(base+'/dui/',timeout=10) as response:
             html=response.read().decode()
         assert '<dui-updates ref="updates">' in html
         with opener.open(base+'/assets/js/util/updates.js',timeout=10) as response:
             assert b'const DuiUpdates' in response.read()
-        print(json.dumps({'authenticatedRoutes':True,'crossOriginRejected':True,'unsupportedInstallSafe':True,'servedComponent':True}))
+        print(json.dumps({'authenticatedRoutes':True,'crossOriginRejected':True,'unsupportedInstallSafe':True,'servedComponent':True,'acceptedRequestEncodings':accepted_encodings}))
     finally:
         os.killpg(proc.pid,signal.SIGTERM)
         try:proc.wait(timeout=15)
