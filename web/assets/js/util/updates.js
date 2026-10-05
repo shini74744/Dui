@@ -32,8 +32,9 @@ const DuiUpdateText = (() => {
   'fa-IR':['به‌روز است','بررسی به‌روزرسانی ناموفق بود. دوباره تلاش کنید.']
  };
  const updateLabels={'zh-CN':'更新版本','zh-TW':'更新版本','en-US':'Update version','ja-JP':'バージョンを更新','ru-RU':'Обновить версию','vi-VN':'Cập nhật phiên bản','es-ES':'Actualizar versión','id-ID':'Perbarui versi','uk-UA':'Оновити версію','tr-TR':'Sürümü güncelle','pt-BR':'Atualizar versão','ar-EG':'تحديث الإصدار','fa-IR':'به‌روزرسانی نسخه'};
- keys.push('upToDate','checkFailed','updateVersion');
- Object.keys(rows).forEach(lang=>rows[lang].push(...inlineRows[lang],updateLabels[lang]));
+ const unknownLabels={"zh-CN": "无法识别当前版本", "zh-TW": "無法識別目前版本", "en-US": "Installed version unavailable", "ja-JP": "現在のバージョンを確認できません", "ru-RU": "Установленная версия неизвестна", "vi-VN": "Không xác định được phiên bản đã cài", "es-ES": "Versión instalada desconocida", "id-ID": "Versi terpasang tidak diketahui", "uk-UA": "Встановлена версія невідома", "tr-TR": "Kurulu sürüm belirlenemedi", "pt-BR": "Versão instalada desconhecida", "ar-EG": "تعذر تحديد الإصدار المثبت", "fa-IR": "نسخه نصب‌شده مشخص نیست"};
+ keys.push('upToDate','checkFailed','updateVersion','versionUnknown');
+ Object.keys(rows).forEach(lang=>rows[lang].push(...inlineRows[lang],updateLabels[lang],unknownLabels[lang]));
  const maps=Object.fromEntries(Object.entries(rows).map(([k,v])=>[k,Object.fromEntries(keys.map((key,i)=>[key,v[i]]))]));
  return {keys,maps,get:lang=>maps[lang]||maps['en-US']};
 })();
@@ -50,6 +51,10 @@ const DuiUpdates = {
   detailsVisible(){return this.expanded||!!this.job.id||this.starting||this.offline||!!this.state.checkError}
  },
  methods:{
+  known(kind){
+   const item=this.state.items[kind]||{},v=item.current||'';
+   return item.currentKnown!==false&&(kind==='core'?/^(vx-\d+\.\d+|v?\d+\.\d+\.\d+)$/:/^v\d+\.\d+\.\d+$/).test(v)
+  },
   size(n){if(!Number.isFinite(n))return '—';return (n/1048576).toFixed(1)+' MB'},
   // The legacy core selector reveals this same inline status, never a second dialog.
   show(){this.expanded=true;this.poll();this.$nextTick(()=>this.$el.scrollIntoView({behavior:'smooth',block:'nearest'}))},
@@ -106,7 +111,7 @@ const DuiUpdates = {
   <div v-if="detailsVisible" class="dui-update-inline">
    <div v-for="kind in ['panel','core']" :key="kind" class="dui-update-entry" :data-kind="kind">
     <div class="dui-update-entry-info">
-     <div class="dui-update-entry-title"><strong>[[t[kind] ]]</strong><span class="dui-update-current" :title="t.current">[[state.items[kind].current||'—']]</span></div>
+     <div class="dui-update-entry-title"><strong>[[t[kind] ]]</strong><span class="dui-update-current" :title="t.current">[[known(kind)?state.items[kind].current:t.versionUnknown]]</span></div>
      <div class="dui-update-latest"><span>[[t.latest]]</span> <b>[[state.items[kind].latest||t.unknown]]</b></div>
     </div>
     <div class="dui-update-entry-action">
@@ -114,7 +119,7 @@ const DuiUpdates = {
      <button v-if="state.items[kind].available&&state.supported" type="button" class="dui-update-install" :disabled="starting||job.busy" :aria-label="t[kind]+': '+t.start" @click="start(kind)">
       <a-icon :type="starting&&startingKind===kind?'loading':'download'"/><span>[[t.start]]</span>
      </button>
-     <span v-else-if="!checking&&!offline&&!state.checkError&&state.items[kind].latest&&!state.items[kind].available" class="dui-update-current-state" role="status"><a-icon type="check-circle"/> [[t.upToDate]]</span>
+     <span v-else-if="!checking&&!offline&&!state.checkError&&state.items[kind].upToDate===true&&known(kind)&&!state.items[kind].available" class="dui-update-current-state" role="status"><a-icon type="check-circle"/> [[t.upToDate]]</span>
     </div>
    </div>
    <p v-if="offers.length||job.busy||starting" class="dui-update-hint">[[t.hint]]</p>

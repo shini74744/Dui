@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 	"x-ui/config"
@@ -23,7 +24,20 @@ var releaseCache struct {
 }
 
 func updatesRoot() string { return filepath.Join(config.GetDBFolderPath(), "updates") }
+func updateItem(kind, current string, offer update.Offer) map[string]any {
+	known := update.KnownVersion(kind, current)
+	available := offer.Version != "" && (!known || update.Newer(offer.Version, current) || (kind == "core" && !strings.HasPrefix(current, "vx-")))
+	return map[string]any{
+		"current": current, "currentKnown": known, "latest": offer.Version,
+		"available": available,
+		"upToDate":  known && offer.Version != "" && !available,
+		"size":      offer.Size,
+	}
+}
+
 func (s *ServerService) UpdateStatus(refresh bool) map[string]any {
+	// Installed version must remain readable even when configuration prevents startup.
+	coreVersion, _ := update.InstalledVersion(xray.GetBinaryPath(), "core")
 	releaseCache.Lock()
 	if !releaseCache.checking && (releaseCache.attempted.IsZero() || time.Since(releaseCache.attempted) > time.Hour || (refresh && time.Since(releaseCache.attempted) > time.Minute)) {
 		releaseCache.checking = true
@@ -49,10 +63,10 @@ func (s *ServerService) UpdateStatus(refresh bool) map[string]any {
 	for _, kind := range []string{"panel", "core"} {
 		current := "v" + config.GetVersion()
 		if kind == "core" {
-			current = s.xrayService.GetXrayVersion()
+			current = coreVersion
 		}
 		o := releaseCache.offers[kind]
-		items[kind] = map[string]any{"current": current, "latest": o.Version, "available": o.Version != "" && update.Newer(o.Version, current), "size": o.Size}
+		items[kind] = updateItem(kind, current, o)
 	}
 	releaseCache.Unlock()
 	result["items"] = items
@@ -71,7 +85,7 @@ func (s *ServerService) StartUpdate(kind, version string) (map[string]any, error
 		return nil, errors.New("already_current")
 	}
 	if kind == "core" {
-		if version == s.xrayService.GetXrayVersion() {
+		if installed, e := update.InstalledVersion(xray.GetBinaryPath(), "core"); e == nil && version == installed {
 			return nil, errors.New("already_current")
 		}
 		template, e := (&SettingService{}).GetXrayConfigTemplate()
@@ -114,13 +128,32 @@ func (s *ServerService) StartUpdate(kind, version string) (map[string]any, error
 		target = core
 	}
 	// Root-owned regular files only; replacing a symlink would break custom layouts.
-	for _, p := range []string{target, panel, core, db, cfg} {
+	for _, p := range []string{target, panel, core, db} {
 		st, e := os.Lstat(p)
 		if e != nil || !st.Mode().IsRegular() {
 			return nil, errors.New("unsupported_installation")
 		}
 	}
-	j, e := update.Start(update.Job{Root: updatesRoot(), Kind: kind, Version: version, Target: target, Panel: panel, Core: core, Config: cfg, DB: db, WorkDir: wd, CoreRunning: s.xrayService.IsXrayRunning() || kind == "core"})
+	var validationConfig json.RawMessage
+	if st, err := os.Lstat(cfg); err == nil {
+		if !st.Mode().IsRegular() {
+			return nil, errors.New("unsupported_installation")
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, errors.New("config_unavailable")
+	} else if kind == "core" {
+		// Stage a complete configuration privately; never create or overwrite the live file here.
+		generated, err := s.xrayService.buildXrayConfig(false)
+		if err != nil {
+			return nil, errors.New("config_unavailable")
+		}
+		validationConfig, err = json.Marshal(generated)
+		if err != nil {
+			return nil, errors.New("config_unavailable")
+		}
+	}
+	wasRunning := s.xrayService.IsXrayRunning()
+	j, e := update.Start(update.Job{Root: updatesRoot(), Kind: kind, Version: version, Target: target, Panel: panel, Core: core, Config: cfg, DB: db, WorkDir: wd, CoreRunning: wasRunning || kind == "core", PreviousCoreRunning: &wasRunning, ValidationConfig: validationConfig})
 	if e != nil {
 		return nil, e
 	}
