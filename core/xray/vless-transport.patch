@@ -1,0 +1,83 @@
+--- a/infra/conf/xray.go
++++ b/infra/conf/xray.go
+@@ -241,8 +241,2 @@
+-	if vlessCfg, ok := rawConfig.(*VLessOutboundConfig); ok {
+-		if vlessCfg.Encryption != "" && vlessCfg.Encryption != "none" {
+-			return nil
+-		}
+-		if requiresTransportSecurity(vlessCfg.Address) {
+-			return errors.New("vless without TLS or other encryption is prohibited unless the server address is a private IP or domain")
+-		}
+-	}
++	// DUI permits explicitly configured plaintext VLESS outbounds on public
++	// addresses. VLESS encryption, flow and TLS/REALITY validation still apply.
+--- /dev/null
++++ b/infra/conf/dui_vless_transport_test.go
+@@ -0,0 +1,67 @@
++package conf
++
++import (
++	"encoding/json"
++	"fmt"
++	"strings"
++	"testing"
++)
++
++func TestDUIVLESSOutboundTransportCompatibility(t *testing.T) {
++	for _, tc := range []struct {
++		name, address, encryption, flow, stream, wantError string
++	}{
++		{"public_ipv4_plain", "8.8.8.8", "none", "", `{"network":"tcp","security":"none"}`, ""},
++		{"public_ipv6_plain", "2001:4860:4860::8888", "none", "", `{"network":"tcp","security":"none"}`, ""},
++		{"public_domain_plain", "www.cloudflare.com", "none", "", `{"network":"tcp","security":"none"}`, ""},
++		{"private_plain", "127.0.0.1", "none", "", `{"network":"tcp","security":"none"}`, ""},
++		{"implicit_transport", "8.8.8.8", "none", "", `null`, ""},
++		{"public_tls", "8.8.8.8", "none", "", `{"network":"tcp","security":"tls","tlsSettings":{"serverName":"example.com"}}`, ""},
++		{"public_reality", "8.8.8.8", "none", "xtls-rprx-vision", `{"network":"tcp","security":"reality","realitySettings":{"serverName":"example.com","fingerprint":"chrome","password":"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY","shortId":"12345678"}}`, ""},
++		{"invalid_encryption", "8.8.8.8", "invalid", "", `null`, "encryption"},
++		{"invalid_flow", "8.8.8.8", "none", "invalid-flow", `null`, "flow"},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			raw := fmt.Sprintf(`{"protocol":"vless","settings":{"vnext":[{"address":%q,"port":443,"users":[{"id":"00000000-0000-4000-8000-000000000001","encryption":%q,"flow":%q}]}]},"streamSettings":%s}`, tc.address, tc.encryption, tc.flow, tc.stream)
++			var cfg OutboundDetourConfig
++			if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
++				t.Fatal(err)
++			}
++			_, err := cfg.Build()
++			if tc.wantError == "" {
++				if err != nil {
++					t.Fatalf("valid VLESS outbound rejected: %v", err)
++				}
++			} else if err == nil || !strings.Contains(err.Error(), tc.wantError) {
++				t.Fatalf("want error containing %q, got %v", tc.wantError, err)
++			}
++		})
++	}
++}
++
++func TestDUITrojanOutboundTransportSecurityPreserved(t *testing.T) {
++	for _, tc := range []struct {
++		name, address, security string
++		rejected                bool
++	}{
++		{"public_plain", "8.8.8.8", "none", true},
++		{"private_plain", "127.0.0.1", "none", false},
++		{"public_tls", "8.8.8.8", "tls", false},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			raw := fmt.Sprintf(`{"protocol":"trojan","settings":{"servers":[{"address":%q,"port":443,"password":"test-only"}]},"streamSettings":{"network":"tcp","security":%q}}`, tc.address, tc.security)
++			var cfg OutboundDetourConfig
++			if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
++				t.Fatal(err)
++			}
++			_, err := cfg.Build()
++			if tc.rejected {
++				if err == nil || !strings.Contains(err.Error(), "trojan without TLS") {
++					t.Fatalf("Trojan security check changed: %v", err)
++				}
++			} else if err != nil {
++				t.Fatal(err)
++			}
++		})
++	}
++}

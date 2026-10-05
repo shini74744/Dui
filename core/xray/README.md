@@ -1,6 +1,8 @@
-# DUI Xray vx-26.6
+# DUI Xray vx-26.7
 
 Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source, platform binaries and SHA256 checksums are published together.
+
+- vx-26.7 restores support for VLESS outbounds with `encryption: "none"` and no TLS/REALITY to public IPs and domains. No extra option is required. This does not add encryption; it accepts the operator-selected transport. VLESS encryption/flow validation, TLS/REALITY settings and Trojan transport-security requirements remain unchanged. Regression tests cover public IPv4, IPv6, domains, private addresses, default transport, TLS/REALITY, invalid VLESS settings, and unchanged Trojan validation.
 
 - REALITY defaults to accepting legacy X25519 and modern hybrid client fingerprints. Set `realitySettings.duiRequireHybridKeyShare: true` on a server inbound to require the upstream X25519MLKEM768 fingerprint. This changes the ClientHello requirement, not VLESS Encryption authentication, node keys, or normal TLS cipher negotiation. Key, short ID, SNI, user and time/version validation remain in effect. Both modes can coexist on different inbounds. The patched REALITY module is included in the source asset and verified independently during preparation.
 
