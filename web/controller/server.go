@@ -57,7 +57,8 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 			Kind    string `json:"kind" form:"kind"`
 			Version string `json:"version" form:"version"`
 		}
-		if err := c.ShouldBindJSON(&form); err != nil {
+		// The shared Axios interceptor posts URL-encoded forms; also accept JSON API clients.
+		if err := c.ShouldBind(&form); err != nil {
 			jsonObj(c, nil, err)
 			return
 		}

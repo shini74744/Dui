@@ -10,11 +10,11 @@ const card=sourceCard.replace(/{{\s*\.cur_ver\s*}}/g,'26.9.49')
  .replace(/{{\s*i18n "pages.index.tgGroupChat"\s*}}/g,'〔DUI-PRO 面板〕交流群');
 function html(theme,lang){
  const css=['web/assets/ant-design-vue/antd.min.css','web/assets/css/custom.min.css'].map(p=>'<style>'+read(p)+'</style>').join('');
- const libs=['web/assets/vue/vue.min.js','web/assets/ant-design-vue/antd.min.js'].map(p=>'<script>'+read(p)+'</script>').join('');
+ const libs=['web/assets/vue/vue.min.js','web/assets/ant-design-vue/antd.min.js','web/assets/axios/axios.min.js','web/assets/qs/qs.min.js','web/assets/js/axios-init.js'].map(p=>'<script>'+read(p)+'</script>').join('');
  const state={supported:true,items:{panel:{current:'v26.9.48',latest:'v26.9.48',available:false,currentKnown:true,upToDate:true},core:{current:'vx-26.6',latest:'vx-26.6',available:false,currentKnown:true,upToDate:true}},checking:false};
  return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'+css+
  '<style>body{margin:0;padding:20px;background:'+(theme==='dark'?'#212529':'#f0f2f7')+'}body.dark{color:#ddd}#app{max-width:560px}.dui-product-card{border-radius:24px}</style></head><body class="'+theme+'">'+libs+
- '<script>const LanguageManager={getLanguage:()=>'+JSON.stringify(lang)+'};let serverState='+JSON.stringify(state)+';let requests=[],checkHasOffers=true,failStatus=false;const clone=o=>JSON.parse(JSON.stringify(o));const axios={get:async()=>{if(failStatus)throw Error("network");return {data:{success:true,obj:clone(serverState)}}},post:async(url,data)=>{requests.push({url,data});if(url.endsWith("/start")){await new Promise(r=>setTimeout(r,500));serverState.job={id:"persisted",kind:data.kind,version:data.version,phase:"connecting",downloaded:0,total:60000000,busy:true};return {data:{success:true,obj:clone(serverState.job)}}}serverState.checking=true;setTimeout(()=>{serverState.checking=false;if(checkHasOffers){serverState.items.panel.latest="v26.9.49";serverState.items.panel.available=true;serverState.items.core.latest="vx-26.7";serverState.items.core.available=true}},180);return {data:{success:true,obj:clone(serverState)}}}};</script>'+
+ '<script>const LanguageManager={getLanguage:()=>'+JSON.stringify(lang)+'};let serverState='+JSON.stringify(state)+';let requests=[],checkHasOffers=true,failStatus=false;const clone=o=>JSON.parse(JSON.stringify(o));axios.defaults.adapter=async config=>{const url=config.url,method=config.method,contentType=config.headers.get("Content-Type")||"",rawBody=config.data||"";const data=contentType.includes("application/json")?JSON.parse(rawBody||"{}"):Object.fromEntries(new URLSearchParams(rawBody));const response=obj=>({data:{success:true,obj:clone(obj)},status:200,statusText:"OK",headers:{},config});if(method==="get"){if(failStatus)throw Error("network");return response(serverState)}requests.push({url,data,contentType,rawBody});if(url.endsWith("/start")){await new Promise(r=>setTimeout(r,500));serverState.job={id:"persisted",kind:data.kind,version:data.version,phase:"connecting",downloaded:0,total:60000000,busy:true};return response(serverState.job)}serverState.checking=true;setTimeout(()=>{serverState.checking=false;if(checkHasOffers){serverState.items.panel.latest="v26.9.49";serverState.items.panel.available=true;serverState.items.core.latest="vx-26.7";serverState.items.core.available=true}},180);return response(serverState)};</script>'+
  '<script>'+read('web/assets/js/util/updates.js')+'</script><div id="app"><div v-if="visible">'+card+'</div></div><script>window.app=new Vue({el:"#app",data:{visible:true}});</script></body></html>';
 }
 async function noDialog(page){
@@ -58,6 +58,9 @@ async function noOverflow(page){
   await page.waitForFunction(()=>serverState.job?.id==='persisted');
   await page.evaluate(()=>app.$refs.updates.poll());
   assert.deepEqual(await page.evaluate(()=>requests.filter(r=>r.url.endsWith('/start')).map(r=>r.data)),[{kind,version:kind==='panel'?'v26.9.49':'vx-26.7'}]);
+  const sent=await page.evaluate(()=>requests.find(r=>r.url.endsWith('/start')));
+  assert.match(sent.contentType,/^application\/x-www-form-urlencoded/,'use the actual shared Axios request format');
+  assert.equal(new URLSearchParams(sent.rawBody).get('kind'),kind,'wire payload must retain the selected component');
   await page.evaluate(()=>{serverState.job.phase='downloading';serverState.job.downloaded=24500000});
   await page.waitForFunction(()=>app.$refs.updates.job.downloaded===24500000,null,{timeout:5000});
   assert.match(await page.locator('.dui-update-byte-count').innerText(),/40%/);
@@ -71,7 +74,7 @@ async function noOverflow(page){
   assert.match(await page.locator('.dui-update-progress').innerText(),/已恢复原版本/);
   assert.equal(await row.locator('.dui-update-install').isEnabled(),true);
   await noDialog(page);await noOverflow(page);
-  results.push({width,theme:theme||'light',directCheck:true,inlineDownload:true,progress:true,remount:true,reconnect:true,rollback:true});await page.close();
+  results.push({width,theme:theme||'light',directCheck:true,inlineDownload:true,realAxiosFormEncoding:true,progress:true,remount:true,reconnect:true,rollback:true});await page.close();
  }
  for(const lang of Object.keys(DuiUpdateText.maps)){
   const page=await browser.newPage({viewport:{width:390,height:900}});
