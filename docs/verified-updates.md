@@ -1,101 +1,91 @@
-# Verified background updates
+# 首页检查与后台更新
 
-The homepage DUI card checks the public `shini74744/Dui` releases for stable panel
-(`v*`) and DUI core (`vx-*`) releases. Each component shows its installed and
-latest compatible version separately. It checks when the homepage is opened,
-caches results for one hour, and allows a manual refresh (one request per minute).
-The header button checks directly in the card. Panel/core versions, update
-actions, errors and background progress appear inline without a dialog. Closing
-or reloading the page does not cancel a server-side download.
+本文对应面板 v26.9.51。面板版本（`v26.9.*`）与 DUI 核心版本（`vx-26.*`）独立检查、独立更新。
 
-Only complete releases with the matching architecture archive and SHA-256 file
-are offered. A failed check is shown explicitly; it does not imply up-to-date.
+## 首页如何使用
 
-Updates require the panel to be running as root under the Linux `x-ui.service`
-systemd unit. Other installation methods can inspect versions but must use their
-installer. Panel updates replace the embedded panel executable; core updates
-replace the Xray executable. They do not overwrite the other component, helper
-executables, service unit, shell scripts, certificates or geodata. Update the core
-separately when release notes require a newer core. The old core-version selector
-uses the same background transaction.
+在首页 **DUI-PRO 面板卡片**中操作，桌面和手机均在原卡片内显示，无需打开更新弹窗：
 
-## Transaction
+1. 没有可用更新时显示“检查更新”；发现更新时显示绿色“更新版本”，文字跟随面板语言。
+2. 点击后展开面板和内核两项，分别显示已安装版本、最新兼容版本和更新状态。
+3. 点击对应项的“后台下载并更新”。状态显示排队、连接、下载、校验、安装/重启及完成或失败。
+4. 下载阶段显示已下载字节、总大小和百分比。关闭页面或刷新页面后可继续查看原任务。
 
-1. An authenticated, same-origin POST creates one root-private server-side job.
-   A separate systemd worker downloads the release, surviving page closure and
-   panel restarts. A process lock prevents concurrent update transactions.
-2. Download into a private staging directory on the target filesystem. Persist
-   downloaded/total bytes and phase roughly once per second. No overall download
-   deadline; connection/header deadlines and a 90-second stalled-read deadline
-   prevent a dead connection from hanging indefinitely. Interrupted downloads
-   fail safely; Retry starts a fresh download.
-3. Require GitHub's archive size, the exact filename in the SHA-256 sidecar, the
-   matching SHA-256, a valid archive, the exact executable version, and a
-   successful executable launch. Reject links, traversal and duplicate executable
-   entries. Test a staged core against the current runtime configuration before
-   installation, without opening listeners.
-4. Before stopping the service, keep the previous executable. With the service
-   stopped, back up SQLite using VACUUM INTO and copy the runtime core config.
-   Replace the executable by rename on the same filesystem, then fsync the
-   directory. No live executable is opened for truncation.
-5. Restart and wait for panel startup readiness, the expected running executable
-   hash, and core readiness when previously running. For a core update, also
-   verify the running child executable. Require three consecutive healthy checks.
-   Failure restores the previous executable, database and config, then checks
-   the restored service. Failure of recovery is reported distinctly.
+打开首页会触发检查；结果缓存一小时，手动强制检查最多每分钟一次。只提供 DUI 仓库中正式发布、匹配当前架构且具有安装包和 SHA-256 文件的版本。
 
-Download, integrity or preflight failures never replace the installed executable.
-Normal installation briefly restarts the panel and core; download does not.
-Backups stay in the root-private `.dui-update-*` staging directory next to the
-updated executable. `<DB folder>/updates/job.json` records the latest transaction.
-If the machine or worker terminates during installation, the UI reports recovery
-required; do not start a second transaction over those backups. The worker can be
-rerun with its original job ID to restore the previous version. Automatic
-rollback cannot guarantee recovery from disk/hardware failure or loss of power.
+检查失败会显示错误，不应据此判断“已是最新”。v26.9.50 起，核心版本从已安装的可执行文件读取，不依赖核心是否成功启动；未知版本不再误标为最新。官方 Xray 的版本号与 `vx-*` 独立，迁移到 DUI 核心时不直接比较两者的数字大小。
 
-Checksums protect against incomplete or altered downloads, not compromise of the
-GitHub repository or release account. Only the fixed DUI repository is used.
-No credentials, configuration contents, node URLs or connection addresses are
-included in job status.
+## 更新范围
 
-## Verification
+后台覆盖更新要求 Linux、root、标准 `x-ui.service` 及受支持的普通文件安装布局。Docker、符号链接或其他自定义部署应使用各自的安装/部署流程。
 
-- `go test ./internal/update ./web/service ./web/controller`
-- `node scripts/test-updates-ui.cjs` with Playwright/Chromium
-- `python3 scripts/test-updates-integration.py` with DUI_TEST_PANEL/DUI_TEST_CORE
+| 操作 | 替换内容 |
+| --- | --- |
+| 首页“面板”更新 | 面板可执行文件，包括嵌入的网页资源 |
+| 首页“内核”更新 | Xray 核心可执行文件 |
+| 命令行安装脚本覆盖升级 | Release 完整安装包，包括随包发布的核心、脚本和可用辅助组件 |
 
-Tests cover slow/interrupted downloads, length and checksum failures, archive
-validation, wrong executable versions, exclusive jobs, rollback, authenticated
-API access, cross-origin rejection, refresh persistence, 13 locales and mobile/
-desktop light/dark layouts.
+首页更新不会同时替换另一个组件，也不会覆盖辅助组件、菜单脚本、服务单元、证书或 geodata。若新功能要求新核心，请分别更新；若需更新配套文件，请使用完整安装包。原有核心版本选择入口也使用同一后台更新流程。
 
-An opt-in systemd end-to-end check is available as
-`DUI_UPDATE_SYSTEMD_TEST=1 python3 scripts/test-updates-worker.py` with the same
-binary environment variables. It creates and removes an isolated test unit,
-loopback-only panel and disposable DB. It tests the real download/install/restart
-cycle using the published vx-26.6 core and intentionally installs panel v26.9.46
-inside that test unit to exercise readiness failure and recovery. It never
-replaces the installed business panel or core.
+下载期间面板和业务核心继续运行。安装阶段会短暂重启面板及其核心。
 
-When an update is available, the card header displays a green localized "Update version" label. The user clicks it to reveal which component has an update and its version inline. With no available update it retains the existing check-for-updates label.
+## 慢速下载与完整性校验
 
+下载先写入目标文件系统上的私有临时目录，约每秒保存一次字节进度和阶段，**不会边下载边覆盖正在运行的二进制**。
 
-### Stopped cores and legacy upgrades (v26.9.50)
+没有整包下载总时长上限。连接和响应头有超时，单次读取停滞 90 秒会失败；持续收到数据的慢速下载可以继续。中断后重试会重新下载，不支持断点续传。
 
-Update status reads the installed core executable independently of its running process.
-Unknown or malformed installed versions never claim to be current and do not hide a
-verified DUI release. Official Xray version numbers are treated as a migration to
-DUI rather than compared numerically with the unrelated vx-* release series.
+替换前必须通过：
 
-When the live core configuration has never been generated, core update preflight
-stages a complete configuration from the existing database in the private update
-job. It does not write the live config or perform traffic maintenance. The staged
-binary must still pass configuration validation and the post-restart health check.
-If a config appears during the download, validation uses that live file instead.
-Rollback preserves whether the old config existed and whether the old core ran.
-Panel updates also permit an absent generated core config.
+- GitHub 记录的文件大小和实际下载长度检查；
+- 对应文件名的 SHA-256 校验；
+- 归档格式、安全路径、普通文件和重复可执行条目检查；
+- 可执行文件启动与精确版本检查；
+- 核心更新所需的配置校验，不开启业务监听端口。
 
-Legacy upgrade regression (isolated DBs, non-root processes and loopback ports):
+下载、校验或安装前检查失败时，不替换已安装的程序。
+
+## 安装、备份与恢复
+
+1. 已登录、同源的请求创建服务端任务；独立 systemd 工作进程执行下载。进程锁阻止并行更新。
+2. 安装前保留旧程序；停止服务后，通过 SQLite `VACUUM INTO` 备份数据库，并备份存在的核心运行配置。
+3. 使用同一文件系统内的 rename 原子替换二进制，并同步目录。
+4. 重启后检查面板就绪、运行程序哈希和应运行的核心；要求连续三次健康检查通过。核心更新另行核对实际子进程的可执行文件。
+5. 安装或健康检查失败时恢复旧程序、数据库和配置，并检查恢复后的服务；回滚失败会单独报告。
+
+备份保留在更新目标旁的 root 私有 `.dui-update-*` 目录。最近任务状态位于 `<数据库目录>/updates/job.json`。备份可能含敏感配置，不要公开上传，也不要在更新未结束时清理。
+
+若机器或工作进程在安装阶段异常终止，界面会提示需要恢复；应保留原任务和备份，按原任务 ID 恢复后再发起更新。自动回滚无法保证磁盘损坏或断电时一定恢复成功。
+
+## 旧版本升级与常见提示
+
+| 提示或现象 | 含义及处理 |
+| --- | --- |
+| `invalid character 'k' looking for beginning of value` | 旧面板把网页发送的 `kind=...` 表单误当 JSON，任务尚未开始。v26.9.51 已修复；旧版本可先通过 `x-ui update` 或 [安装脚本](../README.md#安装) 升级面板。 |
+| 核心显示 `Unknown`，却提示已是最新 | 旧更新检测的识别问题。升级面板至 v26.9.50 或更新版后，已安装版本与运行状态分别判断。仍显示未知时，应检查核心文件能否执行。 |
+| `open bin/config.json: no such file or directory` | 运行配置尚未生成或已缺失，不能仅据此判断节点或数据库丢失；还需查看核心配置校验和启动错误。 |
+| 配置校验失败 | 待安装核心不接受现有配置，不能把未完成校验的文件强行覆盖；应按具体错误检查协议、传输、证书及版本兼容。 |
+
+v26.9.50 起，缺少运行配置时，核心更新会从现有数据库生成仅用于校验的私有配置副本，不写入正在使用的配置位置。若下载期间出现了运行配置，改用该文件校验。回滚保留旧配置原本是否存在、旧核心原本是否运行的状态。面板更新也允许运行配置尚未生成。
+
+v26.9.51 的接口同时接受网页使用的表单请求和 JSON API 请求，登录验证及同源检查仍然生效。
+
+覆盖升级保留账号、密码、端口、证书和原访问路径。原路径为 `/` 时继续使用根路径；升级不会自动添加 `/shlii/`。
+
+## 验证入口
+
+以下检查用于开发和隔离环境；测试二进制路径需自行准备：
+
+```sh
+go test ./internal/update ./web/service ./web/controller
+node scripts/test-updates-ui.cjs
+DUI_TEST_PANEL=/path/to/new-panel DUI_TEST_CORE=/path/to/vx-26.7 \
+python3 scripts/test-updates-integration.py
+```
+
+UI 测试使用真实 Axios/Qs 请求转换，覆盖表单编码、进度、刷新、13 种语言及手机/桌面明暗布局。后端测试覆盖登录、同源校验、慢速/中断下载、长度和校验和错误、归档安全、版本检查、并发任务和回滚。
+
+旧版本升级回归：
 
 ```sh
 DUI_TEST_PANEL=/path/to/new-panel DUI_TEST_CORE=/path/to/vx-26.7 \
@@ -104,7 +94,6 @@ DUI_TEST_OLD_PANELS=/path/to/v26.9.43:/path/to/v26.9.49 \
 python3 scripts/test-updates-legacy.py
 ```
 
-The isolated systemd worker regression accepts DUI_TEST_MISSING_CONFIG=1 with
-vx-26.6 as DUI_TEST_CORE to exercise the missing-config download, validation,
-replacement and recovery path. It maps only its private test unit, never the
-installed x-ui service.
+可选的 systemd 端到端测试由 `DUI_UPDATE_SYSTEMD_TEST=1 python3 scripts/test-updates-worker.py` 启用，使用上述测试二进制环境变量。它创建独立服务单元、回环监听和临时数据库，执行真实下载、安装、重启及恢复；其中旧版 v26.9.46 和 vx-26.6 用作固定测试样本，并非当前推荐安装版本。设置 `DUI_TEST_MISSING_CONFIG=1`、以 vx-26.6 为旧核心，可覆盖运行配置缺失的恢复路径。
+
+校验和用于检查下载完整性，不能防御仓库或发布账号本身被攻破。更新来源固定为 `shini74744/Dui`；公开任务状态不包含凭据、完整配置、节点链接或用户连接地址。
