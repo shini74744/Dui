@@ -91,7 +91,7 @@ const DuiUpdates = {
   error(code){
    code=String(code||'').replace(/^\s*\(([^)]+)\)\s*$/,'$1');
    const zh=this.lang==='zh-CN'||this.lang==='zh-TW';
-   const reasons={network_error:'无法连接下载服务器',download_interrupted:'下载连接中断，当前版本未替换',size_mismatch:'下载长度不完整或不符，已停止更新',checksum_mismatch:'SHA-256 校验不符，已停止更新',invalid_checksum:'校验文件无效',config_rejected:'新核心未通过当前配置校验',disk_write_failed:'磁盘写入失败，请检查可用空间',health_check_failed:'新版本未通过启动检查',rollback_failed:'自动恢复未完成，请检查 x-ui 服务并使用备份恢复',backup_failed:'备份失败，未替换程序',unsupported_installation:'此安装方式不支持网页更新',update_busy:'已有更新任务正在执行',already_current:'当前已是该版本或更新版本',binary_unusable:'新程序无法在此机器运行',invalid_archive:'压缩包不完整或格式异常',version_mismatch:'程序版本与发布版本不符',recovery_required:'上次更新中断，请先恢复服务',installed_version_changed:'下载期间安装版本已改变，请重新检查更新'};
+   const reasons={network_error:'无法连接下载服务器',download_interrupted:'下载连接中断，当前版本未替换',size_mismatch:'下载长度不完整或不符，已停止更新',checksum_mismatch:'SHA-256 校验不符，已停止更新',invalid_checksum:'校验文件无效',config_isolation_unavailable:'无法隔离校验旧核心；请更新到 vx-26.9 或更新版本，未替换当前程序',config_rejected:'新核心未通过当前配置校验',disk_write_failed:'磁盘写入失败，请检查可用空间',health_check_failed:'新版本未通过启动检查',rollback_failed:'自动恢复未完成，请检查 x-ui 服务并使用备份恢复',backup_failed:'备份失败，未替换程序',unsupported_installation:'此安装方式不支持网页更新',update_busy:'已有更新任务正在执行',already_current:'当前已是该版本或更新版本',binary_unusable:'新程序无法在此机器运行',invalid_archive:'压缩包不完整或格式异常',version_mismatch:'程序版本与发布版本不符',recovery_required:'上次更新中断，请先恢复服务',installed_version_changed:'下载期间安装版本已改变，请重新检查更新'};
    return zh?(reasons[code]||code):code;
   },
   reload(){window.location.reload()}

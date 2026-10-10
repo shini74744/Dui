@@ -1,0 +1,191 @@
+--- /dev/null
++++ b/common/duivalidation/context.go
+@@ -0,0 +1,15 @@
++// Package duivalidation identifies CLI configuration checks without changing saved settings.
++package duivalidation
++
++import "context"
++
++type key struct{}
++
++func WithContext(ctx context.Context) context.Context {
++	return context.WithValue(ctx, key{}, true)
++}
++
++func FromContext(ctx context.Context) bool {
++	value, _ := ctx.Value(key{}).(bool)
++	return value
++}
+--- a/main/run.go
++++ b/main/run.go
+@@ -1,6 +1,7 @@
+ package main
+ 
+ import (
++	"context"
+ 	"fmt"
+ 	"log"
+ 	"os"
+@@ -15,6 +16,7 @@
+ 	"time"
+ 
+ 	"github.com/xtls/xray-core/common/cmdarg"
++	"github.com/xtls/xray-core/common/duivalidation"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	clog "github.com/xtls/xray-core/common/log"
+ 	"github.com/xtls/xray-core/common/platform"
+@@ -87,6 +89,11 @@
+ 	}
+ 
+ 	if *test {
++		// Close userspace validation resources before os.Exit skips deferred calls.
++		if err := server.Close(); err != nil {
++			fmt.Println("Failed to close configuration check:", err)
++			os.Exit(23)
++		}
+ 		fmt.Println("Configuration OK.")
+ 		os.Exit(0)
+ 	}
+@@ -221,7 +228,11 @@
+ 		return nil, errors.New("failed to load config files: [", configFiles.String(), "]").Base(err)
+ 	}
+ 
+-	server, err := core.New(c)
++	ctx := context.Background()
++	if *test {
++		ctx = duivalidation.WithContext(ctx)
++	}
++	server, err := core.NewWithContext(ctx, c)
+ 	if err != nil {
+ 		return nil, errors.New("failed to create server").Base(err)
+ 	}
+--- a/proxy/wireguard/client.go
++++ b/proxy/wireguard/client.go
+@@ -15,6 +15,7 @@
+ 	"github.com/xtls/xray-core/common"
+ 	"github.com/xtls/xray-core/common/buf"
+ 	"github.com/xtls/xray-core/common/dice"
++	"github.com/xtls/xray-core/common/duivalidation"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/common/log"
+ 	"github.com/xtls/xray-core/common/net"
+@@ -129,7 +130,9 @@
+ 	}
+ 	var tun tun.Device
+ 	var tnet *Net
+-	if !conf.NoKernelTun && kernelTunSupported {
++	// A CLI check must not create interfaces, change sysctls, or share the running core's routes.
++	// The saved NoKernelTun choice still applies during normal startup.
++	if !duivalidation.FromContext(ctx) && !conf.NoKernelTun && kernelTunSupported {
+ 		errors.LogWarning(context.Background(), "Using kernel TUN")
+ 		tun, tnet, err = createKernelTun(localAddresses, dnses, int(conf.Mtu))
+ 	} else {
+--- a/proxy/wireguard/tun_linux.go
++++ b/proxy/wireguard/tun_linux.go
+@@ -25,16 +25,34 @@
+ 	mu         sync.Mutex
+ )
+ 
+-func allocateIPv6TableIndex() int {
++// Allocate monotonically within this process and inspect each candidate in the
++// current namespace. Another running core may already own the initial table.
++func allocateIPv6TableIndex() (int, error) {
+ 	mu.Lock()
+ 	defer mu.Unlock()
+-
+-	if tableIndex > 10230 {
+-		errors.LogInfo(context.Background(), "allocate new ipv6 table index: ", tableIndex)
+-	}
+-	currentIndex := tableIndex
+-	tableIndex++
+-	return currentIndex
++	index, err := findFreeIPv6TableIndex(tableIndex, func(index int) (bool, error) {
++		routes, err := netlink.RouteListFiltered(netlink.FAMILY_V6,
++			&netlink.Route{Table: index}, netlink.RT_FILTER_TABLE)
++		return len(routes) != 0, err
++	})
++	if err != nil {
++		return 0, err
++	}
++	tableIndex = index + 1
++	return index, nil
++}
++
++func findFreeIPv6TableIndex(start int, occupied func(int) (bool, error)) (int, error) {
++	for index := start; index < start+1024; index++ {
++		used, err := occupied(index)
++		if err != nil {
++			return 0, fmt.Errorf("failed to inspect ipv6 table index: %w", err)
++		}
++		if !used {
++			return index, nil
++		}
++	}
++	return 0, fmt.Errorf("failed to find available ipv6 table index")
+ }
+ 
+ type kernelTun struct {
+@@ -111,18 +129,11 @@
+ 		}
+ 	}
+ 
+-	ipv6TableIndex := allocateIPv6TableIndex()
+-	if v6 != nil {
+-		r := &netlink.Route{Table: ipv6TableIndex}
+-		for {
+-			routeList, fErr := netlink.RouteListFiltered(netlink.FAMILY_V6, r, netlink.RT_FILTER_TABLE)
+-			if len(routeList) == 0 || fErr != nil {
+-				break
+-			}
+-			ipv6TableIndex--
+-			if ipv6TableIndex < 0 {
+-				return nil, nil, fmt.Errorf("failed to find available ipv6 table index")
+-			}
++	var ipv6TableIndex int
++	if v6 != nil {
++		ipv6TableIndex, err = allocateIPv6TableIndex()
++		if err != nil {
++			return nil, nil, err
+ 		}
+ 	}
+ 
+--- /dev/null
++++ b/proxy/wireguard/dui_table_linux_test.go
+@@ -0,0 +1,37 @@
++//go:build linux
++
++package wireguard
++
++import (
++	"errors"
++	"reflect"
++	"testing"
++)
++
++func TestDUIIPv6TableAllocation(t *testing.T) {
++	var seen []int
++	got, err := findFreeIPv6TableIndex(10230, func(index int) (bool, error) {
++		seen = append(seen, index)
++		return index < 10232, nil
++	})
++	if err != nil || got != 10232 || !reflect.DeepEqual(seen, []int{10230, 10231, 10232}) {
++		t.Fatalf("got %d, %v, candidates %v", got, err, seen)
++	}
++	sentinel := errors.New("netlink denied")
++	calls := 0
++	_, err = findFreeIPv6TableIndex(10230, func(int) (bool, error) {
++		calls++
++		return false, sentinel
++	})
++	if !errors.Is(err, sentinel) || calls != 1 {
++		t.Fatal("netlink failure treated as an available table", err)
++	}
++	calls = 0
++	_, err = findFreeIPv6TableIndex(10230, func(int) (bool, error) {
++		calls++
++		return true, nil
++	})
++	if err == nil || calls != 1024 {
++		t.Fatal("table search is not bounded", calls, err)
++	}
++}

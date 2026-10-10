@@ -1,6 +1,8 @@
-# DUI Xray vx-26.8
+# DUI Xray vx-26.9
 
 Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source, platform binaries and SHA256 checksums are published together.
+
+- vx-26.9 lets older panels validate existing WARP/WireGuard configurations while the installed core keeps running. CLI `-test` checks WireGuard using a userspace TUN and closes it before exiting; saved `noKernelTun` settings are unchanged and normal startup still uses the selected backend. Invalid configuration remains rejected. Linux kernel TUN allocation now inspects successive IPv6 tables instead of repeatedly checking an occupied table, and reports netlink failures explicitly. Isolated integration tests cover both legacy CLI forms, unchanged live interfaces/routes/rules/sysctls, invalid configuration, and normal kernel startup beside a running core.
 
 - vx-26.8 makes fallback optional for health-based failover in all four balancing strategies. A matched balancer with no usable candidate uses only an explicitly configured fallback. Without one, the new connection is rejected instead of using the default outbound; probes continue and recovered candidates are reused automatically. Existing connections are not migrated. Detection follows the configured probe schedule and sample window. Random/round-robin configurations without probes retain ordinary selection; probe coverage is required for failure detection. Unmatched routing retains its ordinary default behavior.
 

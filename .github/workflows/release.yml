@@ -63,6 +63,8 @@ jobs:
         run: go test ./...
       - name: Verified updater race checks
         run: go test -race ./internal/update
+      - name: Privileged WireGuard validation isolation
+        run: sudo env PATH="$PATH" GOPATH="$(go env GOPATH)" GOCACHE="$(go env GOCACHE)" DUI_TEST_NETNS=1 go test ./internal/update -run TestWireGuard -count=1
       - name: Updater layout and progress tests
         shell: bash
         run: |
