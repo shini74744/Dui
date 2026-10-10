@@ -1,4 +1,4 @@
-# DUI Xray vx-26.8 (pending release)
+# DUI Xray vx-26.8
 
 Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source, platform binaries and SHA256 checksums are published together.
 
