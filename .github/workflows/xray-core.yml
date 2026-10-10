@@ -35,7 +35,7 @@ jobs:
           # Upstream Vision uses uintptr reflection (vless/outbound.go:286), which trips checkptr under -race.
           # Run complete protocol integration with the same compiler flags as production binaries.
           go test ./core ./testing/dui -count=1 -timeout=180s
-          go test -race ./testing/dui -run TestDUIFourIndependentProbeRuntimes -count=1 -timeout=120s
+          go test -race ./testing/dui -run 'TestDUIFourIndependentProbeRuntimes|TestDUIBalancerLiveProbeFailoverAndRecovery' -count=1 -timeout=120s
           go test ./infra/conf ./transport/internet/tls -run TestDUI -count=1 -timeout=120s
       - name: Verify panel hot-add preserves core settings
         working-directory: ${{ runner.temp }}/xray/source

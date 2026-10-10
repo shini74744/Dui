@@ -17,6 +17,8 @@ Dui 是面向 Linux VPS 的 Xray 管理面板，提供入站、出站、路由�
 | DUI 核心 | [vx-26.7](https://github.com/shini74744/Dui/releases/tag/vx-26.7) | 基于 Xray v26.9.9；支持显式配置的公网明文 VLESS 出站 |
 | 辅助协议组件 | 随面板安装包发布 | TUIC、MTProto 与 AmneziaWG 的能力和平台支持见 [组件说明](core/helpers/README.md) |
 
+待发布核心 vx-26.8 将四种策略的故障出口排除与备用出口解耦；备用出口留空且全部候选出口不可用时拒绝新连接，探测恢复后自动重新使用。详见[策略探测与故障切换](docs/strategy-probes.md)。
+
 面板的 `v26.9.*` 与核心的 `vx-26.*` 独立编号。首页分别显示两个组件的已安装版本与可用更新；核心的上游版本、构建来源记录在 `BUILD.json` 中。
 
 ## 使用文档
