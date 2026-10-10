@@ -579,7 +579,15 @@ func ValidateBinary(j *Job) error {
 		cmd.Dir = j.WorkDir
 		cmd.Stdin = strings.NewReader(string(data))
 		cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+filepath.Dir(j.Core))
+		isolated := needsWireGuardIsolation(data, v)
+		if isolated {
+			isolateValidation(cmd)
+		}
 		if e = cmd.Run(); e != nil {
+			var exitError *exec.ExitError
+			if isolated && !errors.As(e, &exitError) && ctx.Err() == nil {
+				return errors.New("config_isolation_unavailable")
+			}
 			return errors.New("config_rejected")
 		}
 	}

@@ -16,6 +16,7 @@ patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/strategy-observatory.patch
 patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/probe-history.patch"
 patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/vless-transport.patch"
 patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/health-failover.patch"
+patch --batch --fuzz=0 -d "$DEST/source" -p1 < "$META/wireguard-validation.patch"
 REALITY_URL=$(jq -r .reality_source_url "$META/manifest.json")
 REALITY_HASH=$(jq -r .reality_source_sha256 "$META/manifest.json")
 REALITY_PREFIX=$(jq -r .reality_source_prefix "$META/manifest.json")

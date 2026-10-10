@@ -37,12 +37,14 @@ jobs:
           go test ./core ./testing/dui -count=1 -timeout=180s
           go test -race ./testing/dui -run 'TestDUIFourIndependentProbeRuntimes|TestDUIBalancerLiveProbeFailoverAndRecovery' -count=1 -timeout=120s
           go test ./infra/conf ./transport/internet/tls -run TestDUI -count=1 -timeout=120s
+          go test -race ./proxy/wireguard -run TestDUI -count=1 -timeout=120s
       - name: Verify panel hot-add preserves core settings
         working-directory: ${{ runner.temp }}/xray/source
         run: |
           VERSION=$(jq -r .release_version "$GITHUB_WORKSPACE/core/xray/manifest.json")
           go build -ldflags="-X github.com/xtls/xray-core/core.releaseVersion=$VERSION" -o "$RUNNER_TEMP/xray-hot-add" ./main
           cd "$GITHUB_WORKSPACE"
+          sudo env DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" python3 scripts/test-wireguard-updates.py
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" go test ./xray -run TestDUIHotAddUsesInstalledCore -count=1 -timeout=60s
           go build -o "$RUNNER_TEMP/dui-closewait-panel" .
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-close-wait-integration.py

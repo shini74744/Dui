@@ -13,9 +13,11 @@ Dui 是面向 Linux VPS 的 Xray 管理面板，提供入站、出站、路由�
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| 面板 | [v26.9.53](https://github.com/shini74744/Dui/releases/tag/v26.9.53) | 服务器端出站测速、紧凑响应式结果、真实采样进度；策略探测折叠菜单及新配置默认 30 秒间隔 |
-| DUI 核心 | [vx-26.8](https://github.com/shini74744/Dui/releases/tag/vx-26.8) | 基于 Xray v26.9.9；四种策略按探测结果排除故障出口，备用出口可留空 |
+| 面板 | [v26.9.54](https://github.com/shini74744/Dui/releases/tag/v26.9.54) | 修复保留 WARP/WireGuard 配置时的后台更新校验，继续支持下载测速和独立策略探测 |
+| DUI 核心 | [vx-26.9](https://github.com/shini74744/Dui/releases/tag/vx-26.9) | 基于 Xray v26.9.9；WireGuard 升级校验兼容与路由表冲突修复；四种策略按探测结果排除故障出口，备用出口可留空 |
 | 辅助协议组件 | 随面板安装包发布 | TUIC、MTProto 与 AmneziaWG 的能力和平台支持见 [组件说明](core/helpers/README.md) |
+
+v26.9.54 / vx-26.9 修复旧配置含 WARP/WireGuard 时的更新校验冲突，无需删除已有出口。详情见 [后台更新及旧版兼容](docs/verified-updates.md)。
 
 v26.9.53 新增 [出站下载测速](docs/outbound-speedtest.md)、策略探测折叠菜单及新配置默认 30 秒间隔。已保存的检测间隔不会自动覆盖。测速页同时提供紧凑布局、实际采样进度和不完整结果提示。
 
