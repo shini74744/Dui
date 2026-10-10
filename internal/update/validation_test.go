@@ -13,6 +13,7 @@ func TestWireGuardValidationCompatibility(t *testing.T) {
 		{"old userspace", "{\"outbounds\":[{\"protocol\":\"wireguard\",\"settings\":{\"noKernelTun\":true}}]}", "vx-26.8", false},
 		{"new compatibility", "{\"outbounds\":[{\"protocol\":\"wireguard\"}]}", "vx-26.9", false},
 		{"new major", "{\"outbounds\":[{\"protocol\":\"wireguard\"}]}", "vx-27.0", false},
+		{"unrelated settings", `{"outbounds":[{"protocol":"freedom","settings":{"noKernelTun":"ignored"}},{"protocol":"wireguard"}]}`, "vx-26.8", true},
 		{"ordinary", "{\"outbounds\":[{\"protocol\":\"freedom\"}]}", "vx-26.4", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

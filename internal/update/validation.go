@@ -21,10 +21,8 @@ func needsWireGuardIsolation(data []byte, version string) bool {
 	}
 	var config struct {
 		Outbounds []struct {
-			Protocol string `json:"protocol"`
-			Settings struct {
-				NoKernelTun bool `json:"noKernelTun"`
-			} `json:"settings"`
+			Protocol string          `json:"protocol"`
+			Settings json.RawMessage `json:"settings"`
 		} `json:"outbounds"`
 	}
 	if json.Unmarshal(data, &config) != nil {
@@ -32,7 +30,15 @@ func needsWireGuardIsolation(data []byte, version string) bool {
 		return false
 	}
 	for _, outbound := range config.Outbounds {
-		if outbound.Protocol == "wireguard" && !outbound.Settings.NoKernelTun {
+		if outbound.Protocol != "wireguard" {
+			continue
+		}
+		var settings struct {
+			NoKernelTun bool `json:"noKernelTun"`
+		}
+		// Unrecognized settings on other protocols are irrelevant to WireGuard.
+		// Missing or malformed WireGuard settings must never disable isolation.
+		if json.Unmarshal(outbound.Settings, &settings) != nil || !settings.NoKernelTun {
 			return true
 		}
 	}
