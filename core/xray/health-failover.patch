@@ -1,0 +1,542 @@
+--- /dev/null
++++ b/app/dispatcher/availability_test.go
+@@ -0,0 +1,145 @@
++package dispatcher
++
++import (
++	"context"
++	"errors"
++	"io"
++	"testing"
++	"time"
++
++	"github.com/xtls/xray-core/app/observatory"
++	"github.com/xtls/xray-core/app/router"
++	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/serial"
++	"github.com/xtls/xray-core/common/session"
++	"github.com/xtls/xray-core/core"
++	"github.com/xtls/xray-core/features/extension"
++	"github.com/xtls/xray-core/features/outbound"
++	"github.com/xtls/xray-core/transport"
++	"github.com/xtls/xray-core/transport/pipe"
++	"google.golang.org/protobuf/proto"
++)
++
++type duiDispatchObserver struct{ a, b bool }
++
++func (*duiDispatchObserver) Type() interface{} { return extension.ObservatoryType() }
++func (*duiDispatchObserver) Start() error      { return nil }
++func (*duiDispatchObserver) Close() error      { return nil }
++func (o *duiDispatchObserver) GetObservation(context.Context) (proto.Message, error) {
++	return &observatory.ObservationResult{Status: []*observatory.OutboundStatus{
++		{OutboundTag: "a", Alive: o.a, Delay: 10}, {OutboundTag: "b", Alive: o.b, Delay: 20},
++	}}, nil
++}
++
++type duiDispatchHandler struct {
++	outbound.Handler
++	tag   string
++	calls int
++}
++
++func (h *duiDispatchHandler) Tag() string { return h.tag }
++func (h *duiDispatchHandler) Dispatch(_ context.Context, link *transport.Link) {
++	h.calls++
++	common.Close(link.Writer)
++	common.Interrupt(link.Reader)
++}
++
++type duiDispatchManager struct {
++	outbound.Manager
++	handlers map[string]*duiDispatchHandler
++	defaults int
++}
++
++func (m *duiDispatchManager) Select([]string) []string { return []string{"a", "b"} }
++func (m *duiDispatchManager) GetHandler(tag string) outbound.Handler {
++	if h := m.handlers[tag]; h != nil {
++		return h
++	}
++	return nil
++}
++func (m *duiDispatchManager) GetDefaultHandler() outbound.Handler {
++	m.defaults++
++	return m.handlers["direct"]
++}
++
++func TestDUIDispatchBalancerHealthRecoveryAndExplicitFallback(t *testing.T) {
++	for _, name := range []string{"leastPing", "leastLoad", "random", "roundRobin"} {
++		for _, fallback := range []string{"", "backup", "direct"} {
++			t.Run(name+"/"+fallback, func(t *testing.T) {
++				instance := new(core.Instance)
++				ctx := context.WithValue(context.Background(), core.XrayKey(1), instance)
++				observer := &duiDispatchObserver{a: true, b: false}
++				if err := instance.AddFeature(observer); err != nil {
++					t.Fatal(err)
++				}
++				m := &duiDispatchManager{handlers: map[string]*duiDispatchHandler{}}
++				for _, tag := range []string{"a", "b", "direct", "backup"} {
++					m.handlers[tag] = &duiDispatchHandler{tag: tag}
++				}
++				balance := &router.BalancingRule{Tag: "group", OutboundSelector: []string{"a", "b"}, Strategy: name, FallbackTag: fallback}
++				if name == "leastLoad" {
++					balance.StrategySettings = serial.ToTypedMessage(&router.StrategyLeastLoadConfig{Expected: 1})
++				}
++				r := new(router.Router)
++				config := &router.Config{BalancingRule: []*router.BalancingRule{balance}, Rule: []*router.RoutingRule{{
++					Networks:  []net.Network{net.Network_TCP, net.Network_UDP},
++					TargetTag: &router.RoutingRule_BalancingTag{BalancingTag: "group"},
++				}}}
++				if err := r.Init(ctx, config, nil, m, nil); err != nil {
++					t.Fatal(err)
++				}
++				d := &DefaultDispatcher{router: r, ohm: m}
++				dispatch := func(network net.Network) {
++					t.Helper()
++					dest := net.Destination{Network: network, Address: net.DomainAddress("example.invalid"), Port: 80}
++					callCtx := session.ContextWithOutbounds(ctx, []*session.Outbound{{Target: dest}})
++					reader, input := pipe.New()
++					output, writer := pipe.New()
++					defer input.Close()
++					defer output.Interrupt()
++					d.routedDispatch(callCtx, &transport.Link{Reader: reader, Writer: writer}, dest)
++					if _, err := output.ReadMultiBufferTimeout(time.Second); !errors.Is(err, io.EOF) {
++						t.Fatalf("output not closed: %v", err)
++					}
++					if _, err := reader.ReadMultiBufferTimeout(time.Second); err == nil {
++						t.Fatal("input not interrupted")
++					}
++				}
++				for _, network := range []net.Network{net.Network_TCP, net.Network_UDP} {
++					dispatch(network)
++				}
++				if m.handlers["a"].calls != 2 || m.handlers["b"].calls != 0 {
++					t.Fatal("failed member selected")
++				}
++				observer.a = false
++				for _, network := range []net.Network{net.Network_TCP, net.Network_UDP} {
++					dispatch(network)
++				}
++				if m.defaults != 0 {
++					t.Fatal("all failed leaked into default outbound")
++				}
++				if fallback != "" {
++					if m.handlers[fallback].calls != 2 {
++						t.Fatal("explicit fallback not used")
++					}
++				} else if m.handlers["direct"].calls != 0 || m.handlers["backup"].calls != 0 {
++					t.Fatal("implicit fallback")
++				}
++				observer.b = true
++				dispatch(net.Network_TCP)
++				if m.handlers["b"].calls != 1 {
++					t.Fatal("recovered member not reused")
++				}
++				// Unmatched routing retains the ordinary default, only failed balancers reject.
++				if err := r.ReloadRules(&router.Config{}, false); err != nil {
++					t.Fatal(err)
++				}
++				dispatch(net.Network_TCP)
++				if m.defaults != 1 {
++					t.Fatal("unmatched default routing changed")
++				}
++			})
++		}
++	}
++}
+--- a/app/dispatcher/default.go
++++ b/app/dispatcher/default.go
+@@ -2,6 +2,7 @@
+ 
+ import (
+ 	"context"
++	stderrors "errors"
+ 	"fmt"
+ 	"github.com/xtls/xray-core/common/duilimit"
+ 	"strings"
+@@ -493,6 +494,11 @@
+ 				common.Interrupt(link.Reader)
+ 				return // DO NOT CHANGE: the traffic shouldn't be processed by default outbound if the specified outbound tag doesn't exist (yet), e.g., VLESS Reverse Proxy
+ 			}
++		} else if stderrors.Is(err, routing.ErrNoAvailableOutbound) {
++			errors.LogInfo(ctx, "balancer has no available outbound; waiting for probe recovery")
++			common.Close(link.Writer)
++			common.Interrupt(link.Reader)
++			return
+ 		} else {
+ 			errors.LogInfo(ctx, "default route for ", destination)
+ 		}
+--- /dev/null
++++ b/app/router/availability_test.go
+@@ -0,0 +1,137 @@
++package router
++
++import (
++	"context"
++	"errors"
++	"testing"
++
++	"github.com/xtls/xray-core/app/observatory"
++	"github.com/xtls/xray-core/core"
++	"github.com/xtls/xray-core/features/extension"
++	"github.com/xtls/xray-core/features/outbound"
++	"github.com/xtls/xray-core/features/routing"
++	"google.golang.org/protobuf/proto"
++)
++
++type duiAvailabilityObserver struct{ alive map[string]bool }
++
++func (o *duiAvailabilityObserver) Type() interface{} { return extension.ObservatoryType() }
++func (o *duiAvailabilityObserver) Start() error      { return nil }
++func (o *duiAvailabilityObserver) Close() error      { return nil }
++func (o *duiAvailabilityObserver) GetObservation(context.Context) (proto.Message, error) {
++	result := &observatory.ObservationResult{}
++	for _, tag := range []string{"a", "b"} {
++		if alive, ok := o.alive[tag]; ok {
++			result.Status = append(result.Status, &observatory.OutboundStatus{
++				OutboundTag: tag, Alive: alive, Delay: 10,
++				HealthPing: &observatory.HealthPingMeasurementResult{All: 2, Average: 10000000, Deviation: 1000000},
++			})
++		}
++	}
++	return result, nil
++}
++
++type duiAvailabilityManager struct {
++	outbound.Manager
++	tags []string
++}
++
++func (m *duiAvailabilityManager) Select([]string) []string { return m.tags }
++
++func duiAvailabilityStrategy(name, fallback string) BalancingStrategy {
++	switch name {
++	case "leastPing":
++		return &LeastPingStrategy{}
++	case "leastLoad":
++		return NewLeastLoadStrategy(&StrategyLeastLoadConfig{Expected: 1})
++	case "random":
++		return &RandomStrategy{FallbackTag: fallback}
++	default:
++		return &RoundRobinStrategy{FallbackTag: fallback}
++	}
++}
++
++func TestDUIBalancerFailureAndRecoveryWithoutImplicitDefault(t *testing.T) {
++	for _, name := range []string{"leastPing", "leastLoad", "random", "roundRobin"} {
++		for _, fallback := range []string{"", "backup", "direct"} {
++			t.Run(name+"/"+fallback, func(t *testing.T) {
++				instance := new(core.Instance)
++				ctx := context.WithValue(context.Background(), core.XrayKey(1), instance)
++				observer := &duiAvailabilityObserver{alive: map[string]bool{"a": true, "b": false}}
++				manager := &duiAvailabilityManager{tags: []string{"a", "b"}}
++				b := &Balancer{strategy: duiAvailabilityStrategy(name, fallback), ohm: manager, fallbackTag: fallback}
++				// Exercise deferred dependency registration, not direct observer assignment.
++				b.InjectContext(ctx)
++				if err := instance.AddFeature(observer); err != nil {
++					t.Fatal(err)
++				}
++				for i := 0; i < 50; i++ {
++					if got, err := b.PickOutbound(); err != nil || got != "a" {
++						t.Fatalf("partial failure: got %q, %v", got, err)
++					}
++				}
++				observer.alive["a"] = false
++				got, err := b.PickOutbound()
++				if fallback == "" {
++					if got != "" || !errors.Is(err, routing.ErrNoAvailableOutbound) {
++						t.Fatalf("all failed must reject: %q, %v", got, err)
++					}
++				} else if err != nil || got != fallback {
++					t.Fatalf("explicit fallback: %q, %v", got, err)
++				}
++				observer.alive["b"] = true
++				for i := 0; i < 50; i++ {
++					if got, err := b.PickOutbound(); err != nil || got != "b" {
++						t.Fatalf("recovery: got %q, %v", got, err)
++					}
++				}
++				manager.tags = nil
++				got, err = b.PickOutbound()
++				if fallback == "" {
++					if got != "" || !errors.Is(err, routing.ErrNoAvailableOutbound) {
++						t.Fatalf("empty selector must reject: %q, %v", got, err)
++					}
++				} else if err != nil || got != fallback {
++					t.Fatalf("empty selector fallback: %q, %v", got, err)
++				}
++			})
++		}
++	}
++}
++
++func TestDUIRandomRoundRobinObserverOptional(t *testing.T) {
++	for _, name := range []string{"random", "roundRobin"} {
++		t.Run(name, func(t *testing.T) {
++			instance := new(core.Instance)
++			ctx := context.WithValue(context.Background(), core.XrayKey(1), instance)
++			strategy := duiAvailabilityStrategy(name, "")
++			strategy.(extension.ContextReceiver).InjectContext(ctx)
++			for i := 0; i < 20; i++ {
++				got := strategy.PickOutbound([]string{"a", "b"})
++				if got != "a" && got != "b" {
++					t.Fatalf("no observer: %q", got)
++				}
++			}
++			observer := &duiAvailabilityObserver{alive: map[string]bool{"a": false, "b": true}}
++			if err := instance.AddFeature(observer); err != nil {
++				t.Fatal(err)
++			}
++			for i := 0; i < 20; i++ {
++				if got := strategy.PickOutbound([]string{"a", "b"}); got != "b" {
++					t.Fatalf("configured observer ignored: %q", got)
++				}
++			}
++		})
++	}
++}
++
++func TestDUIBalancerSelectionErrorCannotUseDefault(t *testing.T) {
++	b := &Balancer{strategy: &RandomStrategy{}, ohm: &struct{ outbound.Manager }{}}
++	if _, err := b.PickOutbound(); !errors.Is(err, routing.ErrNoAvailableOutbound) {
++		t.Fatalf("got %v", err)
++	}
++	b.fallbackTag = "backup"
++	if got, err := b.PickOutbound(); err != nil || got != "backup" {
++		t.Fatalf("%q, %v", got, err)
++	}
++}
+--- a/app/router/balancing.go
++++ b/app/router/balancing.go
+@@ -10,6 +10,7 @@
+ 	"github.com/xtls/xray-core/core"
+ 	"github.com/xtls/xray-core/features/extension"
+ 	"github.com/xtls/xray-core/features/outbound"
++	"github.com/xtls/xray-core/features/routing"
+ )
+ 
+ type BalancingStrategy interface {
+@@ -31,11 +32,13 @@
+ 
+ func (s *RoundRobinStrategy) InjectContext(ctx context.Context) {
+ 	s.ctx = ctx
+-	if len(s.FallbackTag) > 0 {
+-		common.Must(core.RequireFeatures(s.ctx, func(observatory extension.Observatory) error {
++	// Probing is optional, but when configured it filters failed outbounds even
++	// without a fallback. Keep configurations without an observer working.
++	if instance := core.FromContext(ctx); instance != nil {
++		common.Must(instance.RequireFeatures(func(observatory extension.Observatory) error {
+ 			s.observatory = observatory
+ 			return nil
+-		}))
++		}, true))
+ 	}
+ }
+ 
+@@ -99,7 +102,7 @@
+ 			errors.LogInfo(context.Background(), "fallback to [", b.fallbackTag, "], due to error: ", err)
+ 			return b.fallbackTag, nil
+ 		}
+-		return "", err
++		return "", errors.New("cannot select balancer outbounds: ", err).Base(routing.ErrNoAvailableOutbound)
+ 	}
+ 	var tag string
+ 	if o := b.override.Get(); o != "" {
+@@ -112,8 +115,8 @@
+ 			errors.LogInfo(context.Background(), "fallback to [", b.fallbackTag, "], due to empty tag returned")
+ 			return b.fallbackTag, nil
+ 		}
+-		// will use default handler
+-		return "", errors.New("balancing strategy returns empty tag")
++		// A matched balancer must not leak traffic through the default outbound.
++		return "", routing.ErrNoAvailableOutbound
+ 	}
+ 	return tag, nil
+ }
+--- a/app/router/strategy_random.go
++++ b/app/router/strategy_random.go
+@@ -20,11 +20,13 @@
+ 
+ func (s *RandomStrategy) InjectContext(ctx context.Context) {
+ 	s.ctx = ctx
+-	if len(s.FallbackTag) > 0 {
+-		common.Must(core.RequireFeatures(s.ctx, func(observatory extension.Observatory) error {
++	// Probing is optional, but when configured it filters failed outbounds even
++	// without a fallback. Keep configurations without an observer working.
++	if instance := core.FromContext(ctx); instance != nil {
++		common.Must(instance.RequireFeatures(func(observatory extension.Observatory) error {
+ 			s.observatory = observatory
+ 			return nil
+-		}))
++		}, true))
+ 	}
+ }
+ 
+--- /dev/null
++++ b/features/routing/availability.go
+@@ -0,0 +1,8 @@
++package routing
++
++import "errors"
++
++// ErrNoAvailableOutbound means a matched balancer cannot select an outbound.
++// Dispatchers must reject this connection instead of using the default route.
++// Health probes continue and subsequent connections may succeed after recovery.
++var ErrNoAvailableOutbound = errors.New("no available balancer outbound")
+--- /dev/null
++++ b/testing/dui/balancer_availability_test.go
+@@ -0,0 +1,152 @@
++package dui_test
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/xtls/xray-core/app/observatory"
++	xnet "github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/session"
++	"github.com/xtls/xray-core/core"
++	"github.com/xtls/xray-core/features/extension"
++	_ "github.com/xtls/xray-core/main/distro/all"
++)
++
++func TestDUIBalancerLiveProbeFailoverAndRecovery(t *testing.T) {
++	var aliveA, aliveB atomic.Bool
++	aliveA.Store(true)
++	endpoint := func(tag string, alive *atomic.Bool) *httptest.Server {
++		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			if alive != nil && !alive.Load() {
++				conn, _, err := w.(http.Hijacker).Hijack()
++				if err == nil {
++					conn.Close()
++				}
++				return
++			}
++			if r.URL.Path == "/probe" {
++				w.WriteHeader(204)
++				return
++			}
++			fmt.Fprint(w, tag)
++		}))
++	}
++	a, b, direct, backup := endpoint("member-a", &aliveA), endpoint("member-b", &aliveB), endpoint("direct", nil), endpoint("backup", nil)
++	defer a.Close()
++	defer b.Close()
++	defer direct.Close()
++	defer backup.Close()
++	scopes := map[string]any{}
++	balances := []any{}
++	rules := []any{}
++	groups := map[string]string{}
++	for _, name := range []string{"leastPing", "leastLoad", "random", "roundRobin"} {
++		if name == "leastPing" {
++			scopes[name] = map[string]any{"subjectSelector": []string{"member-a", "member-b"}, "probeURL": "http://probe.invalid/probe", "probeInterval": "100ms", "enableConcurrency": true}
++		} else {
++			scopes[name] = map[string]any{"subjectSelector": []string{"member-a", "member-b"}, "pingConfig": map[string]any{"destination": "http://probe.invalid/probe", "interval": "10s", "timeout": "1s", "sampling": 1, "connectivity": ""}}
++		}
++		for _, fallback := range []string{"", "direct", "backup"} {
++			group := name + "-" + fallback
++			groups[group] = fallback
++			balances = append(balances, map[string]any{"tag": group, "selector": []string{"member-a", "member-b"}, "strategy": map[string]any{"type": name}, "fallbackTag": fallback})
++			rules = append(rules, map[string]any{"type": "field", "inboundTag": []string{group}, "balancerTag": group})
++		}
++	}
++	outbounds := []any{}
++	for _, e := range []struct {
++		tag    string
++		server *httptest.Server
++	}{{"direct", direct}, {"member-a", a}, {"member-b", b}, {"backup", backup}} {
++		outbounds = append(outbounds, map[string]any{"tag": e.tag, "protocol": "freedom", "settings": map[string]any{"redirect": strings.TrimPrefix(e.server.URL, "http://")}})
++	}
++	payload, err := json.Marshal(map[string]any{"log": map[string]any{"loglevel": "none"}, "outbounds": outbounds, "routing": map[string]any{"balancers": balances, "rules": rules}, "strategyObservatory": scopes})
++	if err != nil {
++		t.Fatal(err)
++	}
++	instance, err := core.StartInstance("json", payload)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer instance.Close()
++	observer := instance.GetFeature(extension.ObservatoryType()).(extension.StrategyObservatory)
++	waitHealth := func(wantA, wantB bool) {
++		t.Helper()
++		deadline := time.Now().Add(35 * time.Second)
++		for time.Now().Before(deadline) {
++			ready := true
++			for name := range scopes {
++				msg, err := observer.GetObservationForStrategy(context.Background(), name)
++				if err != nil {
++					t.Fatal(err)
++				}
++				statuses := map[string]bool{}
++				for _, s := range msg.(*observatory.ObservationResult).Status {
++					statuses[s.OutboundTag] = s.Alive
++				}
++				if len(statuses) != 2 || statuses["member-a"] != wantA || statuses["member-b"] != wantB {
++					ready = false
++				}
++			}
++			if ready {
++				return
++			}
++			time.Sleep(50 * time.Millisecond)
++		}
++		t.Fatalf("probes did not reach a=%v b=%v", wantA, wantB)
++	}
++	request := func(group string) (string, error) {
++		ctx := session.ContextWithInbound(context.Background(), &session.Inbound{Tag: group})
++		tr := &http.Transport{DisableKeepAlives: true, DialContext: func(_ context.Context, network, address string) (net.Conn, error) {
++			return core.Dial(ctx, instance, xnet.TCPDestination(xnet.DomainAddress("payload.invalid"), 80))
++		}}
++		defer tr.CloseIdleConnections()
++		client := &http.Client{Transport: tr, Timeout: 3 * time.Second}
++		resp, err := client.Get("http://payload.invalid/payload")
++		if err != nil {
++			return "", err
++		}
++		defer resp.Body.Close()
++		content, err := io.ReadAll(resp.Body)
++		return string(content), err
++	}
++	waitHealth(true, false)
++	for group := range groups {
++		for i := 0; i < 3; i++ {
++			if got, err := request(group); err != nil || got != "member-a" {
++				t.Fatalf("partial failure %s: %q %v", group, got, err)
++			}
++		}
++	}
++	t.Log("all four strategies use only the healthy member without requiring fallback")
++	aliveA.Store(false)
++	waitHealth(false, false)
++	for group, fallback := range groups {
++		got, err := request(group)
++		if fallback == "" {
++			if err == nil {
++				t.Fatalf("all failed %s leaked via %q", group, got)
++			}
++		} else if err != nil || got != fallback {
++			t.Fatalf("explicit fallback %s: %q %v", group, got, err)
++		}
++	}
++	t.Log("all failed: unset fallback rejects; direct/backup require explicit selection")
++	aliveB.Store(true)
++	waitHealth(false, true)
++	for group := range groups {
++		if got, err := request(group); err != nil || got != "member-b" {
++			t.Fatalf("recovery %s: %q %v", group, got, err)
++		}
++	}
++	t.Log("probes continue while rejected and recovered members are automatically reused")
++}
