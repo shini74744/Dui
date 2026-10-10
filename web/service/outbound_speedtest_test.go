@@ -197,3 +197,19 @@ func TestSpeedLegacyTLSCompatibility(t *testing.T) {
 		t.Fatal("TLS verification names were lost")
 	}
 }
+
+// A broken response after real data is a partial sample, never a 100% completion.
+func TestSpeedInterruptedResponseProgress(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1048576")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(make([]byte, 4096))
+		w.(http.Flusher).Flush()
+		time.Sleep(30 * time.Millisecond)
+	}))
+	defer srv.Close()
+	row := measureSpeed(context.Background(), srv.Client(), srv.URL, "test", 1, time.Second, 2*1024*1024, func(SpeedTestRow) {})
+	if row.State != "partial" || row.Bytes != 4096 || row.Progress >= 100 || row.Progress < 1 || row.LimitReached {
+		t.Fatalf("broken response reported incorrectly: %+v", row)
+	}
+}

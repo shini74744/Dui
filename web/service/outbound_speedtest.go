@@ -449,6 +449,14 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 		}
 		row.CurrentMbps = 0
 		row.LimitReached = row.Bytes >= limit
+		// Progress describes sampling, not merely that the task stopped.
+		row.Progress = int(row.Seconds / duration.Seconds() * 100)
+		if row.Progress > 99 {
+			row.Progress = 99
+		}
+		if row.LimitReached {
+			row.Progress = 100
+		}
 	}
 	for {
 		select {
@@ -469,10 +477,6 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 			row.CurrentMbps = float64(row.Bytes-lastBytes) * 8 / elapsed / 1e6
 			lastBytes = row.Bytes
 			lastTime = now
-			row.Progress = int(row.Seconds / duration.Seconds() * 100)
-			if row.Progress > 99 {
-				row.Progress = 99
-			}
 			update(row)
 		case <-deadline:
 			cancel()
@@ -499,7 +503,9 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 			}
 			cancel()
 			finish()
-			row.Progress = 100
+			if row.LimitReached || row.Seconds >= duration.Seconds() {
+				row.Progress = 100
+			}
 			row.State = "done"
 			if failures.Load() > 0 {
 				row.State = "partial"

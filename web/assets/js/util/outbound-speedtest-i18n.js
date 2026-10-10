@@ -3,10 +3,10 @@ const DuiSpeedTestI18n = (() => {
  title:'Download speed test',outbounds:'Select outbounds',mode:'Connections',single:'Single connection',multi:'Multiple connections',threads:'Parallel connections',
  start:'Start test',stop:'Stop',close:'Collapse',refresh:'Refresh',average:'Average',current:'Live speed',traffic:'Downloaded',elapsed:'Duration',
  hint:'Runs on the panel server through each selected outbound to Cloudflare, not in your browser. Tests run one outbound at a time: 10 seconds of downloading, up to 512 MiB each. This uses bandwidth and may affect active traffic.',
- saved:'Uses saved settings. Save your outbound changes before testing.',empty:'Select 1–10 outbounds. Non-download and interface-based outbounds are excluded.',
- results:'Latest test',queued:'Queued',preparing:'Preparing',connecting:'Connecting',testing:'Testing',done:'Completed',partial:'Partially completed',failed:'Failed',cancelled:'Stopped',running:'Running',stopping:'Stopping',idle:'Ready',
+ saved:'Uses saved settings. Save your outbound changes before testing.',empty:'Select 1–10 saved, supported outbounds.',
+ selected:'Selected',sampleAverage:'Sample average',progress:'Sampling progress',results:'Latest test',queued:'Queued',preparing:'Preparing',connecting:'Connecting',testing:'Testing',done:'Completed',partial:'Partially completed',failed:'Failed',cancelled:'Stopped',running:'Running',stopping:'Stopping',idle:'Ready',
  limit:'Traffic limit reached',error:'Request failed. Refresh to retrieve the current task.',busy:'Another test is running. Refresh to view it.',
- download_failed:'No download data received; check the outbound or try again later.',stream_failed:'Some download connections failed; the result is incomplete.',
+ download_failed:'No download data received; check the outbound or try again later.',stream_failed:'Download connections did not complete. This average covers only the received data.',
  worker_start:'The test core could not start. Check that this outbound is supported by the installed core.',
  unsupported_outbound:'This outbound or its proxy chain is not supported for an isolated download test.',missing_outbound:'The saved outbound no longer exists. Refresh the list.',
  invalid_request:'Select 1–10 outbounds and 1–16 parallel connections.',core_unavailable:'The installed core is unavailable.',stale_job:'The task has changed. Refresh its status.',
@@ -15,11 +15,11 @@ const DuiSpeedTestI18n = (() => {
  const zh={
  title:'下载测速',outbounds:'选择出口',mode:'测速模式',single:'单线程',multi:'多线程',threads:'并发数',
  start:'开始测速',stop:'停止测速',close:'收起',refresh:'刷新',average:'平均速度',current:'实时速度',traffic:'已下载',elapsed:'用时',
- hint:'由面板机器经过所选出口连接 Cloudflare 测速站，不使用浏览器本地网络。多个出口依次测试，每个出口下载 10 秒、最多 512 MiB；会消耗流量并可能影响当前业务带宽。',
- saved:'使用已保存的出口设置。修改出口后，请先保存再测速。',empty:'可选 1–10 个出口。不支持下载或需要创建网络接口的出口不会列出。',
- results:'最近一次测速',queued:'等待中',preparing:'准备中',connecting:'连接中',testing:'测速中',done:'已完成',partial:'部分完成',failed:'失败',cancelled:'已停止',running:'正在测速',stopping:'正在停止',idle:'就绪',
+ hint:'在面板服务器后台测速，经所选出口访问 Cloudflare。各出口依次测试，最多 10 秒 / 512 MiB，会占用出口流量和带宽。',
+ saved:'使用已保存的出口设置。修改出口后，请先保存再测速。',empty:'可选 1–10 个已保存、支持测速的出口。',
+ selected:'已选择',sampleAverage:'采样平均速度',progress:'采样进度',results:'最近一次测速',queued:'等待中',preparing:'准备中',connecting:'连接中',testing:'测速中',done:'已完成',partial:'结果不完整',failed:'失败',cancelled:'已停止',running:'正在测速',stopping:'正在停止',idle:'就绪',
  limit:'已达到流量上限',error:'请求失败，请刷新获取当前任务状态。',busy:'已有测速任务在运行，请刷新查看。',
- download_failed:'未收到下载数据，请检查出口或稍后重试。',stream_failed:'部分下载连接失败，本次结果不完整。',
+ download_failed:'未收到下载数据，请检查出口或稍后重试。',stream_failed:'下载连接未完整完成，以上仅为已接收数据的平均速度。',
  worker_start:'测速内核启动失败，请检查已安装内核是否支持该出口配置。',
  unsupported_outbound:'该出口或其代理链暂不支持独立下载测速。',missing_outbound:'已保存的出口不存在，请刷新列表。',
  invalid_request:'请选择 1–10 个出口，并发数为 1–16。',core_unavailable:'未找到可用的已安装内核。',stale_job:'任务已变化，请刷新状态。',
@@ -27,7 +27,7 @@ const DuiSpeedTestI18n = (() => {
  };
  const tw={...zh,title:'下載測速',outbounds:'選擇出口',mode:'測速模式',single:'單執行緒',multi:'多執行緒',threads:'並行數',start:'開始測速',stop:'停止測速',close:'收起',refresh:'重新整理',average:'平均速度',current:'即時速度',traffic:'已下載',elapsed:'用時',
  hint:'由面板主機經過所選出口連接 Cloudflare 測速站，不使用瀏覽器本機網路。多個出口依次測試，每個出口下載 10 秒、最多 512 MiB；會消耗流量並可能影響目前業務頻寬。',
- saved:'使用已儲存的出口設定。修改出口後，請先儲存再測速。',empty:'可選 1–10 個出口。不支援下載或需要建立網路介面的出口不會列出。',results:'最近一次測速',queued:'等候中',preparing:'準備中',connecting:'連接中',testing:'測速中',done:'已完成',partial:'部分完成',failed:'失敗',cancelled:'已停止',running:'正在測速',stopping:'正在停止',idle:'就緒',limit:'已達到流量上限',error:'請求失敗，請重新整理取得目前任務狀態。'};
+ saved:'使用已儲存的出口設定。修改出口後，請先儲存再測速。',empty:'可選 1–10 個出口。不支援下載或需要建立網路介面的出口不會列出。',selected:'已選擇',sampleAverage:'取樣平均速度',progress:'取樣進度',results:'最近一次測速',queued:'等候中',preparing:'準備中',connecting:'連接中',testing:'測速中',done:'已完成',partial:'結果不完整',failed:'失敗',cancelled:'已停止',running:'正在測速',stopping:'正在停止',idle:'就緒',limit:'已達到流量上限',error:'請求失敗，請重新整理取得目前任務狀態。'};
  const keys=['title','outbounds','mode','single','multi','threads','start','stop','close','refresh','average','current','traffic','elapsed','results','queued','preparing','connecting','testing','done','partial','failed','cancelled','running','stopping','idle'];
  const rows={
  'ja-JP':['ダウンロード速度テスト','出口を選択','接続モード','単一接続','複数接続','並列接続数','開始','停止','折りたたむ','更新','平均速度','現在の速度','ダウンロード量','時間','最新のテスト','待機中','準備中','接続中','測定中','完了','一部完了','失敗','停止済み','実行中','停止中','準備完了'],
