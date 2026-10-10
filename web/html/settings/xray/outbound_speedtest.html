@@ -1,85 +1,158 @@
 {{define "settings/xray/outboundSpeedTestComponent"}}
 <style>
 .dui-speed { width:100%; min-width:0; margin:4px 0 16px; }
-.dui-speed-panel { margin-top:14px; padding:20px; border:1px solid rgba(128,128,128,.25); border-radius:16px; }
-.dui-speed-head,.dui-speed-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
-.dui-speed-head { justify-content:space-between; margin-bottom:12px; }
-.dui-speed-head h3 { margin:0; color:inherit; }
-.dui-speed-hint { opacity:.72; font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
-.dui-speed-fields { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) 130px; gap:16px; margin:18px 0; align-items:start; }
+.dui-speed-panel { margin-top:14px; padding:20px; border:1px solid rgba(128,128,128,.22); border-radius:16px; }
+.dui-speed-head,.dui-speed-heading,.dui-speed-results-head { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.dui-speed-head { justify-content:space-between; margin-bottom:8px; }
+.dui-speed-heading h3 { margin:0; color:inherit; font-size:15px; font-weight:600; }
+.dui-speed-hint { opacity:.7; font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.dui-speed-head + .dui-speed-hint { margin:0 0 18px; }
+.dui-speed-fields { display:grid; grid-template-columns:minmax(240px,1fr) minmax(180px,auto) 104px auto; gap:16px; align-items:end; }
 .dui-speed-field { min-width:0; }
-.dui-speed-field > label { display:block; margin-bottom:8px; font-weight:500; }
+.dui-speed-field > label { display:block; margin-bottom:8px; font-size:12px; font-weight:500; }
 .dui-speed-field .ant-select { width:100%; }
+.dui-speed-field .ant-select-selection { min-height:38px; }
+.dui-speed-field .ant-select-selection--single .ant-select-selection__rendered { line-height:36px; }
+.dui-speed-field .ant-select-selection--multiple .ant-select-selection__rendered { margin-top:3px; }
 .dui-speed-field .ant-select-selection__choice { max-width:calc(100% - 8px); }
-.dui-speed-field .ant-radio-group { display:flex; flex-wrap:wrap; gap:8px; }
-.dui-speed-field .ant-radio-button-wrapper { border-radius:20px !important; border:1px solid rgba(128,128,128,.35); }
-.dui-speed-field .ant-radio-button-wrapper:before { display:none; }
-.dui-speed-results { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin-top:16px; }
-.dui-speed-card { min-width:0; border:1px solid rgba(128,128,128,.22); border-radius:12px; padding:16px; }
-.dui-speed-card-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+.dui-speed-mode.ant-radio-group { display:flex; min-height:38px; padding:3px; border:1px solid rgba(128,128,128,.24); border-radius:22px; gap:3px; background:rgba(128,128,128,.04); }
+.dui-speed-mode .ant-radio-button-wrapper { flex:1; height:auto; min-height:30px; line-height:30px; padding:0 14px; text-align:center; white-space:normal; border:0 !important; border-radius:18px !important; color:inherit !important; background:transparent !important; box-shadow:none !important; }
+.dui-speed-mode .ant-radio-button-wrapper:before { display:none !important; }
+.dui-speed-mode .ant-radio-button-wrapper-checked { color:#fff !important; background:#008771 !important; }
+.dui-speed-mode .ant-radio-button-wrapper-disabled { opacity:.55; }
+.dark .dui-speed-mode .ant-radio-button-wrapper:not(.ant-radio-button-wrapper-checked) { color:rgba(255,255,255,.78) !important; }
+.dui-speed-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.dui-speed-actions .ant-btn { height:38px; }
+.dui-speed-actions .ant-btn-primary:not([disabled]) { background:#008771 !important; border-color:#008771 !important; color:#fff !important; }
+.dui-speed-selection-note { display:flex; gap:6px 14px; flex-wrap:wrap; margin-top:8px; }
+.dui-speed-selection-count { font-variant-numeric:tabular-nums; }
+.dui-speed-results-section { margin-top:20px; padding-top:16px; border-top:1px solid rgba(128,128,128,.18); }
+.dui-speed-results-head { justify-content:space-between; margin-bottom:12px; }
+.dui-speed-results-head strong { font-size:13px; font-weight:500; }
+.dui-speed-results-meta { display:flex; gap:6px 12px; flex-wrap:wrap; align-items:center; font-size:12px; }
+.dui-speed-results-meta time,.dui-speed-result-mode { opacity:.65; }
+.dui-speed-results { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
+.dui-speed-card { min-width:0; border:1px solid rgba(128,128,128,.2); border-radius:12px; padding:16px; background:rgba(128,128,128,.02); }
+.dui-speed-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .dui-speed-tag { min-width:0; overflow-wrap:anywhere; font-weight:500; }
-.dui-speed-number { font-size:28px; line-height:1.5; font-variant-numeric:tabular-nums; color:#008771; margin-top:12px; }
+.dui-speed-status { display:inline-flex; flex-shrink:0; gap:5px; align-items:center; border:1px solid currentColor; border-radius:20px; padding:2px 8px; font-size:11px; line-height:18px; }
+.dui-speed-status.is-success,.dui-speed-status.is-active { color:#008771; background:rgba(0,135,113,.06); }
+.dui-speed-status.is-warning { color:#9a6500; background:rgba(208,149,43,.08); }
+.dui-speed-status.is-danger { color:#c93645; background:rgba(201,54,69,.06); }
+.dui-speed-status.is-neutral { opacity:.65; }
+.dark .dui-speed-status.is-success,.dark .dui-speed-status.is-active { color:#42cbb0; }
+.dark .dui-speed-status.is-warning { color:#e8b65c; }
+.dark .dui-speed-status.is-danger { color:#ee8791; }
+.dui-speed-card-body { padding:14px 0; }
+.dui-speed-number-label { font-size:12px; opacity:.65; }
+.dui-speed-number { font-size:32px; line-height:1.4; font-weight:500; letter-spacing:-.5px; font-variant-numeric:tabular-nums; color:#008771; }
 .dark .dui-speed-number { color:#42cbb0; }
-.dui-speed-number small { font-size:13px; opacity:.8; }
-.dui-speed-metrics { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0; }
-.dui-speed-metrics span { display:block; font-size:12px; opacity:.65; }
-.dui-speed-metrics strong { font-weight:500; overflow-wrap:anywhere; }
+.dui-speed-card.is-warning .dui-speed-number { color:#9a6500; }
+.dark .dui-speed-card.is-warning .dui-speed-number { color:#e8b65c; }
+.dui-speed-card.is-danger .dui-speed-number { color:inherit; opacity:.6; }
+.dui-speed-number small { font-size:12px; font-weight:400; letter-spacing:0; margin-left:4px; }
+.dui-speed-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:12px; font-variant-numeric:tabular-nums; }
+.dui-speed-metrics span { display:block; font-size:12px; opacity:.65; margin-bottom:4px; }
+.dui-speed-metrics strong { display:block; font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.dui-speed-metrics small { font-size:11px; font-weight:400; opacity:.65; }
+.dui-speed-progress-label { display:flex; justify-content:space-between; gap:8px; font-size:11px; opacity:.7; }
+.dui-speed-progress .ant-progress { display:block; line-height:1; margin-top:5px; }
+.dui-speed-card-note { display:flex; align-items:flex-start; gap:6px; margin-top:10px; font-size:12px; line-height:1.6; color:#9a6500; }
+.dui-speed-card-note .anticon { margin-top:3px; flex-shrink:0; }
+.dark .dui-speed-card-note { color:#e8b65c; }
 .dui-speed-error { margin-top:12px; }
+@media(min-width:1101px){
+ .dui-speed-results.is-single .dui-speed-card-body { display:grid; grid-template-columns:minmax(200px,.65fr) minmax(0,1.6fr); gap:32px; align-items:center; }
+ .dui-speed-results.is-single .dui-speed-metrics { margin-top:0; padding-left:32px; border-left:1px solid rgba(128,128,128,.18); }
+}
+@media(max-width:1100px){
+ .dui-speed-fields { grid-template-columns:minmax(180px,1fr) 104px auto; }
+ .dui-speed-outbounds { grid-column:1 / -1; }
+}
 @media(max-width:767px){
  .dui-speed-panel { padding:14px; }
- .dui-speed-fields { grid-template-columns:minmax(0,1fr); gap:14px; }
+ .dui-speed-fields { grid-template-columns:minmax(0,1fr) 92px; gap:14px 10px; }
+ .dui-speed-outbounds,.dui-speed-actions { grid-column:1 / -1; }
+ .dui-speed-actions { display:grid; grid-template-columns:minmax(0,1fr); }
+ .dui-speed-actions.is-running { grid-template-columns:1fr 1fr; }
+ .dui-speed-actions .ant-btn { min-height:40px; width:100%; }
+ .dui-speed-mode .ant-radio-button-wrapper { padding:0 8px; font-size:12px; }
  .dui-speed-results { grid-template-columns:minmax(0,1fr); }
- .dui-speed-actions .ant-btn { min-height:40px; }
+ .dui-speed-results-head { align-items:flex-start; }
+ .dui-speed-card { padding:14px; }
+ .dui-speed-card-head { flex-wrap:wrap; }
+ .dui-speed-metrics { gap:8px; }
 }
 </style>
 <script type="text/x-template" id="dui-outbound-speedtest-template">
 <section class="dui-speed">
- <a-button :aria-label="text.title" icon="dashboard" :aria-expanded="expanded ? 'true' : 'false'" @click="toggle">[[ text.title ]]<a-icon v-if="running" type="loading" /></a-button>
+ <a-button :aria-label="text.title" icon="dashboard" :aria-expanded="expanded ? 'true' : 'false'" @click="toggle">[[ text.title ]]<a-icon :type="running ? 'loading' : expanded ? 'up' : 'down'" /></a-button>
  <div v-if="expanded" class="dui-speed-panel">
-  <div class="dui-speed-head"><h3>[[ text.title ]]</h3><a-button :aria-label="text.refresh" size="small" icon="reload" :loading="loading" @click="refresh">[[ text.refresh ]]</a-button></div>
+  <div class="dui-speed-head">
+   <div class="dui-speed-heading"><h3>[[ text.title ]]</h3></div>
+   <a-button :aria-label="text.refresh" size="small" icon="reload" :loading="loading" @click="refresh">[[ text.refresh ]]</a-button>
+  </div>
   <p class="dui-speed-hint">[[ text.hint ]]</p>
-  <a-alert v-if="dirty" type="info" show-icon :message="text.saved"></a-alert>
+  <a-alert v-if="dirty" type="info" show-icon :message="text.saved" style="margin-bottom:14px"></a-alert>
   <div class="dui-speed-fields">
-   <div class="dui-speed-field">
+   <div class="dui-speed-field dui-speed-outbounds">
     <label for="dui-speed-tags">[[ text.outbounds ]]</label>
     <a-select id="dui-speed-tags" v-model="selected" mode="multiple" :disabled="running || busy" :max-tag-count="3" :placeholder="text.outbounds" :aria-label="text.outbounds" option-filter-prop="children">
      <a-select-option v-for="item in catalog" :key="item.tag" :value="item.tag">[[ item.tag ]]</a-select-option>
     </a-select>
-    <div class="dui-speed-hint">[[ text.empty ]]</div>
    </div>
    <div class="dui-speed-field">
     <label>[[ text.mode ]]</label>
-    <a-radio-group v-model="mode" :disabled="running || busy">
+    <a-radio-group class="dui-speed-mode" v-model="mode" :disabled="running || busy">
      <a-radio-button value="single">[[ text.single ]]</a-radio-button><a-radio-button value="multi">[[ text.multi ]]</a-radio-button>
     </a-radio-group>
    </div>
-   <div v-if="mode === 'multi'" class="dui-speed-field">
+   <div class="dui-speed-field">
     <label for="dui-speed-threads">[[ text.threads ]]</label>
-    <a-select id="dui-speed-threads" v-model="threads" :disabled="running || busy" :aria-label="text.threads">
-     <a-select-option v-for="n in 15" :key="n+1" :value="n+1">[[ n+1 ]]</a-select-option>
+    <a-select id="dui-speed-threads" :value="mode==='single'?1:threads" @change="threads=$event" :disabled="mode==='single' || running || busy" :aria-label="text.threads">
+     <a-select-option v-if="mode==='single'" :value="1">1</a-select-option>
+     <a-select-option v-else v-for="n in 15" :key="n+1" :value="n+1">[[ n+1 ]]</a-select-option>
     </a-select>
    </div>
+   <div class="dui-speed-actions" :class="{'is-running':running}">
+    <a-button :aria-label="text.start" type="primary" icon="play-circle" :loading="busy && !running" :disabled="running || loading || dirty || !selected.length || selected.length > 10" @click="start">[[ text.start ]]</a-button>
+    <a-button :aria-label="text.stop" v-if="running" icon="stop" :loading="job.state === 'stopping'" :disabled="job.state === 'stopping'" @click="stop">[[ text.stop ]]</a-button>
+   </div>
   </div>
-  <div class="dui-speed-actions">
-   <a-button :aria-label="text.start" type="primary" icon="play-circle" :loading="busy && !running" :disabled="running || loading || dirty || !selected.length || selected.length > 10" @click="start">[[ text.start ]]</a-button>
-   <a-button :aria-label="text.stop" v-if="running" icon="stop" :loading="job.state === 'stopping'" :disabled="job.state === 'stopping'" @click="stop">[[ text.stop ]]</a-button>
-   <span v-if="job.id" class="dui-speed-hint">[[ text[job.state] || job.state ]] · [[ job.threads ]] [[ text.threads ]]</span>
-  </div>
+  <div class="dui-speed-selection-note dui-speed-hint"><span>[[ text.empty ]]</span><span class="dui-speed-selection-count">[[ text.selected ]] [[ selected.length ]]/10</span></div>
   <a-alert v-if="error" class="dui-speed-error" type="warning" show-icon :message="text[error] || text.error"></a-alert>
-  <div v-if="job.rows.length" class="dui-speed-results" aria-live="polite" aria-atomic="false">
-   <article v-for="row in job.rows" :key="row.tag" class="dui-speed-card">
-    <div class="dui-speed-card-head"><span class="dui-speed-tag">[[ row.tag ]]</span><a-tag :color="row.state==='done'?'green':row.state==='failed'?'red':undefined">[[ text[row.state] || row.state ]]</a-tag></div>
-    <div class="dui-speed-number">[[ rate(row.mbps) ]] <small>Mbps · [[ text.average ]]</small></div>
-    <div class="dui-speed-metrics">
-     <div><span>[[ text.current ]]</span><strong>[[ rate(row.currentMbps) ]] Mbps</strong></div>
-     <div><span>[[ text.traffic ]]</span><strong>[[ (row.bytes/1048576).toFixed(2) ]] MiB</strong></div>
-     <div><span>[[ text.elapsed ]]</span><strong>[[ row.seconds.toFixed(1) ]] s</strong></div>
+  <section v-if="job.rows.length" class="dui-speed-results-section">
+   <div class="dui-speed-results-head">
+    <strong>[[ text.results ]]</strong>
+    <div class="dui-speed-results-meta">
+     <time v-if="job.startedAt">[[ formatTime(job.startedAt) ]]</time>
+     <span class="dui-speed-result-mode">[[ job.threads===1 ? text.single : text.multi+' · '+job.threads+' '+text.threads ]]</span>
+     <span class="dui-speed-status" :class="'is-'+tone(resultState)"><a-icon :type="statusIcon(resultState)" />[[ text[resultState] || resultState ]]</span>
     </div>
-    <a-progress :percent="row.progress" :status="row.state==='failed'?'exception':row.state==='testing'?'active':'normal'" :stroke-color="'#008771'" size="small"></a-progress>
-    <div v-if="row.limitReached" class="dui-speed-hint">[[ text.limit ]]</div>
-    <div v-if="row.error" class="dui-speed-hint">[[ text[row.error] || text.error ]]</div>
-   </article>
-  </div>
+   </div>
+   <div class="dui-speed-results" :class="{'is-single':job.rows.length===1}" aria-live="polite" aria-atomic="false">
+    <article v-for="row in job.rows" :key="row.tag" class="dui-speed-card" :class="'is-'+tone(row.state)">
+     <div class="dui-speed-card-head"><span class="dui-speed-tag">[[ row.tag ]]</span><span class="dui-speed-status" :class="'is-'+tone(row.state)"><a-icon :type="statusIcon(row.state)" />[[ text[row.state] || row.state ]]</span></div>
+     <div class="dui-speed-card-body">
+      <div>
+       <div class="dui-speed-number-label">[[ row.state==='partial' ? text.sampleAverage : text.average ]]</div>
+       <div class="dui-speed-number">[[ row.bytes ? rate(row.mbps) : '—' ]] <small>Mbps</small></div>
+      </div>
+      <div class="dui-speed-metrics">
+       <div><span>[[ text.current ]]</span><strong class="dui-speed-live">[[ row.state==='testing' ? rate(row.currentMbps) : '—' ]] <small v-if="row.state==='testing'">Mbps</small></strong></div>
+       <div><span>[[ text.traffic ]]</span><strong>[[ (row.bytes/1048576).toFixed(2) ]] <small>MiB</small></strong></div>
+       <div><span>[[ text.elapsed ]]</span><strong>[[ row.seconds.toFixed(1) ]] <small>s</small></strong></div>
+      </div>
+     </div>
+     <div class="dui-speed-progress">
+      <div class="dui-speed-progress-label"><span>[[ text.progress ]]</span><span>[[ row.progress ]]%</span></div>
+      <a-progress :percent="row.progress" :show-info="false" :status="row.state==='testing'?'active':'normal'" :stroke-color="progressColor(row.state)" :stroke-width="4"></a-progress>
+     </div>
+     <div v-if="row.limitReached" class="dui-speed-hint" style="margin-top:8px">[[ text.limit ]]</div>
+     <div v-if="row.error" class="dui-speed-card-note"><a-icon type="info-circle" /><span>[[ text[row.error] || text.error ]]</span></div>
+    </article>
+   </div>
+  </section>
  </div>
 </section>
 </script>
@@ -87,11 +160,24 @@
 Vue.component('dui-outbound-speedtest',{
  template:'#dui-outbound-speedtest-template',delimiters:['[[',']]'],props:{dirty:{type:Boolean,default:false}},
  data(){return{expanded:false,lang:LanguageManager.getLanguage(),catalog:[],selected:[],mode:'single',threads:4,job:{state:'idle',rows:[]},error:'',busy:false,loading:false,timer:null,disposed:false,statusRequest:0}},
- computed:{text(){return DuiSpeedTestI18n.get(this.lang)},running(){return ['running','stopping'].includes(this.job.state)}},
+ computed:{
+  text(){return DuiSpeedTestI18n.get(this.lang)},
+  running(){return ['running','stopping'].includes(this.job.state)},
+  resultState(){
+   if(this.job.state!=='done')return this.job.state;
+   if(this.job.rows.length&&this.job.rows.every(r=>r.state==='failed'))return 'failed';
+   if(this.job.rows.some(r=>r.state==='partial'||r.state==='failed'))return 'partial';
+   return 'done';
+  }
+ },
  mounted(){this.poll()},
  beforeDestroy(){this.disposed=true;this.statusRequest++;clearTimeout(this.timer)},
  methods:{
   rate(n){return Number(n||0).toFixed(2)},
+  formatTime(t){return new Date(t).toLocaleString(this.lang,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})},
+  tone(state){return state==='done'?'success':state==='partial'?'warning':state==='failed'?'danger':['running','testing','connecting','preparing','stopping'].includes(state)?'active':'neutral'},
+  statusIcon(state){return state==='done'?'check-circle':['partial','failed'].includes(state)?'exclamation-circle':['running','testing','preparing','connecting','stopping'].includes(state)?'loading':state==='cancelled'?'stop':'clock-circle'},
+  progressColor(state){return state==='partial'?'#d09b3b':state==='failed'?'#d65b69':state==='cancelled'?'#8b929a':'#008771'},
   async toggle(){this.expanded=!this.expanded;if(this.expanded)await this.refresh()},
   async open(tag){
    this.expanded=true;await this.refresh();

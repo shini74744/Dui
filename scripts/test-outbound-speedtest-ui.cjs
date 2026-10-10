@@ -13,9 +13,10 @@ function html(lang,theme){
  const row=tag=>({tag,state:'testing',bytes:26000000,seconds:3.1,mbps:67.1,currentMbps:70.2,progress:31,limitReached:false});
  const HttpUtil={
   async get(url){if(url.endsWith('catalog'))return {success:true,obj:[{tag:'Hong-Kong-Node-A-Long-Label',protocol:'shadowsocks'},{tag:'Tokyo-Node-B',protocol:'vless'}]};return {success:true,obj:JSON.parse(JSON.stringify(state))}},
-  async post(url,data){requests.push({url,data});if(url.endsWith('start')){const p=JSON.parse(data.request);state={id:'job1',state:'running',threads:p.threads,rows:p.tags.map(row)}}else{state.state='cancelled';state.rows.forEach(r=>r.state='cancelled')};return {success:true,obj:JSON.parse(JSON.stringify(state))}}
+  async post(url,data){requests.push({url,data});if(url.endsWith('start')){const p=JSON.parse(data.request);state={id:'job1',state:'running',startedAt:1780000000000,threads:p.threads,rows:p.tags.map(row)}}else{state.state='cancelled';state.rows.forEach(r=>r.state='cancelled')};return {success:true,obj:JSON.parse(JSON.stringify(state))}}
  };
  window.complete=()=>{state.state='done';state.rows.forEach(r=>{r.state='done';r.progress=100;r.seconds=10;r.currentMbps=0})};
+ window.partial=()=>{state={id:'job1',state:'done',startedAt:1780000000000,threads:1,rows:[{tag:'Hong-Kong-Node-A-Long-Label',state:'partial',bytes:200000000,seconds:2.3,mbps:696.76,currentMbps:0,progress:23,limitReached:false,error:'stream_failed'}]}};
  window.app=new Vue({el:'#app',data:{dirty:false}});
  `;
  return '<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+styles+'<style>body.dark{background:#101114;color:rgba(255,255,255,.85)}</style></head><body class="'+theme+'">'+scripts+'<script>const LanguageManager={getLanguage:()=>'+JSON.stringify(lang)+'};</script>'+component+
@@ -25,7 +26,7 @@ function html(lang,theme){
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||undefined,args:['--no-sandbox']});
  const errors=[],results=[];
  try{
- for(const width of [320,390,1440])for(const theme of ['','dark']){
+ for(const width of [320,390,768,1440])for(const theme of ['','dark']){
   const page=await browser.newPage({viewport:{width,height:1000}});
   page.setDefaultTimeout(7000);page.setDefaultNavigationTimeout(10000);page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER',e.message)});await page.setContent(html('zh-CN',theme));const t=I.get('zh-CN');
   await page.getByRole('button',{name:t.title,exact:true}).click();
@@ -53,6 +54,13 @@ function html(lang,theme){
   assert.equal(await page.evaluate(()=>JSON.parse(requests.at(-1).data.request).threads),1);
   await page.evaluate(()=>complete());await page.getByRole('button',{name:t.refresh,exact:true}).click();
   await page.waitForFunction(()=>app.$refs.speed.job.state==='done');
+  await page.evaluate(()=>partial());await page.getByRole('button',{name:t.refresh,exact:true}).click();
+  assert.equal(await page.evaluate(()=>app.$refs.speed.resultState),'partial');
+  assert.equal(await page.locator('.dui-speed-live').innerText(),'—');
+  assert((await page.locator('.dui-speed-progress-label').innerText()).includes('23%'));
+  assert(await page.locator('.dui-speed-card.is-warning').count()===1);
+  assert(!(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)),'partial result overflow at '+width);
+  if(width!==320)await page.screenshot({path:dir+'/speedtest-partial-'+width+'-'+(theme||'light')+'.png',fullPage:true});
   await page.evaluate(()=>app.$refs.speed.open('unsupported-row'));
   assert.equal(await page.evaluate(()=>app.$refs.speed.selected.length),0);
   assert.equal(await page.evaluate(()=>app.$refs.speed.error),'unsupported_outbound');
@@ -62,7 +70,7 @@ function html(lang,theme){
  for(const lang of Object.keys(I.maps)){
   const page=await browser.newPage({viewport:{width:390,height:900}});page.setDefaultTimeout(7000);page.setDefaultNavigationTimeout(10000);page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER',e.message)});
   await page.setContent(html(lang,'dark'));await page.getByRole('button',{name:I.get(lang).title,exact:true}).click();
-  assert(await page.getByRole('button',{name:I.get(lang).start,exact:true}).isVisible());await page.close();
+  assert(await page.getByRole('button',{name:I.get(lang).start,exact:true}).isVisible());assert(!(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)),'locale overflow '+lang);await page.close();
  }
  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,layouts:results,locales:Object.keys(I.maps).length,errors}));
  }finally{await browser.close()}
