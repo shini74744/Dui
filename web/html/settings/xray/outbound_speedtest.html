@@ -1,0 +1,143 @@
+{{define "settings/xray/outboundSpeedTestComponent"}}
+<style>
+.dui-speed { width:100%; min-width:0; margin:4px 0 16px; }
+.dui-speed-panel { margin-top:14px; padding:20px; border:1px solid rgba(128,128,128,.25); border-radius:16px; }
+.dui-speed-head,.dui-speed-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.dui-speed-head { justify-content:space-between; margin-bottom:12px; }
+.dui-speed-head h3 { margin:0; color:inherit; }
+.dui-speed-hint { opacity:.72; font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.dui-speed-fields { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) 130px; gap:16px; margin:18px 0; align-items:start; }
+.dui-speed-field { min-width:0; }
+.dui-speed-field > label { display:block; margin-bottom:8px; font-weight:500; }
+.dui-speed-field .ant-select { width:100%; }
+.dui-speed-field .ant-select-selection__choice { max-width:calc(100% - 8px); }
+.dui-speed-field .ant-radio-group { display:flex; flex-wrap:wrap; gap:8px; }
+.dui-speed-field .ant-radio-button-wrapper { border-radius:20px !important; border:1px solid rgba(128,128,128,.35); }
+.dui-speed-field .ant-radio-button-wrapper:before { display:none; }
+.dui-speed-results { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin-top:16px; }
+.dui-speed-card { min-width:0; border:1px solid rgba(128,128,128,.22); border-radius:12px; padding:16px; }
+.dui-speed-card-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+.dui-speed-tag { min-width:0; overflow-wrap:anywhere; font-weight:500; }
+.dui-speed-number { font-size:28px; line-height:1.5; font-variant-numeric:tabular-nums; color:#008771; margin-top:12px; }
+.dark .dui-speed-number { color:#42cbb0; }
+.dui-speed-number small { font-size:13px; opacity:.8; }
+.dui-speed-metrics { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0; }
+.dui-speed-metrics span { display:block; font-size:12px; opacity:.65; }
+.dui-speed-metrics strong { font-weight:500; overflow-wrap:anywhere; }
+.dui-speed-error { margin-top:12px; }
+@media(max-width:767px){
+ .dui-speed-panel { padding:14px; }
+ .dui-speed-fields { grid-template-columns:minmax(0,1fr); gap:14px; }
+ .dui-speed-results { grid-template-columns:minmax(0,1fr); }
+ .dui-speed-actions .ant-btn { min-height:40px; }
+}
+</style>
+<script type="text/x-template" id="dui-outbound-speedtest-template">
+<section class="dui-speed">
+ <a-button :aria-label="text.title" icon="dashboard" :aria-expanded="expanded ? 'true' : 'false'" @click="toggle">[[ text.title ]]<a-icon v-if="running" type="loading" /></a-button>
+ <div v-if="expanded" class="dui-speed-panel">
+  <div class="dui-speed-head"><h3>[[ text.title ]]</h3><a-button :aria-label="text.refresh" size="small" icon="reload" :loading="loading" @click="refresh">[[ text.refresh ]]</a-button></div>
+  <p class="dui-speed-hint">[[ text.hint ]]</p>
+  <a-alert v-if="dirty" type="info" show-icon :message="text.saved"></a-alert>
+  <div class="dui-speed-fields">
+   <div class="dui-speed-field">
+    <label for="dui-speed-tags">[[ text.outbounds ]]</label>
+    <a-select id="dui-speed-tags" v-model="selected" mode="multiple" :disabled="running || busy" :max-tag-count="3" :placeholder="text.outbounds" :aria-label="text.outbounds" option-filter-prop="children">
+     <a-select-option v-for="item in catalog" :key="item.tag" :value="item.tag">[[ item.tag ]]</a-select-option>
+    </a-select>
+    <div class="dui-speed-hint">[[ text.empty ]]</div>
+   </div>
+   <div class="dui-speed-field">
+    <label>[[ text.mode ]]</label>
+    <a-radio-group v-model="mode" :disabled="running || busy">
+     <a-radio-button value="single">[[ text.single ]]</a-radio-button><a-radio-button value="multi">[[ text.multi ]]</a-radio-button>
+    </a-radio-group>
+   </div>
+   <div v-if="mode === 'multi'" class="dui-speed-field">
+    <label for="dui-speed-threads">[[ text.threads ]]</label>
+    <a-select id="dui-speed-threads" v-model="threads" :disabled="running || busy" :aria-label="text.threads">
+     <a-select-option v-for="n in 15" :key="n+1" :value="n+1">[[ n+1 ]]</a-select-option>
+    </a-select>
+   </div>
+  </div>
+  <div class="dui-speed-actions">
+   <a-button :aria-label="text.start" type="primary" icon="play-circle" :loading="busy && !running" :disabled="running || loading || dirty || !selected.length || selected.length > 10" @click="start">[[ text.start ]]</a-button>
+   <a-button :aria-label="text.stop" v-if="running" icon="stop" :loading="job.state === 'stopping'" :disabled="job.state === 'stopping'" @click="stop">[[ text.stop ]]</a-button>
+   <span v-if="job.id" class="dui-speed-hint">[[ text[job.state] || job.state ]] · [[ job.threads ]] [[ text.threads ]]</span>
+  </div>
+  <a-alert v-if="error" class="dui-speed-error" type="warning" show-icon :message="text[error] || text.error"></a-alert>
+  <div v-if="job.rows.length" class="dui-speed-results" aria-live="polite" aria-atomic="false">
+   <article v-for="row in job.rows" :key="row.tag" class="dui-speed-card">
+    <div class="dui-speed-card-head"><span class="dui-speed-tag">[[ row.tag ]]</span><a-tag :color="row.state==='done'?'green':row.state==='failed'?'red':undefined">[[ text[row.state] || row.state ]]</a-tag></div>
+    <div class="dui-speed-number">[[ rate(row.mbps) ]] <small>Mbps · [[ text.average ]]</small></div>
+    <div class="dui-speed-metrics">
+     <div><span>[[ text.current ]]</span><strong>[[ rate(row.currentMbps) ]] Mbps</strong></div>
+     <div><span>[[ text.traffic ]]</span><strong>[[ (row.bytes/1048576).toFixed(2) ]] MiB</strong></div>
+     <div><span>[[ text.elapsed ]]</span><strong>[[ row.seconds.toFixed(1) ]] s</strong></div>
+    </div>
+    <a-progress :percent="row.progress" :status="row.state==='failed'?'exception':row.state==='testing'?'active':'normal'" :stroke-color="'#008771'" size="small"></a-progress>
+    <div v-if="row.limitReached" class="dui-speed-hint">[[ text.limit ]]</div>
+    <div v-if="row.error" class="dui-speed-hint">[[ text[row.error] || text.error ]]</div>
+   </article>
+  </div>
+ </div>
+</section>
+</script>
+<script>
+Vue.component('dui-outbound-speedtest',{
+ template:'#dui-outbound-speedtest-template',delimiters:['[[',']]'],props:{dirty:{type:Boolean,default:false}},
+ data(){return{expanded:false,lang:LanguageManager.getLanguage(),catalog:[],selected:[],mode:'single',threads:4,job:{state:'idle',rows:[]},error:'',busy:false,loading:false,timer:null,disposed:false,statusRequest:0}},
+ computed:{text(){return DuiSpeedTestI18n.get(this.lang)},running(){return ['running','stopping'].includes(this.job.state)}},
+ mounted(){this.poll()},
+ beforeDestroy(){this.disposed=true;this.statusRequest++;clearTimeout(this.timer)},
+ methods:{
+  rate(n){return Number(n||0).toFixed(2)},
+  async toggle(){this.expanded=!this.expanded;if(this.expanded)await this.refresh()},
+  async open(tag){
+   this.expanded=true;await this.refresh();
+   if(!this.running){
+    this.selected=[];
+    if(this.catalog.some(o=>o.tag===tag))this.selected=[tag];
+    else this.error='unsupported_outbound';
+   }
+  },
+  fail(msg){const code=String(msg?.msg||'').match(/(?:busy|download_failed|stream_failed|worker_start|unsupported_outbound|missing_outbound|invalid_request|core_unavailable|stale_job|config_unavailable|invalid_config|invalid_chain|duplicate_tag)/);this.error=code?code[0]:'error'},
+  async refresh(){
+   this.loading=true;
+   try{const r=await HttpUtil.get('/dui/xray/speedTest/catalog');if(this.disposed)return;
+    if(r.success&&Array.isArray(r.obj)){this.catalog=r.obj;this.selected=this.selected.filter(tag=>this.catalog.some(o=>o.tag===tag))}
+    else this.fail(r);
+    await this.poll();
+   }catch(_){this.error='error'}finally{if(!this.disposed)this.loading=false}
+  },
+  async poll(){
+   clearTimeout(this.timer);const request=++this.statusRequest;
+   try{
+    const r=await HttpUtil.get('/dui/xray/speedTest/status');
+    if(this.disposed||request!==this.statusRequest)return;
+    if(r.success&&r.obj){this.job=r.obj;this.error='';}else this.fail(r);
+   }catch(_){if(!this.disposed&&request===this.statusRequest)this.error='error'}
+   finally{
+    if(!this.disposed&&request===this.statusRequest&&(this.running||this.error))this.timer=setTimeout(()=>this.poll(),this.error?3000:1000);
+   }
+  },
+  async start(){
+   if(this.busy||this.running||this.dirty)return;
+   this.busy=true;this.error='';this.statusRequest++;clearTimeout(this.timer);
+   try{
+    const r=await HttpUtil.post('/dui/xray/speedTest/start',{request:JSON.stringify({tags:this.selected,threads:this.mode==='single'?1:this.threads})});
+    if(this.disposed)return;
+    if(r.success&&r.obj){this.job=r.obj;await this.poll()}else{this.fail(r);if(this.error==='busy')await this.poll()}
+   }catch(_){this.error='error';await this.poll()}
+   finally{if(!this.disposed)this.busy=false}
+  },
+  async stop(){
+   if(this.busy||!this.running)return;this.busy=true;this.statusRequest++;clearTimeout(this.timer);
+   try{const r=await HttpUtil.post('/dui/xray/speedTest/cancel',{id:this.job.id});if(this.disposed)return;
+    if(r.success&&r.obj)this.job=r.obj;else this.fail(r);await this.poll();
+   }catch(_){this.error='error';await this.poll()}finally{if(!this.disposed)this.busy=false}
+  }
+ }
+});
+</script>
+{{end}}

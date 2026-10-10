@@ -9,8 +9,8 @@ const DuiStrategyProbes = (() => {
     }
     function read(config, type) {
         const fallback = type === 'leastPing'
-            ? { subjectSelector: [], probeURL: 'http://www.google.com/gen_204', probeInterval: '10m', enableConcurrency: true }
-            : { subjectSelector: [], pingConfig: { destination: 'http://www.google.com/gen_204', interval: '30m',
+            ? { subjectSelector: [], probeURL: 'http://www.google.com/gen_204', probeInterval: '30s', enableConcurrency: true }
+            : { subjectSelector: [], pingConfig: { destination: 'http://www.google.com/gen_204', interval: '30s',
                 connectivity: 'http://connectivitycheck.platform.hicloud.com/generate_204', timeout: '10s', sampling: 2 } };
         const explicit = config.strategyObservatory?.[type];
         const legacy = config[type === 'leastPing' ? 'observatory' : 'burstObservatory'];

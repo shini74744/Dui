@@ -23,6 +23,7 @@
             </a-button-group>
         </a-col>
     </a-row>
+    <dui-outbound-speedtest ref="outboundSpeed" :dirty="!saveBtnDisable"></dui-outbound-speedtest>
     <div class="dui-outbound-order-hint">{{ i18n "pages.xray.outbound.orderHint" }}</div>
     <a-table class="dui-outbound-table" :columns="outboundColumns" bordered :row-key="r => r.key" :data-source="outboundData"
         :scroll="isMobile ? {} : { x: 800 }" :pagination="false" :indent-size="0"
@@ -48,6 +49,9 @@
                     </a-menu-item>
                     <a-menu-item v-if="index<outboundData.length-1" @click="replaceOutbound(index,outboundData.length-1)">
                         <a-icon type="vertical-align-bottom"></a-icon>{{ i18n "pages.xray.rules.last" }}
+                    </a-menu-item>
+                    <a-menu-item v-if="outbound.protocol !== 'blackhole' && outbound.protocol !== 'dns'" @click="$refs.outboundSpeed.open(outbound.tag)">
+                        <a-icon type="dashboard"></a-icon><span>[[ speedTestLabel ]]</span>
                     </a-menu-item>
                     <a-menu-item @click="editOutbound(index)">
                         <a-icon type="edit"></a-icon>

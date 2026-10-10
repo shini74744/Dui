@@ -68,4 +68,10 @@ test('outbound sync follows all four probe scopes but ordinary rename does not',
  const ordinary=ctx.refs.prepare(c,0,{tag:'renamed',protocol:'freedom'},'replace');
  for(const type of P.types)assert.deepEqual(Array.from(ordinary.strategyObservatory[type].subjectSelector),['shared']);
 });
+test('new strategy defaults are 30 seconds',()=>{
+for (const type of P.types) {
+ const fresh=P.read({},type);
+ assert.equal(type==='leastPing'?fresh.probeInterval:fresh.pingConfig.interval,'30s');
+}
+});
 console.log(JSON.stringify({passed:true,cases}));

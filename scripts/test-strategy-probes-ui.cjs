@@ -17,19 +17,24 @@ function html(lang,width,theme){
  '<script>window.historyCalls=[];const HttpUtil={async get(url){const q=new URL(url,\"http://test.local\").searchParams;const strategy=q.get(\"strategy\"),page=Number(q.get(\"page\")),tag=q.get(\"outbound\");historyCalls.push({strategy,page,tag});await new Promise(resolve=>setTimeout(resolve,strategy===\"leastPing\"?80:5));return {success:true,obj:{rows:[{id:page*10,time:1780000000000,strategy,outbound:tag||strategy+\"-node\",status:\"success\",delay:12.3},{id:page*10+1,time:1780000001000,strategy,outbound:tag||strategy+\"-node\",status:\"network_unavailable\",delay:0}],page,total:55,tags:[strategy+\"-node\"],state:\"ok\",gap:false}}}};</script>'+
  '<script>window.app=new Vue({el:"#app",data:{config:'+JSON.stringify(base)+',valid:true,revision:0},methods:{save(){window.saved=JSON.stringify(this.config)},reload(){this.revision++;this.valid=true;this.config=JSON.parse(window.saved)}}});</script></body></html>';
 }
+async function openStrategy(page,name){
+ const header=page.getByRole('tab',{name,exact:false});
+ if(await header.getAttribute('aria-expanded')!=='true')await header.click();
+}
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH || undefined,args:['--no-sandbox']});
  const errors=[],results=[];
  try{
  for(const lang of Object.keys(I.maps)){
   const page=await browser.newPage({viewport:{width:390,height:900}});
-  page.on('pageerror',e=>errors.push(e.message));
+  page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER',e.message)});
   await page.setContent(html(lang,390,'dark'));await page.waitForSelector('.dui-probes');
   const txt=I.get(lang);
   assert.equal(await page.locator('.dui-probes h3').innerText(),txt.title);
-  for(const type of P.types) assert.equal(await page.getByRole('tab',{name:txt[type],exact:true}).count(),1);
+  for(const type of P.types) assert.equal(await page.getByRole('tab',{name:txt[type],exact:false}).count(),1);
+  await openStrategy(page,txt.leastPing);
   assert.equal(await page.locator('label[for="probe-interval-leastPing"]').innerText(),txt.interval);
-  await page.getByRole('tab',{name:txt.random,exact:true}).click();
+  await openStrategy(page,txt.random);
   assert.equal(await page.locator('label[for="probe-timeout-random"]').innerText(),txt.timeout);
   assert.equal(await page.evaluate(()=>JSON.stringify(app.config)),JSON.stringify(base));
   await page.getByRole('button',{name:txt.history,exact:true}).click();
@@ -39,26 +44,26 @@ function html(lang,width,theme){
  }
  for(const width of [320,390,1100])for(const theme of ['', 'dark']){
   const page=await browser.newPage({viewport:{width,height:1000}});
-  page.on('pageerror',e=>errors.push(e.message));await page.setContent(html('zh-CN',width,theme));
+  page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER',e.message)});await page.setContent(html('zh-CN',width,theme));
   const t=I.get('zh-CN');
   for(const [i,type]of P.types.entries()){
-   await page.getByRole('tab',{name:t[type],exact:true}).click();
+   await openStrategy(page,t[type]);
    await page.locator('#probe-interval-'+type).fill((i+1)+'m');
    await page.locator('#probe-interval-'+type).blur();
    await page.waitForFunction(([type,v])=>(app.config.strategyObservatory?.[type]?.probeInterval||app.config.strategyObservatory?.[type]?.pingConfig?.interval)===v,[type,(i+1)+'m']);
   }
   await page.locator('#save').click();await page.evaluate(()=>app.reload());
   for(const [i,type]of P.types.entries()){
-   await page.getByRole('tab',{name:t[type],exact:true}).click();
+   await openStrategy(page,t[type]);
    assert.equal(await page.locator('#probe-interval-'+type).inputValue(),(i+1)+'m');
   }
   const config=await page.evaluate(()=>app.config);
   assert.deepEqual(config.observatory,base.observatory);assert.deepEqual(config.burstObservatory,base.burstObservatory);
-  await page.getByRole('tab',{name:t.random,exact:true}).click();
+  await openStrategy(page,t.random);
   await page.locator('#probe-interval-random').fill('1s');await page.locator('#probe-interval-random').blur();
   assert(await page.locator('#save').isDisabled());
-  await page.getByRole('tab',{name:t.leastPing,exact:true}).click();assert(await page.locator('#save').isDisabled());
-  await page.getByRole('tab',{name:t.random,exact:true}).click();assert.equal(await page.locator('#probe-interval-random').inputValue(),'1s');
+  await openStrategy(page,t.leastPing);assert(await page.locator('#save').isDisabled());
+  await openStrategy(page,t.random);assert.equal(await page.locator('#probe-interval-random').inputValue(),'1s');
   await page.locator('#probe-interval-random').fill('45s');await page.locator('#probe-interval-random').blur();
   assert(await page.locator('#save').isEnabled());
   await page.getByText(t.advanced,{exact:true}).click();await page.getByRole('textbox',{name:t.advanced}).fill('{');
@@ -78,8 +83,8 @@ function html(lang,width,theme){
   assert(await page.locator('.dui-probe-history').getByText('12.3 ms',{exact:true}).isVisible());
   await page.getByRole('button',{name:t.nextHistory,exact:true}).click();
   await page.waitForFunction(()=>app.$refs.probes.history.page===2);
-  await page.getByRole('tab',{name:t.leastPing,exact:true}).click();
-  await page.getByRole('tab',{name:t.roundRobin,exact:true}).click();
+  await openStrategy(page,t.leastPing);
+  await openStrategy(page,t.roundRobin);
   await page.waitForFunction(()=>app.$refs.probes.history.rows[0]?.strategy==='roundRobin');
   await page.waitForTimeout(100);
   assert.equal(await page.evaluate(()=>app.$refs.probes.history.rows[0].strategy),'roundRobin');
