@@ -351,6 +351,8 @@
 <script src="{{ .base_path }}assets/js/util/strategy-probes.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/util/strategy-probes-i18n.js?{{ .cur_ver }}"></script>
 {{template "settings/xray/strategyProbesComponent" .}}
+<script src="{{ .base_path }}assets/js/util/outbound-speedtest-i18n.js?{{ .cur_ver }}"></script>
+{{template "settings/xray/outboundSpeedTestComponent" .}}
 <script src="{{ .base_path }}assets/codemirror/codemirror.min.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/codemirror/javascript.js"></script>
 <script src="{{ .base_path }}assets/codemirror/jshint.js"></script>
@@ -612,6 +614,7 @@
       oldXraySetting: '',
       xraySetting: '',
       inboundTags: [],
+      speedTestLabel: DuiSpeedTestI18n.get(LanguageManager.getLanguage()).title,
       outboundsTraffic: [],
       saveBtnDisable: true,
       refreshing: false,
@@ -771,14 +774,14 @@
       defaultObservatory: {
         subjectSelector: [],
         probeURL: "http://www.google.com/gen_204",
-        probeInterval: "10m",
+        probeInterval: "30s",
         enableConcurrency: true
       },
       defaultBurstObservatory: {
         subjectSelector: [],
         pingConfig: {
           destination: "http://www.google.com/gen_204",
-          interval: "30m",
+          interval: "30s",
           connectivity: "http://connectivitycheck.platform.hicloud.com/generate_204",
           timeout: "10s",
           sampling: 2
