@@ -31,7 +31,7 @@ var probeCollector = struct {
 }{state: "waiting"}
 
 func probeStrategyValid(s string) bool {
-	return s == "leastPing" || s == "leastLoad" || s == "random" || s == "roundRobin"
+	return s == "leastPing" || s == "leastLoad" || s == "random" || s == "roundRobin" || s == "outbound"
 }
 func storeProbeBatch(db *gorm.DB, b xray.ProbeBatch, now time.Time, prune bool) error {
 	if b.Session == "" || len(b.Session) > 64 || len(b.Events) > 500 {
@@ -143,7 +143,9 @@ func queryProbeHistory(db *gorm.DB, strategy, tag string, page int) (ProbeHistor
 	}
 	sources := []string{strategy}
 	// Legacy observers shared their measurements; label these rows rather than inventing strategy-specific probes.
-	sources = append(sources, "legacyPing", "legacyBurst")
+	if strategy != "outbound" {
+		sources = append(sources, "legacyPing", "legacyBurst")
+	}
 	base := db.Model(&model.ProbeHistory{}).Where("strategy IN ? AND time >= ?", sources, time.Now().Add(-ProbeHistoryDays*24*time.Hour).UnixMilli())
 	if err := base.Session(&gorm.Session{}).Distinct("outbound").Order("outbound").Limit(1000).Pluck("outbound", &result.Tags).Error; err != nil {
 		return result, err

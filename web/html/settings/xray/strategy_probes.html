@@ -18,16 +18,16 @@
 <script type="text/x-template" id="dui-strategy-probes-template">
 <div class="dui-probes">
     <h3>[[ text.title ]]</h3>
-    <a-alert type="info" show-icon :message="text.independent"></a-alert>
+    <a-alert type="info" show-icon :message="text.sharingHelp"></a-alert>
     <a-collapse class="dui-probe-accordion" accordion :active-key="expanded" @change="expandStrategy">
         <a-collapse-panel v-for="type in types" :key="type" :header="text[type]">
           <div v-if="expanded === type">
 
-    <p class="dui-probe-help" v-if="!value.strategyObservatory || !value.strategyObservatory[active]">[[ text.legacy ]]</p>
+    <p class="dui-probe-help" v-if="(!value.strategyObservatory || !value.strategyObservatory[active]) && (active==='outbound' || targets.length)">[[ active === 'outbound' ? text.outboundHelp : text.legacy ]]</p>
     <div><strong>[[ text.targets ]]</strong></div>
     <div class="dui-probe-targets">
         <a-tag v-for="tag in targets" :key="tag">[[ tag ]]</a-tag>
-        <span v-if="!targets.length" class="dui-probe-help">[[ text.unused ]]</span>
+        <span v-if="!targets.length" class="dui-probe-help">[[ active === 'outbound' ? text.outboundUnused : text.unused ]]</span>
     </div>
     <div class="dui-probe-actions">
         <a-checkbox v-model="advanced[active]">[[ text.advanced ]]</a-checkbox>
@@ -47,8 +47,8 @@
         </div>
         <div class="dui-probe-field">
             <label :for="'probe-interval-'+active">[[ text.interval ]]</label>
-            <a-input v-if="active==='leastPing'" :id="'probe-interval-'+active" v-model.trim="current.probeInterval" @input="formChange" placeholder="30s"></a-input>
-            <a-input v-else :id="'probe-interval-'+active" v-model.trim="current.pingConfig.interval" @input="formChange" placeholder="30s"></a-input>
+            <a-input v-if="active==='leastPing'" :id="'probe-interval-'+active" v-model.trim="current.probeInterval" @input="formChange" placeholder="1m"></a-input>
+            <a-input v-else :id="'probe-interval-'+active" v-model.trim="current.pingConfig.interval" @input="formChange" placeholder="1m"></a-input>
             <div class="dui-probe-help">[[ text.units ]]</div>
             <div v-if="active!=='leastPing'" class="dui-probe-help">[[ text.burstHint ]]</div>
         </div>
@@ -96,7 +96,6 @@
                 <template slot="time" slot-scope="value">[[ formatProbeTime(value) ]]</template>
                 <template slot="outbound" slot-scope="value,row">
                     <span>[[ value ]]</span>
-                    <div v-if="row.strategy.startsWith('legacy')" class="dui-probe-help">[[ text.sharedHistory ]]</div>
                 </template>
                 <template slot="status" slot-scope="value"><a-tag :color="value==='success' ? 'green' : (value==='failed' ? 'red' : 'orange')">[[ text[value] ]]</a-tag></template>
                 <template slot="delay" slot-scope="value,row">[[ row.status==='success' ? Number(value).toFixed(1)+' ms' : '—' ]]</template>

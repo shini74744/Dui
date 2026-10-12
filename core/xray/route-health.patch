@@ -1,0 +1,1380 @@
+--- /dev/null
++++ b/app/dispatcher/route_health_test.go
+@@ -0,0 +1,114 @@
++package dispatcher
++
++import (
++	"context"
++	"errors"
++	"io"
++	"testing"
++	"time"
++
++	"github.com/xtls/xray-core/app/router"
++	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/session"
++	"github.com/xtls/xray-core/core"
++	"github.com/xtls/xray-core/transport"
++	"github.com/xtls/xray-core/transport/pipe"
++	"google.golang.org/protobuf/proto"
++)
++
++type duiHealthDispatchObserver struct{ duiDispatchObserver }
++
++func (o *duiHealthDispatchObserver) GetObservationForStrategy(ctx context.Context, _ string) (proto.Message, error) {
++	return o.GetObservation(ctx)
++}
++func TestDUIDispatchStandaloneAndPriorityRecovery(t *testing.T) {
++	for _, name := range []string{"standalone", "priority"} {
++		for _, fallback := range []string{""} {
++			t.Run(name+"/"+fallback, func(t *testing.T) {
++				instance := new(core.Instance)
++				ctx := context.WithValue(context.Background(), core.XrayKey(1), instance)
++				observer := &duiHealthDispatchObserver{duiDispatchObserver{a: true, b: false}}
++				if err := instance.AddFeature(observer); err != nil {
++					t.Fatal(err)
++				}
++				m := &duiDispatchManager{handlers: map[string]*duiDispatchHandler{}}
++				for _, tag := range []string{"a", "b", "direct", "backup"} {
++					m.handlers[tag] = &duiDispatchHandler{tag: tag}
++				}
++
++				r := new(router.Router)
++				rule := &router.RoutingRule{Networks: []net.Network{net.Network_TCP, net.Network_UDP}}
++				config := &router.Config{Rule: []*router.RoutingRule{rule}}
++				if name == "standalone" {
++					rule.TargetTag = &router.RoutingRule_Tag{Tag: "a"}
++					rule.FallbackTag = "b"
++					rule.OutboundHealthCheck = true
++				} else {
++					rule.TargetTag = &router.RoutingRule_BalancingTag{BalancingTag: "group"}
++					config.BalancingRule = []*router.BalancingRule{{Tag: "group", Strategy: "priority", PriorityLevels: []*router.BalancingRule{
++						{Strategy: "roundRobin", OutboundSelector: []string{"a"}},
++						{Strategy: "roundRobin", OutboundSelector: []string{"b"}},
++					}}}
++				}
++				if err := r.Init(ctx, config, nil, m, nil); err != nil {
++					t.Fatal(err)
++				}
++				d := &DefaultDispatcher{router: r, ohm: m}
++				dispatch := func(network net.Network) {
++					t.Helper()
++					dest := net.Destination{Network: network, Address: net.DomainAddress("example.invalid"), Port: 80}
++					callCtx := session.ContextWithOutbounds(ctx, []*session.Outbound{{Target: dest}})
++					reader, input := pipe.New()
++					output, writer := pipe.New()
++					defer input.Close()
++					defer output.Interrupt()
++					d.routedDispatch(callCtx, &transport.Link{Reader: reader, Writer: writer}, dest)
++					if _, err := output.ReadMultiBufferTimeout(time.Second); !errors.Is(err, io.EOF) {
++						t.Fatalf("output not closed: %v", err)
++					}
++					if _, err := reader.ReadMultiBufferTimeout(time.Second); err == nil {
++						t.Fatal("input not interrupted")
++					}
++				}
++				for _, network := range []net.Network{net.Network_TCP, net.Network_UDP} {
++					dispatch(network)
++				}
++				if m.handlers["a"].calls != 2 || m.handlers["b"].calls != 0 {
++					t.Fatal("failed member selected")
++				}
++				observer.a = false
++				for _, network := range []net.Network{net.Network_TCP, net.Network_UDP} {
++					dispatch(network)
++				}
++				if m.defaults != 0 {
++					t.Fatal("all failed leaked into default outbound")
++				}
++				if fallback != "" {
++					if m.handlers[fallback].calls != 2 {
++						t.Fatal("explicit fallback not used")
++					}
++				} else if m.handlers["direct"].calls != 0 || m.handlers["backup"].calls != 0 {
++					t.Fatal("implicit fallback")
++				}
++				observer.b = true
++				dispatch(net.Network_TCP)
++				if m.handlers["b"].calls != 1 {
++					t.Fatal("recovered member not reused")
++				}
++				observer.a = true
++				dispatch(net.Network_TCP)
++				if m.handlers["a"].calls != 3 {
++					t.Fatal("primary recovery did not preempt backup")
++				}
++				// Unmatched routing retains the ordinary default, only failed balancers reject.
++				if err := r.ReloadRules(&router.Config{}, false); err != nil {
++					t.Fatal(err)
++				}
++				dispatch(net.Network_TCP)
++				if m.defaults != 1 {
++					t.Fatal("unmatched default routing changed")
++				}
++			})
++		}
++	}
++}
+--- a/app/observatory/burst/burstobserver.go
++++ b/app/observatory/burst/burstobserver.go
+@@ -66,7 +66,7 @@
+ }
+ 
+ func (o *Observer) Start() error {
+-	if o.config != nil && len(o.config.SubjectSelector) != 0 {
++	if o.config != nil && (len(o.config.SubjectSelector) != 0 || len(o.config.ExactTags) != 0) {
+ 		o.finished = done.New()
+ 		o.hp.StartScheduler(func() ([]string, error) {
+ 			hs, ok := o.ohm.(outbound.HandlerSelector)
+@@ -74,7 +74,28 @@
+ 				return nil, errors.New("outbound.Manager is not a HandlerSelector")
+ 			}
+ 
++			if o.config.ExactSelector {
++				outbounds := make([]string, 0, len(o.config.SubjectSelector))
++				seen := map[string]bool{}
++				for _, tag := range o.config.SubjectSelector {
++					if !seen[tag] && o.ohm.GetHandler(tag) != nil {
++						seen[tag] = true
++						outbounds = append(outbounds, tag)
++					}
++				}
++				return outbounds, nil
++			}
+ 			outbounds := hs.Select(o.config.SubjectSelector)
++			seen := map[string]bool{}
++			for _, tag := range outbounds {
++				seen[tag] = true
++			}
++			for _, tag := range o.config.ExactTags {
++				if !seen[tag] && o.ohm.GetHandler(tag) != nil {
++					outbounds = append(outbounds, tag)
++					seen[tag] = true
++				}
++			}
+ 			return outbounds, nil
+ 		})
+ 	}
+--- a/app/observatory/burst/config.pb.go
++++ b/app/observatory/burst/config.pb.go
+@@ -1,7 +1,7 @@
+ // Code generated by protoc-gen-go. DO NOT EDIT.
+ // versions:
+ // 	protoc-gen-go v1.36.11
+-// 	protoc        v6.33.5
++// 	protoc        v3.21.12
+ // source: app/observatory/burst/config.proto
+ 
+ package burst
+@@ -26,8 +26,11 @@
+ 	// @Document The selectors for outbound under observation
+ 	SubjectSelector []string          `protobuf:"bytes,2,rep,name=subject_selector,json=subjectSelector,proto3" json:"subject_selector,omitempty"`
+ 	PingConfig      *HealthPingConfig `protobuf:"bytes,3,opt,name=ping_config,json=pingConfig,proto3" json:"ping_config,omitempty"`
+-	unknownFields   protoimpl.UnknownFields
+-	sizeCache       protoimpl.SizeCache
++	// Standalone routing tags are exact names, not balancer prefixes.
++	ExactSelector bool     `protobuf:"varint,4,opt,name=exact_selector,json=exactSelector,proto3" json:"exact_selector,omitempty"`
++	ExactTags     []string `protobuf:"bytes,5,rep,name=exact_tags,json=exactTags,proto3" json:"exact_tags,omitempty"`
++	unknownFields protoimpl.UnknownFields
++	sizeCache     protoimpl.SizeCache
+ }
+ 
+ func (x *Config) Reset() {
+@@ -70,6 +73,20 @@
+ func (x *Config) GetPingConfig() *HealthPingConfig {
+ 	if x != nil {
+ 		return x.PingConfig
++	}
++	return nil
++}
++
++func (x *Config) GetExactSelector() bool {
++	if x != nil {
++		return x.ExactSelector
++	}
++	return false
++}
++
++func (x *Config) GetExactTags() []string {
++	if x != nil {
++		return x.ExactTags
+ 	}
+ 	return nil
+ }
+@@ -169,11 +186,14 @@
+ 
+ const file_app_observatory_burst_config_proto_rawDesc = "" +
+ 	"\n" +
+-	"\"app/observatory/burst/config.proto\x12\x1fxray.core.app.observatory.burst\"\x87\x01\n" +
++	"\"app/observatory/burst/config.proto\x12\x1fxray.core.app.observatory.burst\"\xcd\x01\n" +
+ 	"\x06Config\x12)\n" +
+ 	"\x10subject_selector\x18\x02 \x03(\tR\x0fsubjectSelector\x12R\n" +
+ 	"\vping_config\x18\x03 \x01(\v21.xray.core.app.observatory.burst.HealthPingConfigR\n" +
+-	"pingConfig\"\xd4\x01\n" +
++	"pingConfig\x12%\n" +
++	"\x0eexact_selector\x18\x04 \x01(\bR\rexactSelector\x12\x1d\n" +
++	"\n" +
++	"exact_tags\x18\x05 \x03(\tR\texactTags\"\xd4\x01\n" +
+ 	"\x10HealthPingConfig\x12 \n" +
+ 	"\vdestination\x18\x01 \x01(\tR\vdestination\x12\"\n" +
+ 	"\fconnectivity\x18\x02 \x01(\tR\fconnectivity\x12\x1a\n" +
+--- a/app/observatory/burst/config.proto
++++ b/app/observatory/burst/config.proto
+@@ -12,6 +12,9 @@
+   repeated string subject_selector = 2;
+ 
+   HealthPingConfig ping_config = 3;
++  // Standalone routing tags are exact names, not balancer prefixes.
++  bool exact_selector = 4;
++  repeated string exact_tags = 5;
+ }
+ 
+ message HealthPingConfig {
+--- a/app/observatory/observer.go
++++ b/app/observatory/observer.go
+@@ -77,7 +77,7 @@
+ 
+ 		o.clearRemovedOutbounds(outbounds)
+ 
+-		sleepTime := time.Second * 10
++		sleepTime := time.Minute
+ 		if o.config.ProbeInterval != 0 {
+ 			sleepTime = time.Duration(o.config.ProbeInterval)
+ 		}
+--- a/app/observatory/strategy/observer.go
++++ b/app/observatory/strategy/observer.go
+@@ -4,7 +4,10 @@
+ import (
+ 	"context"
+ 	"fmt"
++	"github.com/xtls/xray-core/app/observatory/burst"
+ 	"sort"
++	"strings"
++	"time"
+ 
+ 	"github.com/xtls/xray-core/app/observatory"
+ 	"github.com/xtls/xray-core/common"
+@@ -14,6 +17,7 @@
+ )
+ 
+ type Observer struct {
++	scopes    map[string]probeScope
+ 	observers map[string]extension.Observatory
+ 	order     []string
+ 	started   []extension.Observatory
+@@ -25,7 +29,25 @@
+ 	if child == nil {
+ 		return nil, fmt.Errorf("no observatory configured for strategy %q", name)
+ 	}
+-	return child.GetObservation(ctx)
++	msg, err := child.GetObservation(ctx)
++	if err != nil {
++		return nil, err
++	}
++	scope, filtered := o.scopes[name]
++	if !filtered {
++		return msg, nil
++	}
++	report, ok := msg.(*observatory.ObservationResult)
++	if !ok {
++		return msg, nil
++	}
++	result := &observatory.ObservationResult{}
++	for _, status := range report.Status {
++		if status != nil && scope.matches(status.OutboundTag) {
++			result.Status = append(result.Status, status)
++		}
++	}
++	return result, nil
+ }
+ 
+ // The legacy API returns a deterministic union; routing always asks for its own strategy.
+@@ -49,8 +71,13 @@
+ 	return result, nil
+ }
+ func (o *Observer) Start() error {
++	seen := map[extension.Observatory]bool{}
+ 	for _, name := range o.order {
+ 		child := o.observers[name]
++		if seen[child] {
++			continue
++		}
++		seen[child] = true
+ 		if err := child.Start(); err != nil {
+ 			_ = o.Close()
+ 			return err
+@@ -69,26 +96,123 @@
+ 	o.started = nil
+ 	return first
+ }
++
++type probeScope struct {
++	selectors []string
++	exact     bool
++}
++
++func (s probeScope) matches(tag string) bool {
++	for _, selector := range s.selectors {
++		if (s.exact && tag == selector) || (!s.exact && strings.HasPrefix(tag, selector)) {
++			return true
++		}
++	}
++	return false
++}
++
++type probeGroup struct {
++	config proto.Message
++	names  []string
++}
++
+ func New(ctx context.Context, config *Config) (*Observer, error) {
+-	o := &Observer{observers: map[string]extension.Observatory{}}
++	o := &Observer{observers: map[string]extension.Observatory{}, scopes: map[string]probeScope{}}
+ 	for name := range config.Observers {
+ 		o.order = append(o.order, name)
+ 	}
+ 	sort.Strings(o.order)
++	groups := map[string]*probeGroup{}
++	groupOrder := []string{}
+ 	for _, name := range o.order {
+ 		msg, err := config.Observers[name].GetInstance()
+ 		if err != nil {
+ 			return nil, err
+ 		}
+-		child, err := common.CreateObject(duiprobehistory.WithStrategy(ctx, name), msg)
++		var scope probeScope
++		keyMessage := proto.Clone(msg)
++		switch c := keyMessage.(type) {
++		case *burst.Config:
++			if c.PingConfig == nil {
++				c.PingConfig = &burst.HealthPingConfig{}
++			}
++			ping := c.PingConfig
++			ping.Destination = strings.TrimSpace(ping.Destination)
++			ping.Connectivity = strings.TrimSpace(ping.Connectivity)
++			ping.HttpMethod = strings.TrimSpace(ping.HttpMethod)
++			if ping.Destination == "" {
++				ping.Destination = "https://connectivitycheck.gstatic.com/generate_204"
++			}
++			if ping.Interval == 0 {
++				ping.Interval = int64(time.Minute)
++			} else if ping.Interval < int64(10*time.Second) {
++				ping.Interval = int64(10 * time.Second)
++			}
++			if ping.Timeout <= 0 {
++				ping.Timeout = int64(5 * time.Second)
++			}
++			if ping.SamplingCount <= 0 {
++				ping.SamplingCount = 10
++			}
++			if ping.HttpMethod == "" {
++				ping.HttpMethod = "HEAD"
++			}
++			scope = probeScope{selectors: append([]string(nil), c.SubjectSelector...), exact: c.ExactSelector}
++			c.SubjectSelector = nil
++			c.ExactSelector = false
++			c.ExactTags = nil
++		case *observatory.Config:
++			scope = probeScope{selectors: append([]string(nil), c.SubjectSelector...)}
++			c.SubjectSelector = nil
++		default:
++			return nil, fmt.Errorf("unsupported observatory for %s", name)
++		}
++		encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(keyMessage)
++		if err != nil {
++			return nil, err
++		}
++		key := string(keyMessage.ProtoReflect().Descriptor().FullName()) + ":" + string(encoded)
++		group := groups[key]
++		if group == nil {
++			group = &probeGroup{config: keyMessage}
++			groups[key] = group
++			groupOrder = append(groupOrder, key)
++		}
++		group.names = append(group.names, name)
++		o.scopes[name] = scope
++		switch c := group.config.(type) {
++		case *burst.Config:
++			if scope.exact {
++				c.ExactTags = append(c.ExactTags, scope.selectors...)
++			} else {
++				c.SubjectSelector = append(c.SubjectSelector, scope.selectors...)
++			}
++		case *observatory.Config:
++			c.SubjectSelector = append(c.SubjectSelector, scope.selectors...)
++		}
++	}
++	for _, key := range groupOrder {
++		group := groups[key]
++		childCtx := duiprobehistory.WithStrategies(ctx, func(tag string) []string {
++			names := []string{}
++			for _, name := range group.names {
++				if o.scopes[name].matches(tag) {
++					names = append(names, name)
++				}
++			}
++			return names
++		})
++		child, err := common.CreateObject(childCtx, group.config)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+ 		observer, ok := child.(extension.Observatory)
+ 		if !ok {
+-			return nil, fmt.Errorf("invalid strategy observatory %q", name)
+-		}
+-		o.observers[name] = observer
++			return nil, fmt.Errorf("invalid observatory")
++		}
++		for _, name := range group.names {
++			o.observers[name] = observer
++		}
+ 	}
+ 	return o, nil
+ }
+--- /dev/null
++++ b/app/observatory/strategy/shared_test.go
+@@ -0,0 +1,129 @@
++package strategy
++
++import (
++	"context"
++	"github.com/xtls/xray-core/app/observatory"
++	"github.com/xtls/xray-core/app/observatory/burst"
++	"github.com/xtls/xray-core/common/buf"
++	"github.com/xtls/xray-core/common/duiprobehistory"
++	cn "github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/serial"
++	"github.com/xtls/xray-core/core"
++	"github.com/xtls/xray-core/features/extension"
++	"github.com/xtls/xray-core/features/outbound"
++	"github.com/xtls/xray-core/features/routing"
++	"github.com/xtls/xray-core/transport"
++	_ "github.com/xtls/xray-core/transport/internet/tagged/taggedimpl"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++type sharingManager struct{ outbound.Manager }
++
++func (*sharingManager) Type() interface{} { return outbound.ManagerType() }
++func (*sharingManager) Start() error      { return nil }
++func (*sharingManager) Close() error      { return nil }
++
++type sharingDispatcher struct {
++	routing.Dispatcher
++	address string
++}
++
++func (*sharingDispatcher) Type() interface{} { return routing.DispatcherType() }
++func (*sharingDispatcher) Start() error      { return nil }
++func (*sharingDispatcher) Close() error      { return nil }
++func (d *sharingDispatcher) Dispatch(ctx context.Context, _ cn.Destination) (*transport.Link, error) {
++	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", d.address)
++	if err != nil {
++		return nil, err
++	}
++	return &transport.Link{Reader: buf.NewReader(conn), Writer: buf.NewWriter(conn)}, nil
++}
++func TestDUISharedProbeNetworkAndHistory(t *testing.T) {
++	var requests atomic.Int32
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(204) }))
++	defer server.Close()
++	instance := new(core.Instance)
++	ctx := context.WithValue(context.Background(), core.XrayKey(1), instance)
++	rec := duiprobehistory.New()
++	ctx = duiprobehistory.WithRecorder(ctx, rec)
++	if err := instance.AddFeature(&sharingManager{}); err != nil {
++		t.Fatal(err)
++	}
++	dispatcher := &sharingDispatcher{address: server.Listener.Addr().String()}
++	if err := instance.AddFeature(dispatcher); err != nil {
++		t.Fatal(err)
++	}
++	config := func(exact bool, interval time.Duration) *burst.Config {
++		return &burst.Config{SubjectSelector: []string{"a"}, ExactSelector: exact, PingConfig: &burst.HealthPingConfig{Destination: server.URL, Interval: int64(interval), SamplingCount: 1, Timeout: int64(time.Second)}}
++	}
++	o, err := New(ctx, &Config{Observers: map[string]*serial.TypedMessage{
++		"outbound":   serial.ToTypedMessage(config(true, 0)),
++		"roundRobin": serial.ToTypedMessage(config(false, time.Minute)),
++		"random":     serial.ToTypedMessage(config(false, 2*time.Minute)),
++	}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if o.observers["outbound"] != o.observers["roundRobin"] {
++		t.Fatal("identical settings did not share")
++	}
++	if o.observers["outbound"] == o.observers["random"] {
++		t.Fatal("different schedules were merged")
++	}
++	// Force one real HTTP measurement without starting periodic schedulers.
++	o.observers["outbound"].(*burst.Observer).Check([]string{"a"})
++	if requests.Load() != 1 {
++		t.Fatalf("physical requests %d", requests.Load())
++	}
++	for _, scope := range []string{"outbound", "roundRobin"} {
++		msg, err := o.GetObservationForStrategy(ctx, scope)
++		if err != nil || len(msg.(*observatory.ObservationResult).Status) != 1 || !msg.(*observatory.ObservationResult).Status[0].Alive {
++			t.Fatalf("scope %s did not reuse successful result", scope)
++		}
++	}
++	msg, _ := o.GetObservationForStrategy(ctx, "random")
++	if len(msg.(*observatory.ObservationResult).Status) != 0 {
++		t.Fatal("different schedule inherited a result")
++	}
++	history := rec.Read("", 0, 20)
++	if len(history.Events) != 2 || history.Events[0].Time != history.Events[1].Time {
++		t.Fatal("shared history should record one result in both scopes", history)
++	}
++	server.Close()
++	o.observers["outbound"].(*burst.Observer).Check([]string{"a"})
++	msg, _ = o.GetObservationForStrategy(ctx, "outbound")
++	if msg.(*observatory.ObservationResult).Status[0].Alive {
++		t.Fatal("closed endpoint remained healthy")
++	}
++	restored := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
++	defer restored.Close()
++	dispatcher.address = restored.Listener.Addr().String()
++	o.observers["outbound"].(*burst.Observer).Check([]string{"a"})
++	msg, _ = o.GetObservationForStrategy(ctx, "outbound")
++	if !msg.(*observatory.ObservationResult).Status[0].Alive {
++		t.Fatal("recovery did not update shared measurement")
++	}
++	// Exact route selector must not inherit another prefix-matched tag.
++	o.observers["roundRobin"].(*burst.Observer).Check([]string{"ab"})
++	msg, _ = o.GetObservationForStrategy(ctx, "outbound")
++	if len(msg.(*observatory.ObservationResult).Status) != 1 {
++		t.Fatal("exact standalone selector leaked prefix neighbor")
++	}
++}
++func TestDUISharedObserverStartsAndClosesOnce(t *testing.T) {
++	events := []string{}
++	f := &fake{"a", false, &events}
++	o := &Observer{order: []string{"outbound", "roundRobin"}, observers: map[string]extension.Observatory{"outbound": f, "roundRobin": f}}
++	if err := o.Start(); err != nil {
++		t.Fatal(err)
++	}
++	o.Close()
++	if len(events) != 2 {
++		t.Fatal(events)
++	}
++}
+--- a/app/router/balancing.go
++++ b/app/router/balancing.go
+@@ -86,16 +86,28 @@
+ }
+ 
+ type Balancer struct {
+-	selectors   []string
+-	strategy    BalancingStrategy
+-	ohm         outbound.Manager
+-	fallbackTag string
++	priority       []*Balancer
++	healthScope    string
++	healthObserver extension.Observatory
++	ctx            context.Context
++	selectors      []string
++	strategy       BalancingStrategy
++	ohm            outbound.Manager
++	fallbackTag    string
+ 
+ 	override override
+ }
+ 
+ // PickOutbound picks the tag of a outbound
+ func (b *Balancer) PickOutbound() (string, error) {
++	if len(b.priority) > 0 {
++		for _, level := range b.priority {
++			if tag, err := level.PickOutbound(); err == nil && tag != "" {
++				return tag, nil
++			}
++		}
++		return "", routing.ErrNoAvailableOutbound
++	}
+ 	candidates, err := b.SelectOutbounds()
+ 	if err != nil {
+ 		if b.fallbackTag != "" {
+@@ -104,6 +116,12 @@
+ 		}
+ 		return "", errors.New("cannot select balancer outbounds: ", err).Base(routing.ErrNoAvailableOutbound)
+ 	}
++	if b.healthScope != "" {
++		candidates = knownHealthy(b.ctx, b.healthObserver, b.healthScope, candidates)
++		if len(candidates) == 0 {
++			return "", routing.ErrNoAvailableOutbound
++		}
++	}
+ 	var tag string
+ 	if o := b.override.Get(); o != "" {
+ 		tag = o
+@@ -122,6 +140,18 @@
+ }
+ 
+ func (b *Balancer) InjectContext(ctx context.Context) {
++	b.ctx = ctx
++	for _, child := range b.priority {
++		child.InjectContext(ctx)
++	}
++	if b.healthScope != "" {
++		if instance := core.FromContext(ctx); instance != nil {
++			common.Must(instance.RequireFeatures(func(observer extension.Observatory) error {
++				b.healthObserver = observer
++				return nil
++			}, true))
++		}
++	}
+ 	if contextReceiver, ok := b.strategy.(extension.ContextReceiver); ok {
+ 		contextReceiver.InjectContext(ctx)
+ 	}
+@@ -129,6 +159,17 @@
+ 
+ // SelectOutbounds select outbounds with selectors of the Balancer
+ func (b *Balancer) SelectOutbounds() ([]string, error) {
++	if b.healthScope != "" {
++		tags := []string{}
++		seen := map[string]bool{}
++		for _, tag := range b.selectors {
++			if !seen[tag] && b.ohm.GetHandler(tag) != nil {
++				tags = append(tags, tag)
++				seen[tag] = true
++			}
++		}
++		return tags, nil
++	}
+ 	hs, ok := b.ohm.(outbound.HandlerSelector)
+ 	if !ok {
+ 		return nil, errors.New("outbound.Manager is not a HandlerSelector")
+@@ -155,6 +196,9 @@
+ // SetOverrideTarget implements routing.BalancerOverrider
+ func (r *Router) SetOverrideTarget(tag, target string) error {
+ 	if b, ok := (*r.balancers.Load())[tag]; ok {
++		if len(b.priority) > 0 || b.healthScope != "" {
++			return errors.New("priority balancing does not allow override")
++		}
+ 		b.override.Put(target)
+ 		return nil
+ 	}
+--- a/app/router/config.go
++++ b/app/router/config.go
+@@ -16,11 +16,15 @@
+ 	Balancer  *Balancer
+ 	Condition Condition
+ 	Webhook   *WebhookNotifier
++	Health    *outboundHealth
+ }
+ 
+ func (r *Rule) GetTag() (string, error) {
+ 	if r.Balancer != nil {
+ 		return r.Balancer.PickOutbound()
++	}
++	if r.Health != nil {
++		return r.Health.PickOutbound()
+ 	}
+ 	return r.Tag, nil
+ }
+@@ -124,6 +128,23 @@
+ // Build builds the balancing rule
+ func (br *BalancingRule) Build(ohm outbound.Manager, dispatcher routing.Dispatcher) (*Balancer, error) {
+ 	switch strings.ToLower(br.Strategy) {
++	case "priority":
++		if len(br.PriorityLevels) == 0 || len(br.PriorityLevels) > 10 || br.FallbackTag != "" {
++			return nil, errors.New("invalid priority levels")
++		}
++		result := &Balancer{ohm: ohm}
++		for _, level := range br.PriorityLevels {
++			if strings.EqualFold(level.Strategy, "priority") || level.FallbackTag != "" {
++				return nil, errors.New("nested priority or implicit fallback is not allowed")
++			}
++			child, err := level.Build(ohm, dispatcher)
++			if err != nil {
++				return nil, err
++			}
++			child.healthScope = map[string]string{"random": "random", "": "random", "roundrobin": "roundRobin", "leastping": "leastPing", "leastload": "leastLoad"}[strings.ToLower(level.Strategy)]
++			result.priority = append(result.priority, child)
++		}
++		return result, nil
+ 	case "leastping":
+ 		return &Balancer{
+ 			selectors:   br.OutboundSelector,
+--- a/app/router/config.pb.go
++++ b/app/router/config.pb.go
+@@ -1,7 +1,7 @@
+ // Code generated by protoc-gen-go. DO NOT EDIT.
+ // versions:
+ // 	protoc-gen-go v1.36.11
+-// 	protoc        v6.33.5
++// 	protoc        v3.21.12
+ // source: app/router/config.proto
+ 
+ package router
+@@ -108,9 +108,12 @@
+ 	Process        []string       `protobuf:"bytes,21,rep,name=process,proto3" json:"process,omitempty"`
+ 	Webhook        *WebhookConfig `protobuf:"bytes,22,opt,name=webhook,proto3" json:"webhook,omitempty"`
+ 	// List of operating systems for matching the one Xray itself is running on.
+-	LocalOs       []string `protobuf:"bytes,23,rep,name=local_os,json=localOs,proto3" json:"local_os,omitempty"`
+-	unknownFields protoimpl.UnknownFields
+-	sizeCache     protoimpl.SizeCache
++	LocalOs []string `protobuf:"bytes,23,rep,name=local_os,json=localOs,proto3" json:"local_os,omitempty"`
++	// DUI standalone routes select a healthy primary, then a healthy backup.
++	FallbackTag         string `protobuf:"bytes,24,opt,name=fallback_tag,json=fallbackTag,proto3" json:"fallback_tag,omitempty"`
++	OutboundHealthCheck bool   `protobuf:"varint,25,opt,name=outbound_health_check,json=outboundHealthCheck,proto3" json:"outbound_health_check,omitempty"`
++	unknownFields       protoimpl.UnknownFields
++	sizeCache           protoimpl.SizeCache
+ }
+ 
+ func (x *RoutingRule) Reset() {
+@@ -285,6 +288,20 @@
+ 		return x.LocalOs
+ 	}
+ 	return nil
++}
++
++func (x *RoutingRule) GetFallbackTag() string {
++	if x != nil {
++		return x.FallbackTag
++	}
++	return ""
++}
++
++func (x *RoutingRule) GetOutboundHealthCheck() bool {
++	if x != nil {
++		return x.OutboundHealthCheck
++	}
++	return false
+ }
+ 
+ type isRoutingRule_TargetTag interface {
+@@ -372,6 +389,7 @@
+ 	Strategy         string                 `protobuf:"bytes,3,opt,name=strategy,proto3" json:"strategy,omitempty"`
+ 	StrategySettings *serial.TypedMessage   `protobuf:"bytes,4,opt,name=strategy_settings,json=strategySettings,proto3" json:"strategy_settings,omitempty"`
+ 	FallbackTag      string                 `protobuf:"bytes,5,opt,name=fallback_tag,json=fallbackTag,proto3" json:"fallback_tag,omitempty"`
++	PriorityLevels   []*BalancingRule       `protobuf:"bytes,6,rep,name=priority_levels,json=priorityLevels,proto3" json:"priority_levels,omitempty"`
+ 	unknownFields    protoimpl.UnknownFields
+ 	sizeCache        protoimpl.SizeCache
+ }
+@@ -439,6 +457,13 @@
+ 		return x.FallbackTag
+ 	}
+ 	return ""
++}
++
++func (x *BalancingRule) GetPriorityLevels() []*BalancingRule {
++	if x != nil {
++		return x.PriorityLevels
++	}
++	return nil
+ }
+ 
+ type StrategyWeight struct {
+@@ -646,7 +671,7 @@
+ 
+ const file_app_router_config_proto_rawDesc = "" +
+ 	"\n" +
+-	"\x17app/router/config.proto\x12\x0fxray.app.router\x1a!common/serial/typed_message.proto\x1a\x15common/net/port.proto\x1a\x18common/net/network.proto\x1a\x1bcommon/geodata/geodat.proto\"\xdc\a\n" +
++	"\x17app/router/config.proto\x12\x0fxray.app.router\x1a!common/serial/typed_message.proto\x1a\x15common/net/port.proto\x1a\x18common/net/network.proto\x1a\x1bcommon/geodata/geodat.proto\"\xb3\b\n" +
+ 	"\vRoutingRule\x12\x12\n" +
+ 	"\x03tag\x18\x01 \x01(\tH\x00R\x03tag\x12%\n" +
+ 	"\rbalancing_tag\x18\f \x01(\tH\x00R\fbalancingTag\x12\x19\n" +
+@@ -671,7 +696,9 @@
+ 	"\x10vless_route_list\x18\x14 \x01(\v2\x19.xray.common.net.PortListR\x0evlessRouteList\x12\x18\n" +
+ 	"\aprocess\x18\x15 \x03(\tR\aprocess\x128\n" +
+ 	"\awebhook\x18\x16 \x01(\v2\x1e.xray.app.router.WebhookConfigR\awebhook\x12\x19\n" +
+-	"\blocal_os\x18\x17 \x03(\tR\alocalOs\x1a=\n" +
++	"\blocal_os\x18\x17 \x03(\tR\alocalOs\x12!\n" +
++	"\ffallback_tag\x18\x18 \x01(\tR\vfallbackTag\x122\n" +
++	"\x15outbound_health_check\x18\x19 \x01(\bR\x13outboundHealthCheck\x1a=\n" +
+ 	"\x0fAttributesEntry\x12\x10\n" +
+ 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+ 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\f\n" +
+@@ -683,13 +710,14 @@
+ 	"\aheaders\x18\x03 \x03(\v2+.xray.app.router.WebhookConfig.HeadersEntryR\aheaders\x1a:\n" +
+ 	"\fHeadersEntry\x12\x10\n" +
+ 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdc\x01\n" +
++	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa5\x02\n" +
+ 	"\rBalancingRule\x12\x10\n" +
+ 	"\x03tag\x18\x01 \x01(\tR\x03tag\x12+\n" +
+ 	"\x11outbound_selector\x18\x02 \x03(\tR\x10outboundSelector\x12\x1a\n" +
+ 	"\bstrategy\x18\x03 \x01(\tR\bstrategy\x12M\n" +
+ 	"\x11strategy_settings\x18\x04 \x01(\v2 .xray.common.serial.TypedMessageR\x10strategySettings\x12!\n" +
+-	"\ffallback_tag\x18\x05 \x01(\tR\vfallbackTag\"T\n" +
++	"\ffallback_tag\x18\x05 \x01(\tR\vfallbackTag\x12G\n" +
++	"\x0fpriority_levels\x18\x06 \x03(\v2\x1e.xray.app.router.BalancingRuleR\x0epriorityLevels\"T\n" +
+ 	"\x0eStrategyWeight\x12\x16\n" +
+ 	"\x06regexp\x18\x01 \x01(\bR\x06regexp\x12\x14\n" +
+ 	"\x05match\x18\x02 \x01(\tR\x05match\x12\x14\n" +
+@@ -755,15 +783,16 @@
+ 	2,  // 10: xray.app.router.RoutingRule.webhook:type_name -> xray.app.router.WebhookConfig
+ 	8,  // 11: xray.app.router.WebhookConfig.headers:type_name -> xray.app.router.WebhookConfig.HeadersEntry
+ 	13, // 12: xray.app.router.BalancingRule.strategy_settings:type_name -> xray.common.serial.TypedMessage
+-	4,  // 13: xray.app.router.StrategyLeastLoadConfig.costs:type_name -> xray.app.router.StrategyWeight
+-	0,  // 14: xray.app.router.Config.domain_strategy:type_name -> xray.app.router.Config.DomainStrategy
+-	1,  // 15: xray.app.router.Config.rule:type_name -> xray.app.router.RoutingRule
+-	3,  // 16: xray.app.router.Config.balancing_rule:type_name -> xray.app.router.BalancingRule
+-	17, // [17:17] is the sub-list for method output_type
+-	17, // [17:17] is the sub-list for method input_type
+-	17, // [17:17] is the sub-list for extension type_name
+-	17, // [17:17] is the sub-list for extension extendee
+-	0,  // [0:17] is the sub-list for field type_name
++	3,  // 13: xray.app.router.BalancingRule.priority_levels:type_name -> xray.app.router.BalancingRule
++	4,  // 14: xray.app.router.StrategyLeastLoadConfig.costs:type_name -> xray.app.router.StrategyWeight
++	0,  // 15: xray.app.router.Config.domain_strategy:type_name -> xray.app.router.Config.DomainStrategy
++	1,  // 16: xray.app.router.Config.rule:type_name -> xray.app.router.RoutingRule
++	3,  // 17: xray.app.router.Config.balancing_rule:type_name -> xray.app.router.BalancingRule
++	18, // [18:18] is the sub-list for method output_type
++	18, // [18:18] is the sub-list for method input_type
++	18, // [18:18] is the sub-list for extension type_name
++	18, // [18:18] is the sub-list for extension extendee
++	0,  // [0:18] is the sub-list for field type_name
+ }
+ 
+ func init() { file_app_router_config_proto_init() }
+--- a/app/router/config.proto
++++ b/app/router/config.proto
+@@ -59,6 +59,9 @@
+ 
+   // List of operating systems for matching the one Xray itself is running on.
+   repeated string local_os = 23;
++  // DUI standalone routes select a healthy primary, then a healthy backup.
++  string fallback_tag = 24;
++  bool outbound_health_check = 25;
+ }
+ 
+ message WebhookConfig {
+@@ -73,6 +76,7 @@
+   string strategy = 3;
+   xray.common.serial.TypedMessage strategy_settings = 4;
+   string fallback_tag = 5;
++  repeated BalancingRule priority_levels = 6;
+ }
+ 
+ message StrategyWeight {
+--- /dev/null
++++ b/app/router/outbound_health.go
+@@ -0,0 +1,88 @@
++package router
++
++import (
++	"context"
++	"github.com/xtls/xray-core/app/observatory"
++	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/core"
++	"github.com/xtls/xray-core/features/extension"
++	"github.com/xtls/xray-core/features/outbound"
++	"github.com/xtls/xray-core/features/routing"
++)
++
++// Probes run continuously, independently of whether the route currently uses A or B.
++type outboundHealth struct {
++	primary, fallback string
++	ctx               context.Context
++	observer          extension.Observatory
++	manager           outbound.Manager
++}
++
++func (h *outboundHealth) InjectContext(ctx context.Context) {
++	h.ctx = ctx
++	if instance := core.FromContext(ctx); instance != nil {
++		common.Must(instance.RequireFeatures(func(observer extension.Observatory) error {
++			h.observer = observer
++			return nil
++		}, true))
++	}
++}
++
++func (h *outboundHealth) PickOutbound() (string, error) {
++	// Legacy/combined observations must never influence standalone routes.
++	scoped, ok := h.observer.(extension.StrategyObservatory)
++	if !ok {
++		return "", routing.ErrNoAvailableOutbound
++	}
++	message, err := scoped.GetObservationForStrategy(h.ctx, "outbound")
++	if err != nil {
++		return "", routing.ErrNoAvailableOutbound
++	}
++	report, ok := message.(*observatory.ObservationResult)
++	if !ok || report == nil {
++		return "", routing.ErrNoAvailableOutbound
++	}
++	alive := make(map[string]bool, len(report.Status))
++	for _, state := range report.Status {
++		if state != nil {
++			alive[state.OutboundTag] = state.Alive
++		}
++	}
++	for _, tag := range []string{h.primary, h.fallback} {
++		if tag != "" && alive[tag] && h.manager != nil && h.manager.GetHandler(tag) != nil {
++			return tag, nil
++		}
++	}
++	// Unknown, failed, expired or missing results all reject new connections.
++	return "", routing.ErrNoAvailableOutbound
++}
++
++// knownHealthy deliberately excludes missing observations and never uses a
++// different strategy's measurements, even for the same outbound tag.
++func knownHealthy(ctx context.Context, observer extension.Observatory, scope string, candidates []string) []string {
++	scoped, ok := observer.(extension.StrategyObservatory)
++	if !ok {
++		return nil
++	}
++	message, err := scoped.GetObservationForStrategy(ctx, scope)
++	if err != nil {
++		return nil
++	}
++	report, ok := message.(*observatory.ObservationResult)
++	if !ok || report == nil {
++		return nil
++	}
++	alive := map[string]bool{}
++	for _, state := range report.Status {
++		if state != nil {
++			alive[state.OutboundTag] = state.Alive
++		}
++	}
++	result := []string{}
++	for _, tag := range candidates {
++		if alive[tag] {
++			result = append(result, tag)
++		}
++	}
++	return result
++}
+--- /dev/null
++++ b/app/router/route_health_test.go
+@@ -0,0 +1,156 @@
++package router
++
++import (
++	"context"
++	"errors"
++	"github.com/xtls/xray-core/app/observatory"
++	"github.com/xtls/xray-core/common/serial"
++	"github.com/xtls/xray-core/core"
++	"github.com/xtls/xray-core/features/extension"
++	"github.com/xtls/xray-core/features/outbound"
++	"github.com/xtls/xray-core/features/routing"
++	"google.golang.org/protobuf/proto"
++	"testing"
++)
++
++type healthTestObserver struct {
++	states map[string]map[string]bool
++	fail   bool
++}
++
++func (o *healthTestObserver) Type() interface{} { return extension.ObservatoryType() }
++func (o *healthTestObserver) Start() error      { return nil }
++func (o *healthTestObserver) Close() error      { return nil }
++func (o *healthTestObserver) GetObservation(context.Context) (proto.Message, error) {
++	panic("cross-scope union must never be used")
++}
++func (o *healthTestObserver) GetObservationForStrategy(_ context.Context, scope string) (proto.Message, error) {
++	if o.fail {
++		return nil, errors.New("unavailable")
++	}
++	report := &observatory.ObservationResult{}
++	for tag, alive := range o.states[scope] {
++		report.Status = append(report.Status, &observatory.OutboundStatus{OutboundTag: tag, Alive: alive, Delay: 10, HealthPing: &observatory.HealthPingMeasurementResult{All: 2, Average: 10000000, Deviation: 1000000}})
++	}
++	return report, nil
++}
++
++type healthTestHandler struct{ outbound.Handler }
++type healthTestManager struct {
++	outbound.Manager
++	tags map[string]bool
++}
++
++func (m *healthTestManager) GetHandler(tag string) outbound.Handler {
++	if m.tags[tag] {
++		return &healthTestHandler{}
++	}
++	return nil
++}
++func healthFixture() (context.Context, *core.Instance, *healthTestManager, *healthTestObserver) {
++	instance := new(core.Instance)
++	ctx := context.WithValue(context.Background(), core.XrayKey(1), instance)
++	manager := &healthTestManager{tags: map[string]bool{"a": true, "ab": true, "b": true, "c": true, "d": true, "direct": true}}
++	observer := &healthTestObserver{states: map[string]map[string]bool{}}
++	return ctx, instance, manager, observer
++}
++func TestDUIStandaloneFallbackAndRecovery(t *testing.T) {
++	for _, backup := range []string{"", "b"} {
++		t.Run(backup, func(t *testing.T) {
++			ctx, instance, manager, obs := healthFixture()
++			h := &outboundHealth{primary: "a", fallback: backup, manager: manager}
++			h.InjectContext(ctx)
++			if err := instance.AddFeature(obs); err != nil {
++				t.Fatal(err)
++			}
++			obs.states["roundRobin"] = map[string]bool{"a": true, "b": true} // unrelated scope must not authorize traffic.
++			assert := func(want string) {
++				t.Helper()
++				got, err := h.PickOutbound()
++				if got != want || (want == "" && !errors.Is(err, routing.ErrNoAvailableOutbound)) || (want != "" && err != nil) {
++					t.Fatalf("got %q %v want %q", got, err, want)
++				}
++			}
++			assert("")
++			obs.states["outbound"] = map[string]bool{"a": true, "b": true}
++			assert("a")
++			obs.states["outbound"]["a"] = false
++			assert(backup)
++			obs.states["outbound"]["b"] = false
++			assert("")
++			obs.states["outbound"]["a"] = true
++			assert("a")
++			delete(manager.tags, "a")
++			assert("")
++			manager.tags["a"] = true
++			obs.fail = true
++			assert("")
++		})
++	}
++}
++func TestDUIPriorityLevelsAllStrategies(t *testing.T) {
++	for _, mode := range []string{"random", "roundRobin", "leastLoad", "leastPing"} {
++		for _, direct := range []bool{false, true} {
++			t.Run(mode, func(t *testing.T) {
++				ctx, instance, manager, obs := healthFixture()
++				buildLevel := func(tags ...string) *BalancingRule {
++					return &BalancingRule{Strategy: mode, OutboundSelector: tags, StrategySettings: serial.ToTypedMessage(&StrategyLeastLoadConfig{Expected: 1})}
++				}
++				cfg := &BalancingRule{Strategy: "priority", PriorityLevels: []*BalancingRule{buildLevel("a", "b"), buildLevel("c", "d")}}
++				if direct {
++					cfg.PriorityLevels = append(cfg.PriorityLevels, buildLevel("direct"))
++				}
++				b, err := cfg.Build(manager, nil)
++				if err != nil {
++					t.Fatal(err)
++				}
++				b.InjectContext(ctx)
++				if err = instance.AddFeature(obs); err != nil {
++					t.Fatal(err)
++				}
++				assert := func(allowed ...string) {
++					t.Helper()
++					for i := 0; i < 20; i++ {
++						tag, err := b.PickOutbound()
++						if len(allowed) == 0 {
++							if tag != "" || !errors.Is(err, routing.ErrNoAvailableOutbound) {
++								t.Fatalf("leaked %q %v", tag, err)
++							}
++							continue
++						}
++						found := false
++						for _, v := range allowed {
++							found = found || tag == v
++						}
++						if err != nil || !found {
++							t.Fatalf("got %q %v want %v", tag, err, allowed)
++						}
++					}
++				}
++				obs.states[mode] = map[string]bool{"ab": true}
++				assert() // unknown and prefix neighbor are not healthy selections.
++				obs.states[mode] = map[string]bool{"a": true, "b": true, "c": true, "d": true, "direct": true}
++				assert("a", "b")
++				obs.states[mode]["a"] = false
++				assert("b")
++				obs.states[mode]["b"] = false
++				assert("c", "d")
++				obs.states[mode]["c"] = false
++				obs.states[mode]["d"] = false
++				if direct {
++					assert("direct")
++				} else {
++					assert()
++				}
++				obs.states[mode]["direct"] = false
++				assert()
++				obs.states[mode]["d"] = true
++				assert("d")
++				obs.states[mode]["a"] = true
++				assert("a")
++				obs.fail = true
++				assert()
++			})
++		}
++	}
++}
+--- a/app/router/router.go
++++ b/app/router/router.go
+@@ -119,6 +119,15 @@
+ 			Tag:       rule.GetTag(),
+ 			RuleTag:   rule.GetRuleTag(),
+ 		}
++		if rule.OutboundHealthCheck {
++			if rr.Tag == "" || rule.GetBalancingTag() != "" || rule.FallbackTag == rr.Tag {
++				return errors.New("invalid standalone outbound health rule")
++			}
++			rr.Health = &outboundHealth{primary: rr.Tag, fallback: rule.FallbackTag, manager: r.ohm}
++			rr.Health.InjectContext(r.ctx)
++		} else if rule.FallbackTag != "" {
++			return errors.New("route fallback requires standalone outbound probing")
++		}
+ 		if rr.RuleTag != "" && existTags[rr.RuleTag] {
+ 			return errors.New("duplicate ruleTag ", rr.RuleTag)
+ 		}
+--- a/common/duiprobehistory/history.go
++++ b/common/duiprobehistory/history.go
+@@ -33,6 +33,12 @@
+ }
+ type recorderKey struct{}
+ type strategyKey struct{}
++type strategiesKey struct{}
++
++// WithStrategies fans one physical measurement out to each configured consumer.
++func WithStrategies(ctx context.Context, resolve func(string) []string) context.Context {
++	return context.WithValue(ctx, strategiesKey{}, resolve)
++}
+ 
+ func New() *Recorder { return &Recorder{session: rand.Text()} }
+ func WithRecorder(ctx context.Context, r *Recorder) context.Context {
+@@ -51,6 +57,13 @@
+ func Record(ctx context.Context, fallback, tag, state string, delay float64) {
+ 	r := FromContext(ctx)
+ 	if r == nil {
++		return
++	}
++	if resolve, ok := ctx.Value(strategiesKey{}).(func(string) []string); ok {
++		now := time.Now().UnixMilli()
++		for _, name := range resolve(tag) {
++			r.Add(Event{Time: now, Strategy: name, Outbound: tag, Status: state, Delay: delay})
++		}
+ 		return
+ 	}
+ 	name, _ := ctx.Value(strategyKey{}).(string)
+--- /dev/null
++++ b/infra/conf/outbound_health.go
+@@ -0,0 +1,68 @@
++package conf
++
++import (
++	"encoding/json"
++	"fmt"
++	"github.com/xtls/xray-core/app/router"
++	"strings"
++)
++
++func (c *Config) configureOutboundHealth(config *router.Config) error {
++	eligible := map[string]bool{}
++	for _, outbound := range c.OutboundConfigs {
++		p := strings.ToLower(outbound.Protocol)
++		eligible[outbound.Tag] = outbound.Tag != "" && outbound.Tag != "api" &&
++			!strings.HasPrefix(outbound.Tag, "__dui_blacklist_") &&
++			p != "blackhole" && p != "dns" && p != "loopback"
++	}
++	selected := map[string]bool{}
++	raw, enabled := c.StrategyObservatory["outbound"]
++	if enabled {
++		var probe BurstObservatoryConfig
++		if err := json.Unmarshal(raw, &probe); err != nil {
++			return err
++		}
++		for _, tag := range probe.SubjectSelector {
++			if !eligible[tag] {
++				return fmt.Errorf("standalone probe selector is not a probeable outbound")
++			}
++			selected[tag] = true
++		}
++	}
++	for _, rule := range config.Rule {
++		rule.OutboundHealthCheck = selected[rule.GetTag()] && rule.GetBalancingTag() == ""
++		if rule.FallbackTag != "" && (!rule.OutboundHealthCheck || !selected[rule.FallbackTag] || rule.FallbackTag == rule.GetTag()) {
++			return fmt.Errorf("route fallback requires both primary and backup in strategyObservatory.outbound")
++		}
++	}
++
++	for _, balancer := range config.BalancingRule {
++		for _, level := range balancer.PriorityLevels {
++			scope := map[string]string{"random": "random", "roundrobin": "roundRobin", "leastping": "leastPing", "leastload": "leastLoad"}[level.Strategy]
++			raw, ok := c.StrategyObservatory[scope]
++			if !ok {
++				return fmt.Errorf("priority levels require independent %s probing", scope)
++			}
++			var probe struct{ SubjectSelector []string }
++			if err := json.Unmarshal(raw, &probe); err != nil {
++				return err
++			}
++			for _, tag := range level.OutboundSelector {
++				if !eligible[tag] {
++					return fmt.Errorf("priority selector is not a probeable outbound")
++				}
++				covered := false
++				for _, prefix := range probe.SubjectSelector {
++					if strings.HasPrefix(tag, prefix) {
++						covered = true
++						break
++					}
++				}
++				if !covered {
++					return fmt.Errorf("priority outbound is not covered by its strategy probe")
++				}
++			}
++		}
++	}
++	return nil
++}
+--- /dev/null
++++ b/infra/conf/priority_balancer.go
+@@ -0,0 +1,46 @@
++package conf
++
++import (
++	"encoding/json"
++	"fmt"
++	"strings"
++)
++
++type priorityLevel struct {
++	Selectors StringList     `json:"selector"`
++	Strategy  StrategyConfig `json:"strategy"`
++}
++
++func (r *BalancingRule) priorityLevels() ([]priorityLevel, error) {
++	if r.FallbackTag != "" {
++		return nil, fmt.Errorf("priority balancer must use explicit levels instead of fallbackTag")
++	}
++	if r.Strategy.Settings == nil {
++		return nil, fmt.Errorf("priority balancer requires levels")
++	}
++	var settings struct {
++		Levels []priorityLevel `json:"levels"`
++	}
++	if err := json.Unmarshal(*r.Strategy.Settings, &settings); err != nil {
++		return nil, err
++	}
++	if len(settings.Levels) < 1 || len(settings.Levels) > 10 {
++		return nil, fmt.Errorf("priority balancer requires 1 to 10 levels")
++	}
++	for i, l := range settings.Levels {
++		if len(l.Selectors) == 0 {
++			return nil, fmt.Errorf("priority level %d has no outbounds", i+1)
++		}
++		for _, tag := range l.Selectors {
++			if strings.TrimSpace(tag) == "" {
++				return nil, fmt.Errorf("empty priority outbound tag")
++			}
++		}
++		switch strings.ToLower(l.Strategy.Type) {
++		case "", "random", "roundrobin", "leastping", "leastload":
++		default:
++			return nil, fmt.Errorf("invalid priority level strategy")
++		}
++	}
++	return settings.Levels, nil
++}
+--- a/infra/conf/router.go
++++ b/infra/conf/router.go
+@@ -2,6 +2,7 @@
+ 
+ import (
+ 	"encoding/json"
++	"fmt"
+ 	"strings"
+ 
+ 	"github.com/xtls/xray-core/app/router"
+@@ -29,6 +30,22 @@
+ func (r *BalancingRule) Build() (*router.BalancingRule, error) {
+ 	if r.Tag == "" {
+ 		return nil, errors.New("empty balancer tag")
++	}
++	if strings.EqualFold(r.Strategy.Type, "priority") {
++		levels, err := r.priorityLevels()
++		if err != nil {
++			return nil, err
++		}
++		result := &router.BalancingRule{Tag: r.Tag, Strategy: "priority"}
++		for i, level := range levels {
++			child := &BalancingRule{Tag: fmt.Sprintf("%s-level-%d", r.Tag, i+1), Selectors: level.Selectors, Strategy: level.Strategy}
++			built, err := child.Build()
++			if err != nil {
++				return nil, err
++			}
++			result.PriorityLevels = append(result.PriorityLevels, built)
++		}
++		return result, nil
+ 	}
+ 	if len(r.Selectors) == 0 {
+ 		return nil, errors.New("empty selector list")
+@@ -120,6 +137,7 @@
+ type RouterRule struct {
+ 	RuleTag     string `json:"ruleTag"`
+ 	OutboundTag string `json:"outboundTag"`
++	FallbackTag string `json:"fallbackTag"`
+ 	BalancerTag string `json:"balancerTag"`
+ }
+ 
+@@ -159,6 +177,10 @@
+ 
+ 	rule := new(router.RoutingRule)
+ 	rule.RuleTag = rawFieldRule.RuleTag
++	rule.FallbackTag = rawFieldRule.FallbackTag
++	if rule.FallbackTag != "" && (rawFieldRule.OutboundTag == "" || rawFieldRule.BalancerTag != "" || rule.FallbackTag == rawFieldRule.OutboundTag) {
++		return nil, errors.New("fallbackTag requires a different standalone outboundTag")
++	}
+ 	switch {
+ 	case len(rawFieldRule.OutboundTag) > 0:
+ 		rule.TargetTag = &router.RoutingRule_Tag{
+--- a/infra/conf/strategy_observatory.go
++++ b/infra/conf/strategy_observatory.go
+@@ -7,6 +7,7 @@
+ 	"strings"
+ 	"time"
+ 
++	"github.com/xtls/xray-core/app/observatory/burst"
+ 	strategyobs "github.com/xtls/xray-core/app/observatory/strategy"
+ 	"github.com/xtls/xray-core/common/serial"
+ 	"google.golang.org/protobuf/proto"
+@@ -24,7 +25,7 @@
+ }
+ func (c StrategyObservatoryConfig) Build(legacy *ObservatoryConfig, burstLegacy *BurstObservatoryConfig, scopes ...map[string][]string) (proto.Message, error) {
+ 	for name, raw := range c {
+-		if name != "leastPing" && name != "leastLoad" && name != "random" && name != "roundRobin" {
++		if name != "leastPing" && name != "leastLoad" && name != "random" && name != "roundRobin" && name != "outbound" {
+ 			return nil, fmt.Errorf("unknown probe strategy %q", name)
+ 		}
+ 		if len(raw) == 0 || string(raw) == "null" {
+@@ -32,8 +33,12 @@
+ 		}
+ 	}
+ 	result := &strategyobs.Config{Observers: map[string]*serial.TypedMessage{}}
+-	for _, name := range []string{"leastPing", "leastLoad", "random", "roundRobin"} {
++	for _, name := range []string{"leastPing", "leastLoad", "random", "roundRobin", "outbound"} {
+ 		raw, explicit := c[name]
++		// Never inherit load-balancer measurements or schedules for direct routes.
++		if name == "outbound" && !explicit {
++			continue
++		}
+ 		if !explicit && len(scopes) > 0 && len(scopes[0][name]) == 0 {
+ 			continue
+ 		}
+@@ -96,6 +101,9 @@
+ 		if err != nil {
+ 			return nil, err
+ 		}
++		if name == "outbound" {
++			msg.(*burst.Config).ExactSelector = true
++		}
+ 		result.Observers[name] = serial.ToTypedMessage(msg)
+ 	}
+ 	return result, nil
+--- a/infra/conf/xray.go
++++ b/infra/conf/xray.go
+@@ -580,6 +580,9 @@
+ 		if err != nil {
+ 			return nil, errors.New("failed to build routing configuration").Base(err)
+ 		}
++		if err := c.configureOutboundHealth(routerConfig); err != nil {
++			return nil, err
++		}
+ 		config.App = append(config.App, serial.ToTypedMessage(routerConfig))
+ 	}
+ 

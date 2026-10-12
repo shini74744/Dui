@@ -29,11 +29,14 @@
                 <a-tag :style="{ margin: '0' }" :color="balancer.strategy=='random' ? 'purple' : 'green'">[[ balancerStrategyLabel(balancer.strategy) ]]</a-tag>
             </template>
             <template slot="selector" slot-scope="text, balancer, index">
-                <a-tag class="info-large-tag" :style="{ margin: '1' }" v-for="sel in balancer.selector">[[ sel ]]</a-tag>
+                <div v-if="balancer.strategy === 'priority'" v-for="(level,i) in balancer.levels" :key="i" style="margin:6px 0;overflow-wrap:anywhere">
+                    <span>[[ i + 1 ]]. [[ balancerStrategyLabel(level.strategy.type) ]] · </span>
+                    <a-tag v-for="tag in level.selector" :key="tag" style="margin:2px;white-space:normal;max-width:100%">[[ tag ]]</a-tag>
+                </div>
+                <a-tag v-if="balancer.strategy !== 'priority'" class="info-large-tag" :style="{ margin: '1' }" v-for="sel in balancer.selector">[[ sel ]]</a-tag>
             </template>
         </a-table>
-        <dui-strategy-probes :key="obsRevision" :value="templateSettings"
-            @input="templateSettings=$event" @validity="obsFormValid=$event"></dui-strategy-probes>
+
     </a-space>
 </template>
 <template v-else>
@@ -43,4 +46,6 @@
         </a-button>
     </a-empty>
 </template>
+        <dui-strategy-probes :key="obsRevision" :value="templateSettings"
+            @input="templateSettings=$event" @validity="obsFormValid=$event"></dui-strategy-probes>
 {{end}}

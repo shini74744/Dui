@@ -3,7 +3,7 @@ const P=require('../web/assets/js/util/strategy-probes.js');
 const L=require('../web/assets/js/util/strategy-probes-i18n.js');
 let cases=0;const test=(name,fn)=>{fn();cases++};
 const fixture=()=>({
- routing:{balancers:P.types.map(type=>({tag:type,selector:['shared'],strategy:{type}}))},
+ routing:{rules:[{outboundTag:'shared'}],balancers:P.balancingTypes.map(type=>({tag:type,selector:['shared'],strategy:{type}}))},
  outbounds:[{tag:'shared',protocol:'freedom'}],
  observatory:{subjectSelector:['shared'],probeURL:'https://example.test/ping',probeInterval:'11m',enableConcurrency:true,unknown:'keep'},
  burstObservatory:{subjectSelector:['shared'],pingConfig:{destination:'https://example.test/burst',interval:'30m',timeout:'10s',sampling:2,connectivity:'',httpMethod:'HEAD'},future:{value:1}}
@@ -68,10 +68,24 @@ test('outbound sync follows all four probe scopes but ordinary rename does not',
  const ordinary=ctx.refs.prepare(c,0,{tag:'renamed',protocol:'freedom'},'replace');
  for(const type of P.types)assert.deepEqual(Array.from(ordinary.strategyObservatory[type].subjectSelector),['shared']);
 });
-test('new strategy defaults are 30 seconds',()=>{
+test('new strategy defaults are one minute',()=>{
 for (const type of P.types) {
  const fresh=P.read({},type);
- assert.equal(type==='leastPing'?fresh.probeInterval:fresh.pingConfig.interval,'30s');
+ assert.equal(type==='leastPing'?fresh.probeInterval:fresh.pingConfig.interval,'1m');
 }
+});
+test('user settings win for existing, inherited and temporarily unused probes',()=>{
+ const c=fixture();c.routing.balancers=c.routing.balancers.filter(b=>b.strategy.type==='roundRobin');
+ const original=P.clone(c);
+ for(const type of ['random','leastLoad','roundRobin'])assert.equal(P.read(c,type).pingConfig.interval,'30m');
+ assert.equal(P.read(c,'leastPing').probeInterval,'11m');
+ assert.deepEqual(c,original);
+ const tier={tag:'tier',strategy:{type:'priority',settings:{levels:[{selector:['shared'],strategy:{type:'leastLoad'}},{selector:['shared'],strategy:{type:'leastPing'}}]}}};
+ c.routing.balancers.push(tier);P.enablePriority(c);
+ assert.equal(c.strategyObservatory.leastLoad.pingConfig.interval,'30m');assert.equal(c.strategyObservatory.leastPing.probeInterval,'11m');
+ c.strategyObservatory.random={subjectSelector:[],pingConfig:{interval:'7m'}};
+ c.routing.balancers.push({tag:'new-random',selector:['shared'],strategy:{type:'random'}});P.syncSelectors(c);
+ assert.equal(P.read(c,'random').pingConfig.interval,'7m');
+ assert.deepEqual(c.burstObservatory,original.burstObservatory);assert.deepEqual(c.observatory,original.observatory);
 });
 console.log(JSON.stringify({passed:true,cases}));

@@ -60,6 +60,7 @@
                 </template>
                 [[ rule.outboundTag ]]
             </a-popover>
+            <div v-if="rule.fallbackTag" style="font-size:12px;opacity:.75;overflow-wrap:anywhere">Fallback: [[ rule.fallbackTag ]]</div>
         </template>
         <template slot="balancer" slot-scope="text, rule, index">
             <a-popover :overlay-class-name="themeSwitcher.currentTheme">

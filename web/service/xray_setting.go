@@ -76,6 +76,7 @@ func (s *XraySettingService) CheckXrayConfig(XrayTemplateConfig string) error {
 	}
 
 	outboundTags := map[string]bool{}
+	probeableTags := map[string]bool{}
 	if outbounds, ok := raw["outbounds"].([]any); ok {
 		for i, item := range outbounds {
 			obj, ok := item.(map[string]any)
@@ -98,6 +99,8 @@ func (s *XraySettingService) CheckXrayConfig(XrayTemplateConfig string) error {
 				}
 			}
 			outboundTags[tag] = true
+			protocol, _ := obj["protocol"].(string)
+			probeableTags[tag] = tag != "api" && !strings.HasPrefix(tag, "__dui_blacklist_") && protocol != "blackhole" && protocol != "dns" && protocol != "loopback"
 		}
 	}
 
@@ -116,6 +119,9 @@ func (s *XraySettingService) CheckXrayConfig(XrayTemplateConfig string) error {
 		}
 	}
 
+	if err := validateRouteHealth(raw, probeableTags); err != nil {
+		return err
+	}
 	rules, _ := routing["rules"].([]any)
 	matchKeys := []string{"domain", "ip", "port", "sourcePort", "network", "source", "sourceIP", "user", "inboundTag", "protocol", "attrs"}
 	for i, item := range rules {
