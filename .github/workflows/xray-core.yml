@@ -49,6 +49,7 @@ jobs:
           go build -o "$RUNNER_TEMP/dui-closewait-panel" .
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-close-wait-integration.py
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-strategy-probes-integration.py
+          DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-route-health-integration.py
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-probe-history-integration.py
       - name: Package complete modified source
         run: |

@@ -6,6 +6,7 @@ const context = vm.createContext({ console });
 vm.runInContext(read('web/assets/js/util/outbound-references.js') + '\nthis.refs = DuiOutboundReferences;', context);
 vm.runInContext(read('web/assets/js/util/outbound-order.js') + '\nthis.outboundOrder = DuiOutboundOrder;', context);
 const { refs } = context;
+vm.runInContext(read('web/assets/js/util/strategy-probes.js'), context);
 const oldTag = 'HK-HKT-B-DDG', newTag = 'HK-HKT-NEW';
 const node = tag => ({tag, protocol:'freedom', settings:{domainStrategy:'AsIs'}});
 const fixture = () => ({

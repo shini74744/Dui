@@ -110,9 +110,15 @@
       </a-select>
     </a-form-item>
     <a-form-item label='{{ i18n "pages.xray.rules.OutboundTag" }}'>
-      <a-select v-model="ruleModal.rule.outboundTag" :dropdown-class-name="themeSwitcher.currentTheme">
+      <a-select v-model="ruleModal.rule.outboundTag" @change="ruleModal.primaryChanged()" :dropdown-class-name="themeSwitcher.currentTheme">
         <a-select-option v-for="tag in ruleModal.outboundTags" :value="tag">[[ tag ]]</a-select-option>
       </a-select>
+    </a-form-item>
+    <a-form-item label="Fallback" v-if="ruleModal.primaryProbeable() && !ruleModal.rule.balancerTag">
+      <a-select v-model="ruleModal.rule.fallbackTag" :allow-clear="true" :dropdown-class-name="themeSwitcher.currentTheme">
+        <a-select-option v-for="tag in ruleModal.probeTags.filter(t => t !== ruleModal.rule.outboundTag)" :key="tag" :value="tag">[[ tag ]]</a-select-option>
+      </a-select>
+      <div style="font-size:12px;line-height:1.7;opacity:.7;margin-top:6px">[[ ruleModal.healthText().fallbackHelp ]]</div>
     </a-form-item>
     <a-form-item>
       <template slot="label">
@@ -596,6 +602,7 @@
       blacklistAction: String(source._blacklistAction || source.blacklistAction || 'deny'),
       blacklistRedirect: String(source._blacklistRedirect || source.blacklistRedirect || ''),
     };
+    if (source.fallbackTag) normalized.fallbackTag = String(source.fallbackTag);
     return duiBlacklistHash(JSON.stringify(normalized));
   }
 
@@ -1377,8 +1384,13 @@
       protocol: [],
       attrs: [],
       outboundTag: "",
+      fallbackTag: "",
       balancerTag: "",
     },
+    probeTags: [],
+    healthText() {return DuiProbeI18n.get(LanguageManager.getLanguage())},
+    primaryProbeable() {return this.probeTags.includes(this.rule.outboundTag)},
+    primaryChanged() {if (!this.primaryProbeable() || this.rule.fallbackTag === this.rule.outboundTag) this.rule.fallbackTag = ''},
     inboundTags: [],
     outboundTags: [],
     users: [],
@@ -1512,6 +1524,7 @@
         this.rule.protocol = rule.protocol;
         this.rule.attrs = rule.attrs ? Object.entries(rule.attrs) : [];
         this.rule.outboundTag = rule.outboundTag;
+        this.rule.fallbackTag = rule.fallbackTag || "";
         this.rule.balancerTag = rule.balancerTag ? rule.balancerTag : "";
       } else {
         this.rule = {
@@ -1532,6 +1545,7 @@
           protocol: [],
           attrs: [],
           outboundTag: "",
+      fallbackTag: "",
           balancerTag: "",
         }
       }
@@ -1549,6 +1563,7 @@
       this.inboundTags = app.templateSettings.inbounds.filter((i) => !ObjectUtil.isEmpty(i.tag)).map(obj => obj.tag);
       this.inboundTags.push(...app.inboundTags);
       if (app.enableDNS && !ObjectUtil.isEmpty(app.dnsTag)) this.inboundTags.push(app.dnsTag)
+      this.probeTags = DuiStrategyProbes.probeable(app.templateSettings);
       this.outboundTags = ["", ...app.templateSettings.outbounds.filter((o) => !ObjectUtil.isEmpty(o.tag) && !String(o.tag).startsWith('__dui_blacklist_')).map(obj => obj.tag)];
       if (app.templateSettings.reverse) {
         if (app.templateSettings.reverse.bridges) {
@@ -1596,6 +1611,7 @@
       delete blacklistCommon.domain;
       delete blacklistCommon.ip;
       delete blacklistCommon.outboundTag;
+      delete blacklistCommon.fallbackTag;
       delete blacklistCommon.balancerTag;
       blacklistCommon.outboundTag = blacklistTag;
 
@@ -1627,6 +1643,7 @@
       rule.protocol = value.protocol;
       rule.attrs = Object.fromEntries(value.attrs);
       rule.outboundTag = value.outboundTag == "" ? undefined : value.outboundTag;
+      rule.fallbackTag = value.outboundTag && !value.balancerTag ? (value.fallbackTag || undefined) : undefined;
       rule.balancerTag = value.balancerTag == "" ? undefined : value.balancerTag;
       for (const [key, value] of Object.entries(rule)) {
         if (value !== null && value !== undefined && !(Array.isArray(value) && value.length === 0) && !(typeof value === 'object' && Object.keys(value).length === 0) && value !== '') {

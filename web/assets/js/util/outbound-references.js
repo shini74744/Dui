@@ -6,18 +6,21 @@ const DuiOutboundReferences = (() => {
 
     function visit(config, exact, selector) {
         list(config.routing?.rules).forEach((rule, index) => {
-            if (rule) exact(rule, 'outboundTag', 'routes', index + 1);
+            if (rule) { exact(rule, 'outboundTag', 'routes', index + 1); exact(rule, 'fallbackTag', 'routes', index + 1); }
         });
         list(config.routing?.balancers).forEach(balancer => {
             if (!balancer) return;
             exact(balancer, 'fallbackTag', 'balancers');
             selector(balancer, 'selector', 'balancers');
+            if (balancer.strategy?.type === 'priority') for (const level of balancer.strategy.settings?.levels || [])
+                list(level.selector).forEach((_,i) => exact(level.selector,i,'balancers'));
         });
         for (const key of ['observatory', 'burstObservatory']) {
             if (config[key]) selector(config[key], 'subjectSelector', 'observatories');
         }
-        for (const observer of Object.values(config.strategyObservatory || {})) {
-            if (observer) selector(observer, 'subjectSelector', 'observatories');
+        for (const [scope,observer] of Object.entries(config.strategyObservatory || {})) {
+            if (scope === 'outbound' && observer) list(observer.subjectSelector).forEach((_,i) => exact(observer.subjectSelector,i,'observatories'));
+            else if (observer) selector(observer, 'subjectSelector', 'observatories');
         }
         function streamRefs(stream) {
             if (!stream) return;

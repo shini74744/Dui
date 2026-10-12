@@ -3,7 +3,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root=require('path').resolve(__dirname,'..'),work=process.env.DUI_PROBE_TEST_OUTPUT || require('os').tmpdir();
 const read=n=>fs.readFileSync(root+'/'+n,'utf8');
 const P=require(root+'/web/assets/js/util/strategy-probes.js'),I=require(root+'/web/assets/js/util/strategy-probes-i18n.js');
-const base={routing:{balancers:P.types.map(type=>({tag:type,selector:['shared'],strategy:{type}}))},outbounds:[{tag:'shared',protocol:'freedom'}],
+const base={routing:{rules:[{outboundTag:'shared'}],balancers:P.balancingTypes.map(type=>({tag:type,selector:['shared'],strategy:{type}}))},outbounds:[{tag:'shared',protocol:'freedom'}],
  observatory:{subjectSelector:['shared'],probeURL:'https://example.test/ping',probeInterval:'10m',enableConcurrency:true},
  burstObservatory:{subjectSelector:['shared'],pingConfig:{destination:'https://example.test/check',interval:'30m',timeout:'10s',sampling:2,connectivity:''}}};
 function html(lang,width,theme){

@@ -1,24 +1,60 @@
 // UI labels are localized; core field names and outbound tags remain unchanged.
 const DuiStrategyProbes = (() => {
-    const types = ['leastPing', 'leastLoad', 'random', 'roundRobin'];
+    const types = ['leastPing', 'leastLoad', 'random', 'roundRobin', 'outbound'];
     const clone = value => JSON.parse(JSON.stringify(value));
     const plain = value => value && typeof value === 'object' && !Array.isArray(value);
+    const balancingTypes = types.filter(type => type !== 'outbound');
+    const probeable = config => (config.outbounds || []).filter(o => o.tag && o.tag !== 'api' && !o.tag.startsWith('__dui_blacklist_') && !['blackhole','dns','loopback'].includes(o.protocol)).map(o => o.tag);
     function selectors(config, type) {
-        return [...new Set((config.routing?.balancers || []).filter(b => (b.strategy?.type || 'random') === type)
-            .flatMap(b => b.selector || []))];
+        if (type === 'outbound') {
+            const eligible = new Set(probeable(config));
+            return [...new Set((config.routing?.rules || []).filter(r => !r.balancerTag)
+                .flatMap(r => [r.outboundTag, r.fallbackTag]).filter(t => eligible.has(t)))];
+        }
+        return [...new Set((config.routing?.balancers || []).flatMap(b =>
+            b.strategy?.type === 'priority' ? (b.strategy.settings?.levels || []) : [b])
+            .filter(b => (b.strategy?.type || 'random') === type).flatMap(b => b.selector || []))];
+    }
+    function enable(config, type) {
+        if (!config.strategyObservatory?.[type]) {
+            config.strategyObservatory = config.strategyObservatory || {};
+            config.strategyObservatory[type] = read(config, type);
+        }
+        return syncSelectors(config);
+    }
+    function enablePriority(config) {
+        for (const b of config.routing?.balancers || []) {
+            if (b.strategy?.type === 'priority') for (const l of b.strategy.settings?.levels || [])
+                enable(config, l.strategy?.type || 'random');
+        }
+        return syncSelectors(config);
+    }
+    function balancerValue(draft) {
+        const result = {tag:draft.tag};
+        if (draft.strategy === 'priority') {
+            const levels = clone(draft.levels || []);
+            if (!levels.length || levels.length > 10 || levels.some(l => !l.selector?.length || !balancingTypes.includes(l.strategy?.type))) throw new Error('invalid priority levels');
+            result.strategy = {type:'priority', settings:{levels}};
+        } else {
+            result.selector = clone(draft.selector || []);
+            result.fallbackTag = draft.fallbackTag || '';
+            result.strategy = {type:draft.strategy || 'random'};
+            if (draft.strategySettings) result.strategy.settings = clone(draft.strategySettings);
+        }
+        return result;
     }
     function read(config, type) {
         const fallback = type === 'leastPing'
-            ? { subjectSelector: [], probeURL: 'http://www.google.com/gen_204', probeInterval: '30s', enableConcurrency: true }
-            : { subjectSelector: [], pingConfig: { destination: 'http://www.google.com/gen_204', interval: '30s',
+            ? { subjectSelector: [], probeURL: 'http://www.google.com/gen_204', probeInterval: '1m', enableConcurrency: true }
+            : { subjectSelector: [], pingConfig: { destination: 'http://www.google.com/gen_204', interval: '1m',
                 connectivity: 'http://connectivitycheck.platform.hicloud.com/generate_204', timeout: '10s', sampling: 2 } };
         const explicit = config.strategyObservatory?.[type];
-        const legacy = config[type === 'leastPing' ? 'observatory' : 'burstObservatory'];
+        const legacy = type === 'outbound' ? null : config[type === 'leastPing' ? 'observatory' : 'burstObservatory'];
         const result = clone(explicit || legacy || fallback);
         // Fill omitted core defaults, not the panel's first-install defaults.
         if (type === 'leastPing') {
             if (result.probeURL == null) result.probeURL = 'https://www.google.com/generate_204';
-            if (result.probeInterval == null) result.probeInterval = '10s';
+            if (result.probeInterval == null) result.probeInterval = '1m';
             if (result.enableConcurrency == null) result.enableConcurrency = false;
         } else {
             result.pingConfig = result.pingConfig || {};
@@ -70,6 +106,6 @@ const DuiStrategyProbes = (() => {
         }
         return config;
     }
-    return {types, clone, read, update, selectors, syncSelectors, validate, duration};
+    return {types, balancingTypes, probeable, enable, enablePriority, balancerValue, clone, read, update, selectors, syncSelectors, validate, duration};
 })();
 if (typeof module !== 'undefined') module.exports = DuiStrategyProbes;

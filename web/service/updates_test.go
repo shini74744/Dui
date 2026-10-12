@@ -10,6 +10,8 @@ func TestUpdateItemUnknownAndStoppedCore(t *testing.T) {
 		name, current, latest          string
 		known, available, currentState bool
 	}{
+		{"two_digit_upgrade", "vx-26.9", "vx-26.10", true, true, false},
+		{"two_digit_installed", "vx-26.10", "vx-26.9", true, false, true},
 		{"stopped_old", "vx-26.6", "vx-26.7", true, true, false},
 		{"official_core", "26.9.9", "vx-26.7", true, true, false},
 		{"official_core_v_prefix", "v26.9.9", "vx-26.7", true, true, false},

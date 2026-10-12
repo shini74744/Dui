@@ -9,12 +9,12 @@ Dui 是面向 Linux VPS 的 Xray 管理面板，提供入站、出站、路由�
 
 ## 当前发布版本
 
-文档核对日期：2026-10-10。后续版本请以 [Releases](https://github.com/shini74744/Dui/releases) 为准。
+文档核对日期：2026-10-13。后续版本请以 [Releases](https://github.com/shini74744/Dui/releases) 为准。
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| 面板 | [v26.9.54](https://github.com/shini74744/Dui/releases/tag/v26.9.54) | 修复保留 WARP/WireGuard 配置时的后台更新校验，继续支持下载测速和独立策略探测 |
-| DUI 核心 | [vx-26.9](https://github.com/shini74744/Dui/releases/tag/vx-26.9) | 基于 Xray v26.9.9；WireGuard 升级校验兼容与路由表冲突修复；四种策略按探测结果排除故障出口，备用出口可留空 |
+| 面板 | [v26.9.55](https://github.com/shini74744/Dui/releases/tag/v26.9.55) | 单独路由 Fallback、自定义分级策略、刷新保留标签页；新探测默认 1m |
+| DUI 核心 | [vx-26.10](https://github.com/shini74744/Dui/releases/tag/vx-26.10) | 基于 Xray v26.9.9；单独出口主备、分级故障切换与相同参数探测复用，保留 WireGuard 升级兼容 |
 | 辅助协议组件 | 随面板安装包发布 | TUIC、MTProto 与 AmneziaWG 的能力和平台支持见 [组件说明](core/helpers/README.md) |
 
 v26.9.54 / vx-26.9 修复旧配置含 WARP/WireGuard 时的更新校验冲突，无需删除已有出口。详情见 [后台更新及旧版兼容](docs/verified-updates.md)。
@@ -22,6 +22,8 @@ v26.9.54 / vx-26.9 修复旧配置含 WARP/WireGuard 时的更新校验冲突，
 v26.9.53 新增 [出站下载测速](docs/outbound-speedtest.md)、策略探测折叠菜单及新配置默认 30 秒间隔。已保存的检测间隔不会自动覆盖。测速页同时提供紧凑布局、实际采样进度和不完整结果提示。
 
 核心 vx-26.8 将四种策略的故障出口排除与备用出口解耦；备用出口留空且全部候选出口不可用时拒绝新连接，探测恢复后自动重新使用。详见[策略探测与故障切换](docs/strategy-probes.md)。
+
+v26.9.55 / vx-26.10 增加单独路由 Fallback、自定义分级优先和相同参数探测复用；新安装、新配置默认间隔为 1 分钟，保留用户已有设置，并保留刷新前的 Xray 设置标签页。
 
 面板的 `v26.9.*` 与核心的 `vx-26.*` 独立编号。首页分别显示两个组件的已安装版本与可用更新；核心的上游版本、构建来源记录在 `BUILD.json` 中。
 
@@ -33,7 +35,7 @@ v26.9.53 新增 [出站下载测速](docs/outbound-speedtest.md)、策略探测�
 | 出站改名后同步路由、负载均衡、探测和链式出站引用 | [出站同步保存](docs/outbound-reference-sync.md) |
 | 鼠标/手机拖动出站排序、默认出口 | [出站排序](docs/outbound-order.md) |
 | 面板服务器端下载测速、单/多线程、流量限制和不完整结果 | [出站测速](docs/outbound-speedtest.md) |
-| 四种策略独立探测、检测间隔、最近 7 天记录 | [策略探测](docs/strategy-probes.md) |
+| 策略与单独出口探测、分级切换、最近 7 天记录 | [策略探测](docs/strategy-probes.md) |
 | 自维护核心特性、版本兼容和构建来源 | [DUI Xray 核心](core/xray/README.md) |
 | 辅助协议的路由、用户控制和平台能力 | [协议配套组件](core/helpers/README.md) |
 | 历史更新 | [更新日志](CHANGELOG.md) |
