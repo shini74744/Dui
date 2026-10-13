@@ -32,15 +32,19 @@ type SpeedTestRequest struct {
 	Threads int      `json:"threads"`
 }
 type SpeedTestRow struct {
-	Tag          string  `json:"tag"`
-	State        string  `json:"state"`
-	Error        string  `json:"error,omitempty"`
-	Bytes        int64   `json:"bytes"`
-	Seconds      float64 `json:"seconds"`
-	Mbps         float64 `json:"mbps"`
-	CurrentMbps  float64 `json:"currentMbps"`
-	Progress     int     `json:"progress"`
-	LimitReached bool    `json:"limitReached"`
+	Phase        string           `json:"phase,omitempty"`
+	Download     SpeedMeasurement `json:"download"`
+	Upload       SpeedMeasurement `json:"upload"`
+	Ping         SpeedLatency     `json:"ping"`
+	Tag          string           `json:"tag"`
+	State        string           `json:"state"`
+	Error        string           `json:"error,omitempty"`
+	Bytes        int64            `json:"bytes"`
+	Seconds      float64          `json:"seconds"`
+	Mbps         float64          `json:"mbps"`
+	CurrentMbps  float64          `json:"currentMbps"`
+	Progress     int              `json:"progress"`
+	LimitReached bool             `json:"limitReached"`
 }
 type SpeedTestJob struct {
 	ID        string         `json:"id"`
@@ -210,7 +214,7 @@ func (m *OutboundSpeedTestManager) Start(raw []byte, req SpeedTestRequest) (Spee
 		m.mu.Unlock()
 		return SpeedTestJob{}, errors.New("busy")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 11*time.Minute)
 	m.cancel = cancel
 	m.job = SpeedTestJob{ID: speedToken(), State: "running", Threads: req.Threads, StartedAt: time.Now().UnixMilli(), Rows: []SpeedTestRow{}}
 	for _, tag := range req.Tags {
@@ -251,7 +255,7 @@ func (m *OutboundSpeedTestManager) run(ctx context.Context, cancel context.Cance
 		row := SpeedTestRow{Tag: tag, State: "preparing"}
 		m.setRow(i, row)
 		func() {
-			workerCtx, workerCancel := context.WithTimeout(ctx, 30*time.Second)
+			workerCtx, workerCancel := context.WithTimeout(ctx, 60*time.Second)
 			defer workerCancel()
 			client, cleanup, err := startSpeedWorker(workerCtx, binary, raw, tag)
 			if err != nil {
@@ -265,13 +269,13 @@ func (m *OutboundSpeedTestManager) run(ctx context.Context, cancel context.Cance
 				return
 			}
 			defer cleanup()
-			row = measureSpeed(workerCtx, client, speedTestURL, tag, req.Threads, speedTestDuration, speedTestLimit, func(r SpeedTestRow) { m.setRow(i, r) })
+			row = measureSpeedSuite(workerCtx, client, speedTestURL, speedUploadURL, speedPingURL, tag, req.Threads, speedTestDuration, speedTestLimit, func(r SpeedTestRow) { m.setRow(i, r) })
 			if ctx.Err() != nil {
 				row.State = "cancelled"
 				row.Error = ""
 			} else if row.State == "cancelled" {
 				row.State = "failed"
-				row.Error = "download_failed"
+				row.Error = "test_timeout"
 			}
 			m.setRow(i, row)
 		}()
