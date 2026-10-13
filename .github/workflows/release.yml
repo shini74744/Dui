@@ -63,7 +63,9 @@ jobs:
       - name: Go tests
         run: go test ./...
       - name: Verified updater race checks
-        run: go test -race ./internal/update
+        run: |
+          go test -race ./internal/update
+          go test -race ./web/service -run "^TestSpeed" -count=1 -timeout=90s
       - name: Privileged WireGuard validation isolation
         run: sudo env PATH="$PATH" GOPATH="$(go env GOPATH)" GOCACHE="$(go env GOCACHE)" DUI_TEST_NETNS=1 go test ./internal/update -run TestWireGuard -count=1
       - name: Updater layout and progress tests
@@ -72,6 +74,7 @@ jobs:
           npm install --prefix /tmp/dui-updater-ui playwright
           /tmp/dui-updater-ui/node_modules/.bin/playwright install --with-deps chromium
           PLAYWRIGHT_MODULE=/tmp/dui-updater-ui/node_modules/playwright node scripts/test-updates-ui.cjs
+          PLAYWRIGHT_MODULE=/tmp/dui-updater-ui/node_modules/playwright node scripts/test-outbound-speedtest-ui.cjs
 
   test-docker:
     name: Docker amd64 smoke test

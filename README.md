@@ -13,7 +13,7 @@ Dui 是面向 Linux VPS 的 Xray 管理面板，提供入站、出站、路由�
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| 面板 | [v26.9.55](https://github.com/shini74744/Dui/releases/tag/v26.9.55) | 单独路由 Fallback、自定义分级策略、刷新保留标签页；新探测默认 1m |
+| 面板 | [v26.9.57](https://github.com/shini74744/Dui/releases/tag/v26.9.57) | 出口弹窗测速：下载、上传、实时 Ping；探测启用开关与快捷记录查看 |
 | DUI 核心 | [vx-26.10](https://github.com/shini74744/Dui/releases/tag/vx-26.10) | 基于 Xray v26.9.9；单独出口主备、分级故障切换与相同参数探测复用，保留 WireGuard 升级兼容 |
 | 辅助协议组件 | 随面板安装包发布 | TUIC、MTProto 与 AmneziaWG 的能力和平台支持见 [组件说明](core/helpers/README.md) |
 
@@ -25,6 +25,8 @@ v26.9.53 新增 [出站下载测速](docs/outbound-speedtest.md)、策略探测�
 
 v26.9.55 / vx-26.10 增加单独路由 Fallback、自定义分级优先和相同参数探测复用；新安装、新配置默认间隔为 1 分钟，保留用户已有设置，并保留刷新前的 Xray 设置标签页。
 
+v26.9.56 增加单独出口探测启用开关及每条出口的快捷记录查看，保留用户已有参数。v26.9.57 将出口测速改为弹窗，直接从每行菜单打开，增加上传测速和实时 HTTP Ping；关闭后保留列表位置，后台任务继续。内核仍为 vx-26.10。
+
 面板的 `v26.9.*` 与核心的 `vx-26.*` 独立编号。首页分别显示两个组件的已安装版本与可用更新；核心的上游版本、构建来源记录在 `BUILD.json` 中。
 
 ## 使用文档
@@ -34,7 +36,7 @@ v26.9.55 / vx-26.10 增加单独路由 Fallback、自定义分级优先和相同
 | 首页更新提示、后台下载、完整性校验、失败恢复和旧版升级 | [后台更新](docs/verified-updates.md) |
 | 出站改名后同步路由、负载均衡、探测和链式出站引用 | [出站同步保存](docs/outbound-reference-sync.md) |
 | 鼠标/手机拖动出站排序、默认出口 | [出站排序](docs/outbound-order.md) |
-| 面板服务器端下载测速、单/多线程、流量限制和不完整结果 | [出站测速](docs/outbound-speedtest.md) |
+| 面板服务器端下载/上传测速、实时 Ping、单/多线程与流量限制 | [出站测速](docs/outbound-speedtest.md) |
 | 策略与单独出口探测、分级切换、最近 7 天记录 | [策略探测](docs/strategy-probes.md) |
 | 自维护核心特性、版本兼容和构建来源 | [DUI Xray 核心](core/xray/README.md) |
 | 辅助协议的路由、用户控制和平台能力 | [协议配套组件](core/helpers/README.md) |

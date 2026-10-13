@@ -200,6 +200,8 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
             browser_env.update(DUI_FIXTURE_BASE=base,DUI_FIXTURE_COOKIES=json.dumps(cookies))
             if not os.environ.get('DUI_SKIP_ROUTE_UI'):
                 subprocess.run(['node',str(Path(__file__).with_name('test-route-health-ui.cjs'))],env=browser_env,check=True,timeout=240)
+            if os.environ.get('DUI_SPEED_BROWSER'):
+                subprocess.run(['node',str(Path(__file__).with_name('test-speedtest-menu-ui.cjs'))],env=browser_env,check=True,timeout=120)
             if os.environ.get('DUI_PROBE_CONTROLS_BROWSER'):
                 # Synthetic history is inserted only in this disposable test database.
                 with sqlite3.connect(db) as conn:
