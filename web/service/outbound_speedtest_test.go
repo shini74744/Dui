@@ -99,7 +99,7 @@ func TestSpeedHTTPFailureIsNotReportedAsSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "blocked", 403) }))
 	defer srv.Close()
 	row := measureSpeed(context.Background(), srv.Client(), srv.URL, "test", 1, time.Second, 1024, func(SpeedTestRow) {})
-	if row.State != "failed" || row.Bytes != 0 || row.Error != "download_failed" {
+	if row.State != "failed" || row.Bytes != 0 || row.Error != "download_rejected" || row.HTTPStatus != 403 {
 		t.Fatalf("%+v", row)
 	}
 }

@@ -73,14 +73,13 @@ func bindSpeedTestRequest(c *gin.Context) (service.SpeedTestRequest, error) {
 	// HttpUtil sends a form; also accept JSON for API clients.
 	if c.ContentType() == "application/json" {
 		var body struct {
-			Tags    []string `json:"tags"`
-			Threads int      `json:"threads"`
-			Request string   `json:"request"`
+			service.SpeedTestRequest
+			Request string `json:"request"`
 		}
 		if c.ShouldBindJSON(&body) != nil {
 			return req, errors.New("invalid_request")
 		}
-		req.Tags, req.Threads = body.Tags, body.Threads
+		req = body.SpeedTestRequest
 		if body.Request != "" && json.Unmarshal([]byte(body.Request), &req) != nil {
 			return req, errors.New("invalid_request")
 		}

@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptrace"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,14 +16,18 @@ const speedUploadURL = "https://speed.cloudflare.com/__up"
 const speedPingURL = "https://speed.cloudflare.com/__down?bytes=0"
 
 type SpeedMeasurement struct {
-	State        string  `json:"state"`
-	Error        string  `json:"error,omitempty"`
-	Bytes        int64   `json:"bytes"`
-	Seconds      float64 `json:"seconds"`
-	Mbps         float64 `json:"mbps"`
-	CurrentMbps  float64 `json:"currentMbps"`
-	Progress     int     `json:"progress"`
-	LimitReached bool    `json:"limitReached"`
+	WaitSeconds      float64 `json:"waitSeconds"`
+	WaitLimitSeconds float64 `json:"waitLimitSeconds"`
+	Retries          int     `json:"retries"`
+	HTTPStatus       int     `json:"httpStatus,omitempty"`
+	State            string  `json:"state"`
+	Error            string  `json:"error,omitempty"`
+	Bytes            int64   `json:"bytes"`
+	Seconds          float64 `json:"seconds"`
+	Mbps             float64 `json:"mbps"`
+	CurrentMbps      float64 `json:"currentMbps"`
+	Progress         int     `json:"progress"`
+	LimitReached     bool    `json:"limitReached"`
 }
 type SpeedLatency struct {
 	State     string  `json:"state"`
@@ -39,7 +42,7 @@ type SpeedLatency struct {
 }
 
 func speedMeasurement(r SpeedTestRow) SpeedMeasurement {
-	return SpeedMeasurement{r.State, r.Error, r.Bytes, r.Seconds, r.Mbps, r.CurrentMbps, r.Progress, r.LimitReached}
+	return SpeedMeasurement{State: r.State, Error: r.Error, Bytes: r.Bytes, Seconds: r.Seconds, Mbps: r.Mbps, CurrentMbps: r.CurrentMbps, Progress: r.Progress, LimitReached: r.LimitReached, WaitSeconds: r.WaitSeconds, WaitLimitSeconds: r.WaitLimitSeconds, Retries: r.Retries, HTTPStatus: r.HTTPStatus}
 }
 
 // HTTP round-trip time after the request is written, excluding DNS/TLS setup.
@@ -51,9 +54,6 @@ func measureSpeedPing(ctx context.Context, client *http.Client, target string) (
 	if err != nil {
 		return 0, false
 	}
-	q := req.URL.Query()
-	q.Set("dui", strconv.FormatInt(time.Now().UnixNano(), 10))
-	req.URL.RawQuery = q.Encode()
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Accept-Encoding", "identity")
 	var written, first atomic.Int64
@@ -73,7 +73,7 @@ func measureSpeedPing(ctx context.Context, client *http.Client, target string) (
 	defer resp.Body.Close()
 	_, err = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	elapsed := first.Load() - written.Load()
-	return float64(elapsed) / 1e6, err == nil && resp.StatusCode == http.StatusOK && written.Load() > 0 && elapsed > 0
+	return float64(elapsed) / 1e6, err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && written.Load() > 0 && elapsed > 0
 }
 
 func measureSpeedSuite(ctx context.Context, client *http.Client, downURL, upURL, pingURL, tag string, threads int, duration time.Duration, limit int64, update func(SpeedTestRow)) SpeedTestRow {
@@ -88,6 +88,12 @@ func measureSpeedSuite(ctx context.Context, client *http.Client, downURL, upURL,
 	}
 	var mu sync.Mutex
 	row := SpeedTestRow{Tag: tag, State: "testing", Phase: "latency", Download: SpeedMeasurement{State: "queued"}, Upload: SpeedMeasurement{State: "queued"}, Ping: SpeedLatency{State: "preparing"}}
+	if upURL == "" {
+		row.Upload.State = "skipped"
+	}
+	if pingURL == "" {
+		row.Ping.State = "skipped"
+	}
 	update(row)
 	var previous, jitterSum float64
 	sample := func(probeCtx context.Context) {
@@ -121,11 +127,16 @@ func measureSpeedSuite(ctx context.Context, client *http.Client, downURL, upURL,
 		}
 		update(row)
 	}
-	sample(ctx)
+	if pingURL != "" {
+		sample(ctx)
+	}
 	pingCtx, pingCancel := context.WithCancel(ctx)
 	pingDone := make(chan struct{})
 	go func() {
 		defer close(pingDone)
+		if pingURL == "" {
+			return
+		}
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
@@ -151,12 +162,15 @@ func measureSpeedSuite(ctx context.Context, client *http.Client, downURL, upURL,
 			row.Upload = speedMeasurement(r)
 		}
 		row.Seconds = row.Download.Seconds + row.Upload.Seconds
-		row.Progress = (row.Download.Progress + row.Upload.Progress) / 2
+		row.Progress = row.Download.Progress
+		if upURL != "" {
+			row.Progress = (row.Download.Progress + row.Upload.Progress) / 2
+		}
 		update(row)
 	}
 	down := measureSpeed(ctx, client, downURL, tag, threads, duration, limit, func(r SpeedTestRow) { apply("download", r) })
 	apply("download", down)
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && upURL != "" {
 		up := measureUpload(ctx, client, upURL, tag, threads, duration, limit, func(r SpeedTestRow) { apply("upload", r) })
 		apply("upload", up)
 	}
@@ -174,9 +188,9 @@ func measureSpeedSuite(ctx context.Context, client *http.Client, downURL, upURL,
 		if row.Upload.State == "queued" {
 			row.Upload.State = "cancelled"
 		}
-	case row.Download.State == "failed" && row.Upload.State == "failed":
+	case row.Download.State == "failed" && (row.Upload.State == "failed" || row.Upload.State == "skipped"):
 		row.State = "failed"
-	case row.Download.State != "done" || row.Upload.State != "done" || row.Ping.Samples == 0:
+	case row.Download.State != "done" || (row.Upload.State != "done" && row.Upload.State != "skipped") || (pingURL != "" && row.Ping.Samples == 0):
 		row.State = "partial"
 	default:
 		row.State = "done"
@@ -214,6 +228,7 @@ func (r *speedUploadReader) Read(p []byte) (int, error) {
 func measureUpload(parent context.Context, client *http.Client, target, tag string, threads int, duration time.Duration, limit int64, update func(SpeedTestRow)) SpeedTestRow {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
+	waitingSince := time.Now()
 	var allocated, sent, confirmed atomic.Int64
 	var failures atomic.Int32
 	started := make(chan time.Time, 1)
@@ -281,11 +296,11 @@ func measureUpload(parent context.Context, client *http.Client, target, tag stri
 	}
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
-	row := SpeedTestRow{Tag: tag, State: "connecting"}
+	row := SpeedTestRow{Tag: tag, State: "connecting", WaitLimitSeconds: speedTestWait.Seconds()}
 	update(row)
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
-	connect := time.NewTimer(12 * time.Second)
+	connect := time.NewTimer(speedTestWait)
 	defer connect.Stop()
 	var begin, lastTime time.Time
 	var lastBytes int64
@@ -293,6 +308,10 @@ func measureUpload(parent context.Context, client *http.Client, target, tag stri
 	var measurementTimer *time.Timer
 	finish := func() {
 		row.Bytes = confirmed.Load()
+		row.WaitSeconds = time.Since(waitingSince).Seconds()
+		if !begin.IsZero() {
+			row.WaitSeconds = begin.Sub(waitingSince).Seconds()
+		}
 		if !begin.IsZero() {
 			row.Seconds = time.Since(begin).Seconds()
 			if row.Seconds > 0 {
@@ -346,6 +365,8 @@ func measureUpload(parent context.Context, client *http.Client, target, tag stri
 			row.State = "testing"
 		case <-ticker.C:
 			if begin.IsZero() {
+				finish()
+				update(row)
 				continue
 			}
 			finish()

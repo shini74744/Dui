@@ -22,36 +22,44 @@ import (
 )
 
 const speedTestDuration = 10 * time.Second
+const speedTestWait = 45 * time.Second
+const speedTestWorkerTimeout = 2*(speedTestWait+speedTestDuration) + 15*time.Second
 const speedTestLimit int64 = 512 * 1024 * 1024
 const speedTestURL = "https://speed.cloudflare.com/__down?bytes=25000000"
 
 var OutboundSpeedTests = &OutboundSpeedTestManager{}
 
 type SpeedTestRequest struct {
-	Tags    []string `json:"tags"`
-	Threads int      `json:"threads"`
+	Target  SpeedTestTarget `json:"target"`
+	Tags    []string        `json:"tags"`
+	Threads int             `json:"threads"`
 }
 type SpeedTestRow struct {
-	Phase        string           `json:"phase,omitempty"`
-	Download     SpeedMeasurement `json:"download"`
-	Upload       SpeedMeasurement `json:"upload"`
-	Ping         SpeedLatency     `json:"ping"`
-	Tag          string           `json:"tag"`
-	State        string           `json:"state"`
-	Error        string           `json:"error,omitempty"`
-	Bytes        int64            `json:"bytes"`
-	Seconds      float64          `json:"seconds"`
-	Mbps         float64          `json:"mbps"`
-	CurrentMbps  float64          `json:"currentMbps"`
-	Progress     int              `json:"progress"`
-	LimitReached bool             `json:"limitReached"`
+	WaitSeconds      float64          `json:"waitSeconds"`
+	WaitLimitSeconds float64          `json:"waitLimitSeconds"`
+	Retries          int              `json:"retries"`
+	HTTPStatus       int              `json:"httpStatus,omitempty"`
+	Phase            string           `json:"phase,omitempty"`
+	Download         SpeedMeasurement `json:"download"`
+	Upload           SpeedMeasurement `json:"upload"`
+	Ping             SpeedLatency     `json:"ping"`
+	Tag              string           `json:"tag"`
+	State            string           `json:"state"`
+	Error            string           `json:"error,omitempty"`
+	Bytes            int64            `json:"bytes"`
+	Seconds          float64          `json:"seconds"`
+	Mbps             float64          `json:"mbps"`
+	CurrentMbps      float64          `json:"currentMbps"`
+	Progress         int              `json:"progress"`
+	LimitReached     bool             `json:"limitReached"`
 }
 type SpeedTestJob struct {
-	ID        string         `json:"id"`
-	State     string         `json:"state"`
-	Threads   int            `json:"threads"`
-	StartedAt int64          `json:"startedAt"`
-	Rows      []SpeedTestRow `json:"rows"`
+	Target    SpeedTestTarget `json:"target"`
+	ID        string          `json:"id"`
+	State     string          `json:"state"`
+	Threads   int             `json:"threads"`
+	StartedAt int64           `json:"startedAt"`
+	Rows      []SpeedTestRow  `json:"rows"`
 }
 type OutboundSpeedTestManager struct {
 	mu     sync.Mutex
@@ -191,6 +199,11 @@ func (m *OutboundSpeedTestManager) Start(raw []byte, req SpeedTestRequest) (Spee
 	if len(req.Tags) < 1 || len(req.Tags) > 10 || req.Threads < 1 || req.Threads > 16 {
 		return SpeedTestJob{}, errors.New("invalid_request")
 	}
+	target, err := resolveSpeedTarget(req.Target)
+	if err != nil {
+		return SpeedTestJob{}, err
+	}
+	req.Target = target
 	seen := map[string]bool{}
 	for _, tag := range req.Tags {
 		if tag == "" || seen[tag] {
@@ -214,9 +227,9 @@ func (m *OutboundSpeedTestManager) Start(raw []byte, req SpeedTestRequest) (Spee
 		m.mu.Unlock()
 		return SpeedTestJob{}, errors.New("busy")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 11*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(len(req.Tags))*speedTestWorkerTimeout+15*time.Second)
 	m.cancel = cancel
-	m.job = SpeedTestJob{ID: speedToken(), State: "running", Threads: req.Threads, StartedAt: time.Now().UnixMilli(), Rows: []SpeedTestRow{}}
+	m.job = SpeedTestJob{Target: target, ID: speedToken(), State: "running", Threads: req.Threads, StartedAt: time.Now().UnixMilli(), Rows: []SpeedTestRow{}}
 	for _, tag := range req.Tags {
 		m.job.Rows = append(m.job.Rows, SpeedTestRow{Tag: tag, State: "queued"})
 	}
@@ -255,7 +268,7 @@ func (m *OutboundSpeedTestManager) run(ctx context.Context, cancel context.Cance
 		row := SpeedTestRow{Tag: tag, State: "preparing"}
 		m.setRow(i, row)
 		func() {
-			workerCtx, workerCancel := context.WithTimeout(ctx, 60*time.Second)
+			workerCtx, workerCancel := context.WithTimeout(ctx, speedTestWorkerTimeout)
 			defer workerCancel()
 			client, cleanup, err := startSpeedWorker(workerCtx, binary, raw, tag)
 			if err != nil {
@@ -269,7 +282,7 @@ func (m *OutboundSpeedTestManager) run(ctx context.Context, cancel context.Cance
 				return
 			}
 			defer cleanup()
-			row = measureSpeedSuite(workerCtx, client, speedTestURL, speedUploadURL, speedPingURL, tag, req.Threads, speedTestDuration, speedTestLimit, func(r SpeedTestRow) { m.setRow(i, r) })
+			row = measureSpeedSuite(workerCtx, client, req.Target.DownloadURL, req.Target.UploadURL, req.Target.PingURL, tag, req.Threads, speedTestDuration, speedTestLimit, func(r SpeedTestRow) { m.setRow(i, r) })
 			if ctx.Err() != nil {
 				row.State = "cancelled"
 				row.Error = ""
@@ -319,7 +332,7 @@ func startSpeedWorker(ctx context.Context, binary string, raw []byte, tag string
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }()
 	proxyURL := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), User: url.UserPassword(user, password)}
-	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableCompression: true, ForceAttemptHTTP2: false, MaxIdleConnsPerHost: 16, MaxConnsPerHost: 16, TLSHandshakeTimeout: 8 * time.Second, ResponseHeaderTimeout: 10 * time.Second}
+	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableCompression: true, ForceAttemptHTTP2: false, MaxIdleConnsPerHost: 16, MaxConnsPerHost: 16, TLSHandshakeTimeout: 30 * time.Second, ResponseHeaderTimeout: speedTestWait}
 	client := &http.Client{Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("redirect_disabled") }}
 	cleanup := func() { transport.CloseIdleConnections(); _ = cmd.Process.Kill(); <-done; _ = os.RemoveAll(dir) }
 	timer := time.NewTimer(5 * time.Second)
@@ -347,13 +360,21 @@ func startSpeedWorker(ctx context.Context, binary string, raw []byte, tag string
 	}
 }
 
-// Bounded streaming: one HTTP/1 connection per worker, no files and no accumulated response bodies.
-// A shared quota counts bytes reserved by all workers, so parallelism cannot multiply the cap.
+// A slow connection gets a separate budget; sampling begins with the first body byte.
 func measureSpeed(parent context.Context, client *http.Client, target, tag string, threads int, duration time.Duration, limit int64, update func(SpeedTestRow)) SpeedTestRow {
+	return measureSpeedWithWait(parent, client, target, tag, threads, duration, limit, speedTestWait, 2*time.Second, update)
+}
+func measureSpeedWithWait(parent context.Context, client *http.Client, target, tag string, threads int, duration time.Duration, limit int64, wait, retryDelay time.Duration, update func(SpeedTestRow)) SpeedTestRow {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
+	waitingSince := time.Now()
 	var total, reserved atomic.Int64
-	var failures atomic.Int32
+	var failures, retries atomic.Int32
+	type failure struct {
+		code   string
+		status int
+	}
+	var lastFailure atomic.Pointer[failure]
 	var first sync.Once
 	started := make(chan time.Time, 1)
 	var wg sync.WaitGroup
@@ -362,29 +383,70 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 		go func() {
 			defer wg.Done()
 			buf := make([]byte, 32*1024)
+			attempt := int32(0)
+			retry := func() bool {
+				if ctx.Err() != nil || total.Load() > 0 {
+					return false
+				}
+				attempt++
+				delay := retryDelay
+				for i := int32(1); i < attempt && i < 3; i++ {
+					delay *= 2
+				}
+				timer := time.NewTimer(delay)
+				defer timer.Stop()
+				select {
+				case <-ctx.Done():
+					return false
+				case <-timer.C:
+					if total.Load() != 0 || ctx.Err() != nil {
+						return false
+					}
+					for old := retries.Load(); attempt > old; old = retries.Load() {
+						if retries.CompareAndSwap(old, attempt) {
+							break
+						}
+					}
+
+					return true
+				}
+			}
+			record := func(code string, status int) { lastFailure.Store(&failure{code, status}) }
 			for ctx.Err() == nil {
 				req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 				if err != nil {
+					record("download_failed", 0)
 					failures.Add(1)
 					return
 				}
 				req.Header.Set("Accept-Encoding", "identity")
 				req.Header.Set("Cache-Control", "no-cache")
-				req.Header.Set("User-Agent", "DUI-SpeedTest/1")
+				req.Header.Set("User-Agent", "DUI-SpeedTest/2")
 				resp, err := client.Do(req)
 				if err != nil {
 					if ctx.Err() == nil {
+						record("download_failed", 0)
+						if retry() {
+							continue
+						}
 						failures.Add(1)
 					}
 					return
 				}
 				if resp.StatusCode != http.StatusOK {
 					resp.Body.Close()
-					failures.Add(1)
+					record("download_rejected", resp.StatusCode)
+					if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500) && retry() {
+						continue
+					}
+					if ctx.Err() == nil {
+						failures.Add(1)
+					}
 					return
 				}
-				first.Do(func() { started <- time.Now() })
 				var readErr error
+				exhausted := false
+				received := false
 				for ctx.Err() == nil {
 					quota := int64(len(buf))
 					for {
@@ -402,17 +464,19 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 						}
 					}
 					if quota == 0 {
+						exhausted = true
 						break
 					}
 					count, e := resp.Body.Read(buf[:quota])
+					if count > 0 {
+						first.Do(func() { started <- time.Now() })
+						received = true
+					}
 					total.Add(int64(count))
 					reserved.Add(-(quota - int64(count)))
 					if e != nil {
 						readErr = e
 						break
-					}
-					if count == 0 {
-						continue
 					}
 				}
 				resp.Body.Close()
@@ -421,6 +485,21 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 				}
 				if readErr != nil && readErr != io.EOF {
 					if ctx.Err() == nil {
+						record("download_failed", 0)
+						if !received && retry() {
+							continue
+						}
+						failures.Add(1)
+					}
+					return
+				}
+				if exhausted {
+					return
+				}
+				if !received {
+					// A completed empty HTTP 200 response cannot become a download by waiting.
+					if ctx.Err() == nil {
+						record("download_empty", 200)
 						failures.Add(1)
 					}
 					return
@@ -433,19 +512,21 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 	}
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
-	row := SpeedTestRow{Tag: tag, State: "connecting"}
+	row := SpeedTestRow{Tag: tag, State: "connecting", WaitLimitSeconds: wait.Seconds()}
 	update(row)
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
-	connectTimer := time.NewTimer(12 * time.Second)
+	connectTimer := time.NewTimer(wait)
 	defer connectTimer.Stop()
-	var measurementTimer *time.Timer
-	var deadline <-chan time.Time
 	var begin, lastTime time.Time
 	var lastBytes int64
+	var deadline <-chan time.Time
 	finish := func() {
 		row.Bytes = total.Load()
+		row.Retries = int(retries.Load())
+		row.WaitSeconds = time.Since(waitingSince).Seconds()
 		if !begin.IsZero() {
+			row.WaitSeconds = begin.Sub(waitingSince).Seconds()
 			row.Seconds = time.Since(begin).Seconds()
 			if row.Seconds > 0 {
 				row.Mbps = float64(row.Bytes) * 8 / row.Seconds / 1e6
@@ -453,7 +534,6 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 		}
 		row.CurrentMbps = 0
 		row.LimitReached = row.Bytes >= limit
-		// Progress describes sampling, not merely that the task stopped.
 		row.Progress = int(row.Seconds / duration.Seconds() * 100)
 		if row.Progress > 99 {
 			row.Progress = 99
@@ -462,77 +542,67 @@ func measureSpeed(parent context.Context, client *http.Client, target, tag strin
 			row.Progress = 100
 		}
 	}
+	result := func(state string, timedOut bool) SpeedTestRow {
+		cancel()
+		<-done
+		if begin.IsZero() {
+			select {
+			case begin = <-started:
+			default:
+			}
+		}
+		finish()
+		row.State = state
+		if state == "cancelled" {
+			return row
+		}
+		if row.Bytes == 0 {
+			row.State = "failed"
+			row.Error = "download_failed"
+			if f := lastFailure.Load(); f != nil {
+				row.Error = f.code
+				row.HTTPStatus = f.status
+			}
+			if timedOut && row.HTTPStatus == 0 {
+				row.Error = "download_timeout"
+			}
+		} else if failures.Load() > 0 {
+			row.State = "partial"
+			row.Error = "stream_failed"
+		}
+		if row.LimitReached || row.Seconds >= duration.Seconds() {
+			row.Progress = 100
+		}
+		return row
+	}
 	for {
 		select {
 		case begin = <-started:
 			lastTime = begin
-			measurementTimer = time.NewTimer(duration)
-			defer measurementTimer.Stop()
-			deadline = measurementTimer.C
+			timer := time.NewTimer(duration)
+			defer timer.Stop()
+			deadline = timer.C
 			connectTimer.Stop()
 			row.State = "testing"
-		case <-ticker.C:
-			if begin.IsZero() {
-				continue
-			}
 			finish()
-			now := time.Now()
-			elapsed := now.Sub(lastTime).Seconds()
-			row.CurrentMbps = float64(row.Bytes-lastBytes) * 8 / elapsed / 1e6
-			lastBytes = row.Bytes
-			lastTime = now
+			update(row)
+		case <-ticker.C:
+			finish()
+			if !begin.IsZero() {
+				now := time.Now()
+				row.CurrentMbps = float64(row.Bytes-lastBytes) * 8 / now.Sub(lastTime).Seconds() / 1e6
+				lastBytes = row.Bytes
+				lastTime = now
+			}
 			update(row)
 		case <-deadline:
-			cancel()
-			<-done
-			finish()
-			row.State = "done"
-			row.Progress = 100
-			if failures.Load() > 0 {
-				row.State = "partial"
-				row.Error = "stream_failed"
-			}
-			if row.Bytes == 0 {
-				row.State = "failed"
-				row.Error = "download_failed"
-			}
-			return row
+			return result("done", false)
 		case <-done:
-			// A small response can finish before the first timestamp is selected.
-			if begin.IsZero() {
-				select {
-				case begin = <-started:
-				default:
-				}
-			}
-			cancel()
-			finish()
-			if row.LimitReached || row.Seconds >= duration.Seconds() {
-				row.Progress = 100
-			}
-			row.State = "done"
-			if failures.Load() > 0 {
-				row.State = "partial"
-				row.Error = "stream_failed"
-			}
-			if row.Bytes == 0 {
-				row.State = "failed"
-				row.Error = "download_failed"
-			}
-			return row
+			return result("done", false)
 		case <-connectTimer.C:
-			cancel()
-			<-done
-			finish()
-			row.State = "failed"
-			row.Error = "download_failed"
-			return row
+			return result("failed", true)
 		case <-parent.Done():
-			cancel()
-			<-done
-			finish()
-			row.State = "cancelled"
-			return row
+			return result("cancelled", false)
 		}
 	}
 }
