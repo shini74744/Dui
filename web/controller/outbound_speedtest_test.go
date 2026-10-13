@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"github.com/gin-gonic/gin"
 	"net/http/httptest"
 	"net/url"
@@ -41,6 +42,24 @@ func TestSpeedTestOriginGuard(t *testing.T) {
 		c.Request.Header.Set("Sec-Fetch-Site", tc.site)
 		if speedTestSameOrigin(c) != tc.want {
 			t.Fatalf("origin %q", tc.origin)
+		}
+	}
+}
+
+func TestSpeedTargetRequestFormsAndJSON(t *testing.T) {
+	payload := `{"tags":["a"],"threads":4,"target":{"provider":"custom","downloadUrl":"https://test.example/down?x=1","uploadUrl":"https://test.example/up","pingUrl":"https://test.example/ping"}}`
+	wrapped, _ := json.Marshal(map[string]string{"request": payload})
+	for _, tc := range []struct{ ct, body string }{
+		{"application/json", payload},
+		{"application/json", string(wrapped)},
+		{"application/x-www-form-urlencoded", url.Values{"request": {payload}}.Encode()},
+	} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("POST", "https://panel.test/dui/xray/speedTest/start", strings.NewReader(tc.body))
+		c.Request.Header.Set("Content-Type", tc.ct)
+		got, err := bindSpeedTestRequest(c)
+		if err != nil || got.Target.Provider != "custom" || got.Target.DownloadURL != "https://test.example/down?x=1" || got.Target.UploadURL != "https://test.example/up" || got.Target.PingURL != "https://test.example/ping" {
+			t.Fatalf("%s: %+v %v", tc.ct, got, err)
 		}
 	}
 }

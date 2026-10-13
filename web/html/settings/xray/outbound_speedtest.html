@@ -116,6 +116,14 @@
  .dui-speed-modal .dui-speed-ping-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
  .dui-speed-background { display:block; margin:0 0 8px; }
 }
+.dui-speed-heading { min-width:0; overflow-wrap:anywhere; }
+.dui-speed-target { grid-column:1/-1; }
+.dui-speed-custom { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; margin-top:12px; }
+.dui-speed-custom .ant-input { width:100%; min-width:0; }
+.dui-speed-target-note { margin-top:8px; }
+.dui-speed-wait { display:flex; align-items:flex-start; gap:6px; margin-top:10px; font-size:12px; line-height:1.6; color:#008771; overflow-wrap:anywhere; }
+.dui-speed-wait .anticon { flex-shrink:0; margin-top:3px; }
+.dark .dui-speed-wait { color:#42cbb0; }
 </style>
 <script type="text/x-template" id="dui-outbound-speedtest-template">
 <section class="dui-speed">
@@ -123,12 +131,26 @@
  <a-modal :visible="expanded" :title="text.title" :width="960" :wrap-class-name="'dui-speed-modal '+theme" :destroy-on-close="true" :mask-closable="false" @cancel="close">
  <div class="dui-speed-panel">
   <div class="dui-speed-head">
-   <div class="dui-speed-heading"><h3>[[ text.route ]]</h3></div>
+   <div class="dui-speed-heading"><h3>[[ routeText ]]</h3></div>
    <a-button :aria-label="text.refresh" size="small" icon="reload" :loading="loading" @click="refresh">[[ text.refresh ]]</a-button>
   </div>
   <p class="dui-speed-hint">[[ text.hint ]]</p>
   <a-alert v-if="dirty" type="info" show-icon :message="text.saved" style="margin-bottom:14px"></a-alert>
   <div class="dui-speed-fields">
+   <div class="dui-speed-field dui-speed-target">
+    <label for="dui-speed-provider">[[ text.target ]]</label>
+    <a-select id="dui-speed-provider" v-model="provider" :disabled="running || busy" :get-popup-container="popupParent" :aria-label="text.target">
+     <a-select-option value="cloudflare">[[ text.cloudflare ]]</a-select-option>
+     <a-select-option value="custom">[[ text.custom ]]</a-select-option>
+    </a-select>
+    <div v-if="provider==='custom'" class="dui-speed-custom">
+     <div v-for="kind in ['download','upload','ping']" :key="kind" class="dui-speed-field">
+      <label :for="'dui-speed-'+kind+'-url'">[[ text[kind+'Url'] ]]</label>
+      <a-input :id="'dui-speed-'+kind+'-url'" v-model="custom[kind+'Url']" :disabled="running || busy" :max-length="2048" :aria-label="text[kind+'Url']" placeholder="https://…" autocomplete="off" spellcheck="false" />
+     </div>
+    </div>
+    <div v-if="provider==='custom'" class="dui-speed-hint dui-speed-target-note">[[ text.targetHelp ]]</div>
+   </div>
    <div class="dui-speed-field dui-speed-outbounds">
     <label for="dui-speed-tags">[[ text.outbounds ]]</label>
     <a-select id="dui-speed-tags" v-model="selected" mode="multiple" :disabled="running || busy" :max-tag-count="3" :get-popup-container="popupParent" :placeholder="text.outbounds" :aria-label="text.outbounds" option-filter-prop="children">
@@ -149,7 +171,7 @@
     </a-select>
    </div>
    <div class="dui-speed-actions" :class="{'is-running':running}">
-    <a-button :aria-label="text.start" type="primary" icon="play-circle" :loading="busy && !running" :disabled="running || loading || dirty || !selected.length || selected.length > 10" @click="start">[[ text.start ]]</a-button>
+    <a-button :aria-label="text.start" type="primary" icon="play-circle" :loading="busy && !running" :disabled="running || loading || dirty || !selected.length || selected.length > 10 || !targetValid" @click="start">[[ text.start ]]</a-button>
     <a-button :aria-label="text.stop" v-if="running" icon="stop" :loading="job.state === 'stopping'" :disabled="job.state === 'stopping'" @click="stop">[[ text.stop ]]</a-button>
    </div>
   </div>
@@ -159,6 +181,7 @@
    <div class="dui-speed-results-head">
     <strong>[[ text.results ]]</strong>
     <div class="dui-speed-results-meta">
+     <span class="dui-speed-result-mode">[[ targetName(job.target) ]]</span>
      <time v-if="job.startedAt">[[ formatTime(job.startedAt) ]]</time>
      <span class="dui-speed-result-mode">[[ job.threads===1 ? text.single : text.multi+' · '+job.threads+' '+text.threads ]]</span>
      <span class="dui-speed-status" :class="'is-'+tone(resultState)"><a-icon :type="statusIcon(resultState)" />[[ text[resultState] || resultState ]]</span>
@@ -170,6 +193,8 @@
      <div class="dui-speed-transfer-grid">
       <section v-for="direction in ['download','upload']" :key="direction" class="dui-speed-transfer">
        <div class="dui-speed-transfer-heading"><a-icon :type="direction==='download'?'download':'upload'" /><strong>[[ text[direction] ]]</strong><span>[[ text[measurement(row,direction).state] || text.queued ]]</span></div>
+       <p v-if="measurement(row,direction).state==='skipped'" class="dui-speed-hint">[[ text.optionalSkipped ]]</p>
+       <template v-else>
        <div class="dui-speed-number-label">[[ text.average ]]</div>
        <div class="dui-speed-number">[[ measurement(row,direction).bytes ? rate(measurement(row,direction).mbps) : '—' ]] <small>Mbps</small></div>
        <div class="dui-speed-metrics">
@@ -181,11 +206,14 @@
         <div class="dui-speed-progress-label"><span>[[ text.progress ]]</span><span>[[ measurement(row,direction).progress ]]%</span></div>
         <a-progress :percent="measurement(row,direction).progress" :show-info="false" :status="measurement(row,direction).state==='testing'?'active':'normal'" :stroke-color="progressColor(measurement(row,direction).state)" :stroke-width="5" />
        </div>
+       <div v-if="measurement(row,direction).state==='connecting'" class="dui-speed-wait" role="status"><a-icon type="loading" /><span>[[ waitText(measurement(row,direction)) ]]</span></div>
        <div v-if="measurement(row,direction).limitReached" class="dui-speed-hint">[[ text.limit ]]</div>
-       <div v-if="measurement(row,direction).error" class="dui-speed-card-note"><a-icon type="info-circle" /><span>[[ text[measurement(row,direction).error] || text.error ]]</span></div>
+       <div v-if="measurement(row,direction).error" class="dui-speed-card-note"><a-icon type="info-circle" /><span>[[ measurementError(measurement(row,direction)) ]]</span></div>
+       </template>
       </section>
      </div>
-     <section class="dui-speed-ping">
+     <div v-if="row.ping && row.ping.state==='skipped'" class="dui-speed-ping dui-speed-hint">[[ text.pingSkipped ]]</div>
+     <section v-else class="dui-speed-ping">
       <div class="dui-speed-ping-main">
        <div class="dui-speed-number-label">[[ running && row.phase ? text.pingLive : text.pingLast ]]</div>
        <div class="dui-speed-number dui-speed-ping-value">[[ row.ping && row.ping.state==='failed' ? text.failed : row.ping && row.ping.samples ? rate(row.ping.currentMs) : '—' ]] <small v-if="row.ping && row.ping.samples && row.ping.state!=='failed'">ms</small></div>
@@ -195,7 +223,7 @@
        <div><span>[[ text.pingFailures ]]</span><strong>[[ row.ping ? row.ping.failures : 0 ]] / [[ row.ping ? row.ping.samples+row.ping.failures : 0 ]]</strong></div>
       </div>
      </section>
-     <p class="dui-speed-hint dui-speed-ping-help">[[ text.pingHint ]]</p>
+     <p v-if="!row.ping || row.ping.state!=='skipped'" class="dui-speed-hint dui-speed-ping-help">[[ text.pingHint ]]</p>
      <div v-if="row.error" class="dui-speed-card-note"><a-icon type="info-circle" /><span>[[ text[row.error] || text.error ]]</span></div>
     </article>
    </div>
@@ -208,9 +236,12 @@
 <script>
 Vue.component('dui-outbound-speedtest',{
  template:'#dui-outbound-speedtest-template',delimiters:['[[',']]'],props:{dirty:{type:Boolean,default:false},theme:{type:String,default:''}},
- data(){return{expanded:false,lang:LanguageManager.getLanguage(),catalog:[],selected:[],mode:'single',threads:4,job:{state:'idle',rows:[]},error:'',busy:false,loading:false,timer:null,disposed:false,statusRequest:0,openRequest:0}},
+ data(){return{expanded:false,lang:LanguageManager.getLanguage(),catalog:[],selected:[],provider:'cloudflare',custom:{downloadUrl:'',uploadUrl:'',pingUrl:''},mode:'single',threads:4,job:{state:'idle',rows:[]},error:'',busy:false,loading:false,timer:null,disposed:false,statusRequest:0,openRequest:0}},
  computed:{
   text(){return DuiSpeedTestI18n.get(this.lang)},
+  target(){return this.provider==='custom'?{provider:'custom',...Object.fromEntries(Object.entries(this.custom).map(([k,v])=>[k,v.trim()]))}:{provider:'cloudflare'}},
+  targetValid(){return this.provider==='cloudflare' || !!this.custom.downloadUrl.trim() && Object.values(this.custom).every(v=>!v.trim() || this.validUrl(v.trim()))},
+  routeText(){return this.text.route.replace('Cloudflare',this.targetName(this.running?this.job.target:this.target))},
   running(){return ['running','stopping'].includes(this.job.state)},
   resultState(){
    if(this.job.state!=='done')return this.job.state;
@@ -222,6 +253,8 @@ Vue.component('dui-outbound-speedtest',{
  mounted(){this.poll()},
  beforeDestroy(){this.disposed=true;this.statusRequest++;clearTimeout(this.timer)},
  methods:{
+  validUrl(value){try{const u=new URL(value);return /^https?:$/.test(u.protocol)&&!!u.hostname&&!u.username&&!u.password&&!u.hash&&!/[\s]/.test(value)&&value.length<=2048}catch(_){return false}},
+  targetName(target){if(!target||target.provider!=='custom')return 'Cloudflare';try{return this.text.custom+' · '+new URL(target.downloadUrl).host}catch(_){return this.text.custom}},
   rate(n){return Number(n||0).toFixed(2)},
   formatTime(t){return new Date(t).toLocaleString(this.lang,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})},
   tone(state){return state==='done'?'success':state==='partial'?'warning':state==='failed'?'danger':['running','testing','connecting','preparing','stopping'].includes(state)?'active':'neutral'},
@@ -229,6 +262,8 @@ Vue.component('dui-outbound-speedtest',{
   progressColor(state){return state==='partial'?'#d09b3b':state==='failed'?'#d65b69':state==='cancelled'?'#8b929a':'#008771'},
   popupParent(node){return node.parentNode},
   close(){this.expanded=false;this.openRequest++},
+  waitText(m){return this.text.waiting.replace("{seconds}",Math.floor(m.waitSeconds||0)).replace("{limit}",Math.round(m.waitLimitSeconds||45))+(m.retries ? " · "+this.text.retrying.replace("{count}",m.retries):"")},
+  measurementError(m){return (this.text[m.error]||this.text.error).replace("{status}",m.httpStatus||"").replace("{limit}",Math.round(m.waitLimitSeconds||45))},
   measurement(row,direction){return row[direction] || (direction==='download'?row:{state:'queued',bytes:0,seconds:0,progress:0})},
   async open(tag){
    const request=++this.openRequest;this.expanded=true;
@@ -240,7 +275,7 @@ Vue.component('dui-outbound-speedtest',{
     else {this.selected=[];this.error='unsupported_outbound'}
    }
   },
-  fail(msg){const code=String(msg?.msg||'').match(/(?:busy|download_failed|stream_failed|worker_start|unsupported_outbound|missing_outbound|invalid_request|core_unavailable|stale_job|config_unavailable|invalid_config|invalid_chain|duplicate_tag)/);this.error=code?code[0]:'error'},
+  fail(msg){const code=String(msg?.msg||'').match(/(?:busy|download_failed|stream_failed|worker_start|unsupported_outbound|missing_outbound|invalid_request|invalid_target|core_unavailable|stale_job|config_unavailable|invalid_config|invalid_chain|duplicate_tag)/);this.error=code?code[0]:'error'},
   async refresh(){
    this.loading=true;
    try{const r=await HttpUtil.get('/dui/xray/speedTest/catalog');if(this.disposed)return;
@@ -254,17 +289,17 @@ Vue.component('dui-outbound-speedtest',{
    try{
     const r=await HttpUtil.get('/dui/xray/speedTest/status');
     if(this.disposed||request!==this.statusRequest)return;
-    if(r.success&&r.obj){this.job=r.obj;this.error='';}else this.fail(r);
+    if(r.success&&r.obj){this.job=r.obj;this.error='';if(this.running&&this.job.target){this.provider=this.job.target.provider;if(this.provider==='custom')this.custom={downloadUrl:this.job.target.downloadUrl,uploadUrl:this.job.target.uploadUrl||'',pingUrl:this.job.target.pingUrl||''}}}else this.fail(r);
    }catch(_){if(!this.disposed&&request===this.statusRequest)this.error='error'}
    finally{
     if(!this.disposed&&request===this.statusRequest&&(this.running||this.error))this.timer=setTimeout(()=>this.poll(),this.error?3000:1000);
    }
   },
   async start(){
-   if(this.busy||this.running||this.dirty)return;
+   if(this.busy||this.running||this.dirty||!this.targetValid)return;
    this.busy=true;this.error='';this.statusRequest++;clearTimeout(this.timer);
    try{
-    const r=await HttpUtil.post('/dui/xray/speedTest/start',{request:JSON.stringify({tags:this.selected,threads:this.mode==='single'?1:this.threads})});
+    const r=await HttpUtil.post('/dui/xray/speedTest/start',{request:JSON.stringify({tags:this.selected,threads:this.mode==='single'?1:this.threads,target:this.target})});
     if(this.disposed)return;
     if(r.success&&r.obj){this.job=r.obj;await this.poll()}else{this.fail(r);if(this.error==='busy')await this.poll()}
    }catch(_){this.error='error';await this.poll()}

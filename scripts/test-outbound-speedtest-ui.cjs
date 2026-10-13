@@ -12,10 +12,12 @@ function html(lang,theme){
  let state={state:'idle',rows:[]};window.requests=[];
  const measurement=(state='testing')=>({state,bytes:26000000,seconds:3.1,mbps:67.1,currentMbps:70.2,progress:31,limitReached:false});
  const row=tag=>({tag,state:'testing',phase:'download',download:measurement(),upload:{...measurement('queued'),bytes:0,progress:0},ping:{state:'done',currentMs:28.4,averageMs:28.4,minMs:25.1,maxMs:31.2,jitterMs:2.3,samples:4,failures:0},progress:15});
+ window.connectingPhase=()=>{state.rows.forEach(r=>{r.phase='download';r.download={...measurement('connecting'),bytes:0,seconds:0,progress:0,waitSeconds:13,waitLimitSeconds:45,retries:1}})};
+ window.downloadPhase=()=>{state.rows.forEach(r=>{r.download=measurement()})};
  window.uploadPhase=()=>{state.rows.forEach(r=>{r.phase='upload';r.download={...measurement('done'),progress:100,currentMbps:0};r.upload=measurement();r.ping.currentMs=32.1})};
  const HttpUtil={
   async get(url){if(url.endsWith('catalog'))return {success:true,obj:[{tag:'Hong-Kong-Node-A-Long-Label',protocol:'shadowsocks'},{tag:'Tokyo-Node-B',protocol:'vless'}]};return {success:true,obj:JSON.parse(JSON.stringify(state))}},
-  async post(url,data){requests.push({url,data});if(url.endsWith('start')){const p=JSON.parse(data.request);state={id:'job1',state:'running',startedAt:1780000000000,threads:p.threads,rows:p.tags.map(row)}}else{state.state='cancelled';state.rows.forEach(r=>r.state='cancelled')};return {success:true,obj:JSON.parse(JSON.stringify(state))}}
+  async post(url,data){requests.push({url,data});if(url.endsWith('start')){const p=JSON.parse(data.request);state={id:'job1',state:'running',startedAt:1780000000000,threads:p.threads,target:p.target,rows:p.tags.map(row)}}else{state.state='cancelled';state.rows.forEach(r=>r.state='cancelled')};return {success:true,obj:JSON.parse(JSON.stringify(state))}}
  };
  window.complete=()=>{state.state='done';state.rows.forEach(r=>{r.state='done';r.phase='';r.download.state=r.upload.state='done';r.download.progress=r.upload.progress=100;r.download.currentMbps=r.upload.currentMbps=0})};
  window.partial=()=>{state={id:'job1',state:'done',startedAt:1780000000000,threads:1,rows:[{tag:'Hong-Kong-Node-A-Long-Label',state:'partial',bytes:200000000,seconds:2.3,mbps:696.76,currentMbps:0,progress:23,limitReached:false,error:'stream_failed'}]}};
@@ -44,10 +46,17 @@ function html(lang,theme){
   await page.evaluate(()=>app.dirty=true);assert(await page.getByRole('button',{name:t.start,exact:true}).isDisabled());
   await page.evaluate(()=>app.dirty=false);await page.getByRole('button',{name:t.start,exact:true}).click();
   await page.waitForSelector('.dui-speed-card');
-  const req=await page.evaluate(()=>JSON.parse(requests[0].data.request));assert.deepEqual(req,{tags:['Tokyo-Node-B'],threads:16});
+  const req=await page.evaluate(()=>JSON.parse(requests[0].data.request));assert.deepEqual(req,{tags:['Tokyo-Node-B'],threads:16,target:{provider:'cloudflare'}});
   assert.equal(await page.locator('.dui-speed-transfer').count(),2);
   assert((await page.locator('.dui-speed-ping-value').innerText()).includes('28.40'));
   assert(await page.getByRole('button',{name:t.start,exact:true}).isDisabled());
+  await page.evaluate(()=>connectingPhase());await page.getByRole('button',{name:t.refresh,exact:true}).click();
+  assert((await page.locator('.dui-speed-wait').innerText()).includes('13'));
+  assert((await page.locator('.dui-speed-wait').innerText()).includes('45'));
+  assert((await page.locator('.dui-speed-wait').innerText()).includes('重试 1'));
+  assert.equal(await page.evaluate(()=>app.$refs.speed.measurementError({error:'download_rejected',httpStatus:403})),'测速站拒绝下载请求（HTTP 403），延长等待可能无法解决。');
+  if(width===390)await page.screenshot({path:dir+'/waiting-'+(theme||'light')+'.png'});
+  await page.evaluate(()=>downloadPhase());await page.getByRole('button',{name:t.refresh,exact:true}).click();
   const overflow=()=>[...document.querySelectorAll('.ant-modal-body,.dui-speed-card,.dui-speed-fields')].some(e=>e.scrollWidth>e.clientWidth+1);
   assert(!await page.evaluate(overflow),'modal overflow '+width);
   if([390,1440].includes(width))await page.screenshot({path:dir+'/duplex-'+width+'-'+(theme||'light')+'.png'});
@@ -70,6 +79,35 @@ function html(lang,theme){
   assert.equal(await page.evaluate(()=>app.$refs.speed.resultState),'partial');
   assert((await page.locator('.dui-speed-progress-label').first().innerText()).includes('23%'));
   assert(!await page.evaluate(overflow),'partial overflow '+width);
+
+  await page.locator('#dui-speed-provider').click();
+  await page.locator('.ant-select-dropdown-menu-item').filter({hasText:t.custom}).click();
+  assert(await page.getByRole('button',{name:t.start,exact:true}).isDisabled());
+  await page.locator('#dui-speed-download-url').fill('ftp://test.example/file');
+  assert(await page.getByRole('button',{name:t.start,exact:true}).isDisabled());
+  const custom={provider:'custom',downloadUrl:'https://test.example/large.bin?token=keep-original',uploadUrl:'',pingUrl:''};
+  await page.locator('#dui-speed-download-url').fill(custom.downloadUrl);
+  assert(!await page.getByRole('button',{name:t.start,exact:true}).isDisabled());
+  assert(!await page.evaluate(overflow),'custom form overflow '+width);
+  await page.locator('.dui-speed-heading').click();
+  await page.waitForTimeout(300);
+  if([390,1440].includes(width))await page.screenshot({path:dir+'/target-'+width+'-'+(theme||'light')+'.png'});
+  await page.getByRole('button',{name:t.start,exact:true}).click();
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(requests.at(-1).data.request).target),custom);
+  assert(await page.locator('#dui-speed-download-url').isDisabled());
+  assert((await page.locator('.dui-speed-heading').innerText()).includes('test.example'));
+  // A status refresh on another page restores the actual running target.
+  await page.evaluate(()=>{app.$refs.speed.provider='cloudflare';return app.$refs.speed.poll()});
+  assert.equal(await page.evaluate(()=>app.$refs.speed.provider),'custom');
+  await page.evaluate(()=>{complete();state.rows.forEach(r=>{r.upload={state:'skipped',bytes:0,seconds:0,progress:0};r.ping={state:'skipped',samples:0,failures:0}})});
+  await page.getByRole('button',{name:t.refresh,exact:true}).click();
+  assert.equal(await page.evaluate(()=>app.$refs.speed.resultState),'done');
+  assert((await page.locator('.dui-speed-card').innerText()).includes(t.optionalSkipped));
+  assert((await page.locator('.dui-speed-ping').innerText()).includes(t.pingSkipped));
+  assert(!await page.evaluate(overflow),'skipped result overflow '+width);
+  await page.locator('#dui-speed-provider').click();
+  await page.locator('.ant-select-dropdown-menu-item').filter({hasText:t.cloudflare}).click();
+  assert((await page.locator('.dui-speed-results-meta').innerText()).includes('test.example'),'old result target must not change');
   await page.evaluate(()=>app.$refs.speed.open('unsupported-row'));
   assert.equal(await page.evaluate(()=>app.$refs.speed.selected.length),0);
   assert.equal(await page.evaluate(()=>app.$refs.speed.error),'unsupported_outbound');
