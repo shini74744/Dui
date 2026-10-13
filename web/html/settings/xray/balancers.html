@@ -46,6 +46,6 @@
         </a-button>
     </a-empty>
 </template>
-        <dui-strategy-probes :key="obsRevision" :value="templateSettings"
-            @input="templateSettings=$event" @validity="obsFormValid=$event"></dui-strategy-probes>
+        <dui-strategy-probes :key="obsRevision" :value="templateSettings" :saved-value="JSON.parse(oldXraySetting || '{}')"
+            @input="xraySetting=JSON.stringify($event,null,2)" @validity="obsFormValid=$event"></dui-strategy-probes>
 {{end}}

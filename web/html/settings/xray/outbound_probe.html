@@ -1,0 +1,115 @@
+{{define "settings/xray/outboundProbeComponent"}}
+<style>
+.dui-outbound-probe-button.ant-btn { margin-inline-start:8px; width:30px; height:32px; padding:0; color:#008771; border-color:rgba(0,135,113,.35); background:rgba(0,135,113,.06); vertical-align:middle; }
+.dark .dui-outbound-probe-button.ant-btn { color:#59cbac; }
+.dui-probe-detail { min-width:0; }
+.dui-probe-detail .dui-probe-detail-tag { color:inherit; font-size:16px; font-weight:500; overflow-wrap:anywhere; margin:0 0 14px; }
+.dui-probe-detail .dui-probe-summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.dui-probe-detail .dui-probe-summary .ant-tag { margin:0; white-space:normal; }
+.dui-probe-detail .ant-table { overflow-wrap:anywhere; }
+.dui-probe-records-mobile { display:none; }
+.dui-probe-record { border:1px solid rgba(128,128,128,.22); border-radius:12px; padding:12px; margin:8px 0; }
+.dui-probe-record-head,.dui-probe-record-data { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; }
+.dui-probe-record-head { font-weight:500; margin-bottom:8px; }
+.dui-probe-record-data { font-size:12px; }
+.dui-probe-record-data time { opacity:.7; }
+.dui-probe-record-head .ant-tag { margin:0; }
+.dui-probe-detail-modal { max-width:calc(100vw - 24px); top:40px; padding-bottom:24px; }
+@media (max-width:575px) {
+ .dui-probe-records-mobile { display:block; max-height:48vh; overflow-y:auto; }
+ .dui-probe-records-desktop { display:none; }
+ .dui-probe-detail-modal { top:12px; margin:0 auto; }
+ .dui-probe-detail-modal .ant-modal-body { padding:16px; }
+ .dui-outbound-probe-button.ant-btn { margin-inline-start:4px; width:32px; height:36px; }
+}
+</style>
+<script type="text/x-template" id="dui-outbound-probe-template">
+<a-modal :visible="visible" :title="text.viewProbe" :footer="null" :width="780" :wrap-class-name="theme"
+    class="dui-probe-detail-modal" :destroy-on-close="true" @cancel="close">
+  <section class="dui-probe-detail">
+    <h3 class="dui-probe-detail-tag">[[ tag ]]</h3>
+    <p class="dui-probe-help">[[ text.readOnlyProbe ]]</p>
+    <a-alert v-if="dirty" type="info" show-icon :message="text.savedProbeOnly"></a-alert>
+    <div class="dui-probe-summary" v-if="loaded && !error">
+        <span>[[ text.activeProbes ]]</span>
+        <a-tag v-for="name in history.activeStrategies || []" :key="name" color="green">[[ strategyLabel(name) ]]</a-tag>
+        <span v-if="!(history.activeStrategies || []).length">[[ text.noActiveProbe ]]</span>
+    </div>
+    <a-alert v-if="error || (loaded && history.state!=='ok')" type="warning" show-icon
+        :message="history.state==='unsupported' ? text.unsupportedHistory : text.unavailableHistory"></a-alert>
+    <a-alert v-if="history.gap" type="warning" show-icon :message="text.historyGap"></a-alert>
+    <div class="dui-probe-actions">
+        <a-button icon="reload" :loading="loading" @click="load(1)">[[ text.refreshHistory ]]</a-button>
+        <span class="dui-probe-help">[[ text.retention ]]</span>
+    </div>
+    <a-table class="dui-probe-records-desktop" :columns="columns" :data-source="history.rows" row-key="id" :pagination="false" size="small"
+        :loading="loading" :scroll="{x:590}" :locale="{emptyText:emptyText}">
+        <template slot="time" slot-scope="value">[[ formatTime(value) ]]</template>
+        <template slot="strategy" slot-scope="value">[[ strategyLabel(value) ]]</template>
+        <template slot="status" slot-scope="value">
+            <a-tag :color="value==='success'?'green':(value==='failed'?'red':'orange')">[[ text[value] ]]</a-tag>
+        </template>
+        <template slot="delay" slot-scope="value,row">[[ row.status==='success' ? Number(value).toFixed(1)+' ms' : '—' ]]</template>
+    </a-table>
+    <div class="dui-probe-records-mobile">
+        <a-spin :spinning="loading">
+            <div v-for="row in history.rows" :key="row.id" class="dui-probe-record">
+                <div class="dui-probe-record-head"><span>[[ strategyLabel(row.strategy) ]]</span>
+                    <a-tag :color="row.status==='success'?'green':(row.status==='failed'?'red':'orange')">[[ text[row.status] ]]</a-tag>
+                </div>
+                <div class="dui-probe-record-data"><time>[[ formatTime(row.time) ]]</time>
+                    <strong>[[ row.status==='success' ? Number(row.delay).toFixed(1)+' ms' : '—' ]]</strong>
+                </div>
+            </div>
+            <p v-if="!history.rows.length" class="dui-probe-help">[[ emptyText ]]</p>
+        </a-spin>
+    </div>
+    <div class="dui-probe-actions">
+        <a-button :disabled="loading || history.page<=1" @click="load(history.page-1)">[[ text.previousHistory ]]</a-button>
+        <span>[[ history.page ]] / [[ Math.max(1,Math.ceil(history.total/50)) ]]</span>
+        <a-button :disabled="loading || history.page*50>=history.total" @click="load(history.page+1)">[[ text.nextHistory ]]</a-button>
+    </div>
+  </section>
+</a-modal>
+</script>
+<script>
+Vue.component('dui-outbound-probe', {
+ template:'#dui-outbound-probe-template', delimiters:['[[',']]'],
+ props:{dirty:Boolean,theme:{type:String,default:''}},
+ data(){return {visible:false,tag:'',loading:false,loaded:false,error:false,request:0,
+    lang:LanguageManager.getLanguage(),history:{rows:[],total:0,page:1,state:'',activeStrategies:[]}}},
+ computed:{
+    text(){return DuiProbeI18n.get(this.lang)},
+    emptyText(){return this.error ? this.text.unavailableHistory : (this.loaded && !(this.history.activeStrategies||[]).length ? this.text.noActiveProbe : this.text.waitingProbe)},
+    columns(){return [
+        {title:this.text.probeTime,dataIndex:'time',width:175,scopedSlots:{customRender:'time'}},
+        {title:this.text.probeSource,dataIndex:'strategy',width:150,scopedSlots:{customRender:'strategy'}},
+        {title:this.text.probeStatus,dataIndex:'status',width:160,scopedSlots:{customRender:'status'}},
+        {title:this.text.probeDelay,dataIndex:'delay',width:100,scopedSlots:{customRender:'delay'}}
+    ]}
+ },
+ beforeDestroy(){this.request++},
+ methods:{
+    open(tag){
+        if(!tag)return;
+        this.request++;this.tag=tag;this.visible=true;this.loaded=false;this.error=false;
+        this.history={rows:[],total:0,page:1,state:'',activeStrategies:[]};this.load(1);
+    },
+    close(){this.visible=false;this.request++;this.loading=false},
+    strategyLabel(name){return this.text[name] || this.text.sharedProbe},
+    formatTime(value){return new Date(value).toLocaleString(this.lang,{hour12:false})},
+    async load(page){
+        const request=++this.request;this.loading=true;this.error=false;
+        try{
+            const query=new URLSearchParams({strategy:'all',outbound:this.tag,page:String(page)});
+            const response=await HttpUtil.get('/dui/xray/probeHistory?'+query.toString());
+            if(request!==this.request)return;
+            if(!response.success || !response.obj)throw new Error('history unavailable');
+            this.history=response.obj;this.loaded=true;
+        }catch(_){if(request===this.request)this.error=true}
+        finally{if(request===this.request)this.loading=false}
+    }
+ }
+});
+</script>
+{{end}}

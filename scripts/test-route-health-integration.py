@@ -147,6 +147,17 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
         legacy=json.loads(json.dumps(current));del legacy['strategyObservatory']
         assert request('/dui/xray/update',{'xraySetting':json.dumps(legacy)})['success']
         assert 'strategyObservatory' not in saved()
+        # Parked probe parameters must survive real API/database reload and never reach runtime.
+        parked=saved()
+        parked['duiDisabledProbes']={'outbound':{'subjectSelector':['direct'],'pingConfig':{'interval':'17m','future':'keep'},'custom':{'keep':True}}}
+        assert request('/dui/xray/update',{'xraySetting':json.dumps(parked)})['success']
+        assert saved()['duiDisabledProbes']==parked['duiDisabledProbes']
+        response=request('/dui/xray/',{})
+        assert json.loads(response['obj'])['xraySetting']['duiDisabledProbes']==parked['duiDisabledProbes']
+        assert request('/dui/api/server/restartXrayService',{})['success']
+        runtime=json.loads((root/'bin/config.json').read_text())
+        assert 'duiDisabledProbes' not in runtime
+        assert 'outbound' not in runtime.get('strategyObservatory',{})
         # Native fallback and priority configuration must survive save/reload.
         current=saved()
         current['outbounds'] += [{'tag':tag,'protocol':'freedom'} for tag in ['a','b','c','d']]
@@ -187,7 +198,15 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
                     cookies=[{'name':c.name,'value':c.value,'url':base+'/'} for c in handler.cookiejar]
             browser_env=os.environ.copy()
             browser_env.update(DUI_FIXTURE_BASE=base,DUI_FIXTURE_COOKIES=json.dumps(cookies))
-            subprocess.run(['node',str(Path(__file__).with_name('test-route-health-ui.cjs'))],env=browser_env,check=True,timeout=240)
+            if not os.environ.get('DUI_SKIP_ROUTE_UI'):
+                subprocess.run(['node',str(Path(__file__).with_name('test-route-health-ui.cjs'))],env=browser_env,check=True,timeout=240)
+            if os.environ.get('DUI_PROBE_CONTROLS_BROWSER'):
+                # Synthetic history is inserted only in this disposable test database.
+                with sqlite3.connect(db) as conn:
+                    for i,(scope,tag) in enumerate([('outbound','a'),('roundRobin','a'),('legacyBurst','a'),('outbound','b')]):
+                        conn.execute('INSERT INTO probe_histories(session,sequence,time,strategy,outbound,status,delay) VALUES(?,?,?,?,?,?,?)',('ui-fixture',i+1,int(time.time()*1000),scope,tag,'success',12.5))
+                subprocess.run(['node',str(Path(__file__).with_name('test-probe-controls-ui.cjs'))],env=browser_env,check=True,timeout=240)
+
         print(json.dumps({'save_reload':True,'runtime_preserved':True,'invalid_preserves_database':True,
                           'old_core_rejected':True,'downgrade_rejected_before_stop':True,
                           'templates_and_assets_verified':True,'legacy_restore':True}))

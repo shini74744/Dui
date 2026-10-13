@@ -48,6 +48,7 @@ async function openStrategy(page,name){
   const t=I.get('zh-CN');
   for(const [i,type]of P.types.entries()){
    await openStrategy(page,t[type]);
+   if(type==='outbound')await page.locator('#probe-enabled-outbound').click();
    await page.locator('#probe-interval-'+type).fill((i+1)+'m');
    await page.locator('#probe-interval-'+type).blur();
    await page.waitForFunction(([type,v])=>(app.config.strategyObservatory?.[type]?.probeInterval||app.config.strategyObservatory?.[type]?.pingConfig?.interval)===v,[type,(i+1)+'m']);

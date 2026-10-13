@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -122,23 +124,34 @@ func ProbeHistoryAPIPort() int {
 }
 
 type ProbeHistoryPage struct {
-	Rows          []model.ProbeHistory `json:"rows"`
-	Total         int64                `json:"total"`
-	Page          int                  `json:"page"`
-	Tags          []string             `json:"tags"`
-	State         string               `json:"state"`
-	LastSuccess   int64                `json:"lastSuccess"`
-	Gap           bool                 `json:"gap"`
-	RetentionDays int                  `json:"retentionDays"`
-	Limit         int                  `json:"limit"`
+	ActiveStrategies []string             `json:"activeStrategies"`
+	RuntimeRunning   bool                 `json:"runtimeRunning"`
+	Rows             []model.ProbeHistory `json:"rows"`
+	Total            int64                `json:"total"`
+	Page             int                  `json:"page"`
+	Tags             []string             `json:"tags"`
+	State            string               `json:"state"`
+	LastSuccess      int64                `json:"lastSuccess"`
+	Gap              bool                 `json:"gap"`
+	RetentionDays    int                  `json:"retentionDays"`
+	Limit            int                  `json:"limit"`
 }
 
 func QueryProbeHistory(strategy, tag string, page int) (ProbeHistoryPage, error) {
-	return queryProbeHistory(database.GetDB(), strategy, tag, page)
+	result, err := queryProbeHistory(database.GetDB(), strategy, tag, page)
+	if err == nil {
+		lock.Lock()
+		if p != nil && p.IsRunning() {
+			result.RuntimeRunning = true
+			result.ActiveStrategies = activeProbeStrategies(p.GetConfig(), tag)
+		}
+		lock.Unlock()
+	}
+	return result, err
 }
 func queryProbeHistory(db *gorm.DB, strategy, tag string, page int) (ProbeHistoryPage, error) {
 	result := ProbeHistoryPage{Rows: []model.ProbeHistory{}, Tags: []string{}, Page: page, RetentionDays: ProbeHistoryDays, Limit: ProbeHistoryLimit}
-	if !probeStrategyValid(strategy) || len(tag) > 1024 || page < 1 || page > 2000 {
+	if (!probeStrategyValid(strategy) && !(strategy == "all" && tag != "")) || len(tag) > 1024 || page < 1 || page > 2000 {
 		return result, fmt.Errorf("invalid history filter")
 	}
 	sources := []string{strategy}
@@ -146,7 +159,13 @@ func queryProbeHistory(db *gorm.DB, strategy, tag string, page int) (ProbeHistor
 	if strategy != "outbound" {
 		sources = append(sources, "legacyPing", "legacyBurst")
 	}
+	if strategy == "all" {
+		sources = []string{"outbound", "leastPing", "leastLoad", "random", "roundRobin", "legacyPing", "legacyBurst"}
+	}
 	base := db.Model(&model.ProbeHistory{}).Where("strategy IN ? AND time >= ?", sources, time.Now().Add(-ProbeHistoryDays*24*time.Hour).UnixMilli())
+	if strategy == "all" {
+		base = base.Where("outbound = ?", tag)
+	}
 	if err := base.Session(&gorm.Session{}).Distinct("outbound").Order("outbound").Limit(1000).Pluck("outbound", &result.Tags).Error; err != nil {
 		return result, err
 	}
@@ -165,4 +184,36 @@ func queryProbeHistory(db *gorm.DB, strategy, tag string, page int) (ProbeHistor
 	result.Gap = probeCollector.gap
 	probeCollector.Unlock()
 	return result, nil
+}
+
+// Only return scope names, never probe URLs or the full running configuration.
+func activeProbeStrategies(config *xray.Config, tag string) []string {
+	result := []string{}
+	if config == nil {
+		return result
+	}
+	var scopes map[string]json.RawMessage
+	_ = json.Unmarshal(config.StrategyObservatory, &scopes)
+	for _, name := range []string{"outbound", "leastPing", "leastLoad", "random", "roundRobin", "legacyPing", "legacyBurst"} {
+		raw := []byte(scopes[name])
+		if name == "legacyPing" {
+			raw = config.Observatory
+		}
+		if name == "legacyBurst" {
+			raw = config.BurstObservatory
+		}
+		var probe struct {
+			SubjectSelector []string `json:"subjectSelector"`
+		}
+		if json.Unmarshal(raw, &probe) != nil {
+			continue
+		}
+		for _, prefix := range probe.SubjectSelector {
+			if tag == "" || (name == "outbound" && tag == prefix) || (name != "outbound" && strings.HasPrefix(tag, prefix)) {
+				result = append(result, name)
+				break
+			}
+		}
+	}
+	return result
 }

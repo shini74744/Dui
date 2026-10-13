@@ -3,6 +3,9 @@
 .dui-probes { width:100%; min-width:0; margin-top:16px; }
 .dui-probes h3 { color:inherit; }
 .dui-probes .dui-probe-accordion { margin-top:16px; }
+.dui-probe-enable { margin:16px 0; }
+.dui-probe-enable-row { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.dui-probe-enable-row label { font-weight:500; }
 .dui-probe-form { max-width:900px; }
 .dui-probe-field { margin:16px 0; }
 .dui-probe-field > label { display:block; font-weight:500; margin-bottom:6px; }
@@ -24,6 +27,21 @@
           <div v-if="expanded === type">
 
     <p class="dui-probe-help" v-if="(!value.strategyObservatory || !value.strategyObservatory[active]) && (active==='outbound' || targets.length)">[[ active === 'outbound' ? text.outboundHelp : text.legacy ]]</p>
+    <section v-if="active==='outbound'" class="dui-probe-enable">
+        <div class="dui-probe-enable-row">
+            <label for="probe-enabled-outbound">[[ text.enableProbe ]]</label>
+            <button id="probe-enabled-outbound" type="button" class="ant-switch" :aria-label="text.enableProbe"
+                role="switch" :aria-checked="String(outboundEnabled)"
+                :class="{'ant-switch-checked':outboundEnabled,'ant-switch-disabled':!!errors.outbound || rawDirty.outbound || (outboundEnabled && fallbackRequired)}"
+                :disabled="!!errors.outbound || rawDirty.outbound || (outboundEnabled && fallbackRequired)"
+                @click="setOutboundEnabled(!outboundEnabled)"><span class="ant-switch-inner"></span></button>
+            <a-tag :color="outboundPending ? 'orange' : (outboundEnabled ? 'green' : undefined)">[[ outboundPending ? text.pendingSave : (outboundEnabled ? text.enabledProbe : text.disabledProbe) ]]</a-tag>
+        </div>
+        <p class="dui-probe-help">[[ text.toggleHelp ]]</p>
+        <p v-if="fallbackRequired" class="dui-probe-help">[[ text.fallbackRequired ]]</p>
+        <a-alert v-if="!outboundEnabled" type="info" show-icon :message="text.disabledHelp"></a-alert>
+        <p v-else-if="!targets.length" class="dui-probe-help">[[ text.outboundUnused ]]</p>
+    </section>
     <div><strong>[[ text.targets ]]</strong></div>
     <div class="dui-probe-targets">
         <a-tag v-for="tag in targets" :key="tag">[[ tag ]]</a-tag>
@@ -92,7 +110,7 @@
                 :message="history.state==='unsupported' ? text.unsupportedHistory : text.unavailableHistory"></a-alert>
             <a-alert v-if="history.gap" type="warning" show-icon :message="text.historyGap"></a-alert>
             <a-table :columns="historyColumns" :data-source="history.rows" row-key="id" :pagination="false"
-                :loading="historyLoading" :scroll="{x:540}" :locale="{emptyText:text.emptyHistory}" size="small">
+                :loading="historyLoading" :scroll="{x:540}" :locale="{emptyText:historyEmpty}" size="small">
                 <template slot="time" slot-scope="value">[[ formatProbeTime(value) ]]</template>
                 <template slot="outbound" slot-scope="value,row">
                     <span>[[ value ]]</span>
@@ -116,7 +134,7 @@
 Vue.component('dui-strategy-probes', {
     template: '#dui-strategy-probes-template',
     delimiters: ['[[', ']]'],
-    props: {value: {type:Object, required:true}},
+    props: {value: {type:Object, required:true}, savedValue:{type:Object,default:()=>({})}},
     data() {
         const types = DuiStrategyProbes.types;
         const drafts={}, raw={}, rawDirty={}, errors={}, advanced={};
@@ -133,6 +151,13 @@ Vue.component('dui-strategy-probes', {
     beforeDestroy() {this.historyRequest++;this.$emit('validity',true)},
     computed: {
         text() {return DuiProbeI18n.get(this.lang)},
+        outboundEnabled() {return DuiStrategyProbes.enabled(this.value,'outbound')},
+        fallbackRequired() {return DuiStrategyProbes.fallbackRequired(this.value)},
+        outboundPending() {
+            return ['strategyObservatory','duiDisabledProbes'].some(key =>
+                JSON.stringify(this.value[key]?.outbound) !== JSON.stringify(this.savedValue[key]?.outbound));
+        },
+        historyEmpty() {return this.active==='outbound' && !this.outboundEnabled ? this.text.disabledHelp : this.text.waitingProbe},
         historyColumns() {return [
             {title:this.text.probeTime,dataIndex:'time',width:175,scopedSlots:{customRender:'time'}},
             {title:this.text.targets,dataIndex:'outbound',width:165,scopedSlots:{customRender:'outbound'}},
@@ -154,6 +179,10 @@ Vue.component('dui-strategy-probes', {
         advanced: {deep:true, handler() {this.notifyValidity()}}
     },
     methods: {
+        setOutboundEnabled(on) {
+            if (this.errors.outbound || this.rawDirty.outbound || (!on && this.fallbackRequired)) return;
+            this.$emit('input',DuiStrategyProbes.setEnabled(this.value,on));
+        },
         expandStrategy(key) {
             const next = Array.isArray(key) ? (key[0] || '') : (key || '');
             this.expanded = next;
