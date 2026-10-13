@@ -62,7 +62,7 @@ test('all 13 supported languages contain complete native strings',()=>{
 test('outbound sync follows all four probe scopes but ordinary rename does not',()=>{
  const ctx=vm.createContext({});
  vm.runInContext(fs.readFileSync(__dirname+'/../web/assets/js/util/outbound-references.js','utf8')+';this.refs=DuiOutboundReferences;',ctx);
- let c=fixture();for(const type of P.types)c=P.update(c,type,P.read(c,type));
+ let c=fixture();P.enable(c,'outbound');for(const type of P.types)c=P.update(c,type,P.read(c,type));
  const next=ctx.refs.prepare(c,0,{tag:'renamed',protocol:'freedom'},'sync');
  for(const type of P.types)assert.deepEqual(Array.from(next.strategyObservatory[type].subjectSelector),['renamed']);
  const ordinary=ctx.refs.prepare(c,0,{tag:'renamed',protocol:'freedom'},'replace');
@@ -87,5 +87,28 @@ test('user settings win for existing, inherited and temporarily unused probes',(
  c.routing.balancers.push({tag:'new-random',selector:['shared'],strategy:{type:'random'}});P.syncSelectors(c);
  assert.equal(P.read(c,'random').pingConfig.interval,'7m');
  assert.deepEqual(c.burstObservatory,original.burstObservatory);assert.deepEqual(c.observatory,original.observatory);
+});
+
+test('standalone toggle preserves custom and omitted fields across reload, edits while off stay off',()=>{
+ let c=fixture();c.strategyObservatory={random:{subjectSelector:['custom-prefix'],pingConfig:{interval:'7m'}},outbound:{subjectSelector:['shared'],pingConfig:{interval:'17m',connectivity:'',sampling:3},future:{keep:true}}};
+ const before=P.clone(c);
+ c=P.setEnabled(c,false);assert(!P.enabled(c,'outbound'));
+ assert.deepEqual(c.duiDisabledProbes.outbound,before.strategyObservatory.outbound);
+ c=P.setEnabled(JSON.parse(JSON.stringify(c)),true);assert.deepEqual(c,before);
+ c=P.setEnabled(c,false);const d=P.read(c,'outbound');d.pingConfig.interval='23m';
+ c=P.update(c,'outbound',d);assert(!P.enabled(c,'outbound'));
+ c=P.setEnabled(JSON.parse(JSON.stringify(c)),true);
+ assert.equal(c.strategyObservatory.outbound.pingConfig.interval,'23m');
+ assert.equal(c.strategyObservatory.outbound.future.keep,true);
+ assert.deepEqual(c.strategyObservatory.random,before.strategyObservatory.random);
+ assert.deepEqual(c.burstObservatory,before.burstObservatory);
+ assert.deepEqual(c.observatory,before.observatory);
+});
+test('enable fresh standalone settings without typing and guard Fallback dependency',()=>{
+ const original=fixture(),c=P.setEnabled(original,true);
+ assert.equal(c.strategyObservatory.outbound.pingConfig.interval,'1m');
+ assert(!original.strategyObservatory);
+ c.routing.rules[0].fallbackTag='backup';const before=P.clone(c);
+ assert.throws(()=>P.setEnabled(c,false));assert.deepEqual(c,before);
 });
 console.log(JSON.stringify({passed:true,cases}));

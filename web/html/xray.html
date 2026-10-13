@@ -351,6 +351,7 @@
 <script src="{{ .base_path }}assets/js/util/strategy-probes.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/util/strategy-probes-i18n.js?{{ .cur_ver }}"></script>
 {{template "settings/xray/strategyProbesComponent" .}}
+{{template "settings/xray/outboundProbeComponent" .}}
 <script src="{{ .base_path }}assets/js/util/outbound-speedtest-i18n.js?{{ .cur_ver }}"></script>
 {{template "settings/xray/outboundSpeedTestComponent" .}}
 <script src="{{ .base_path }}assets/codemirror/codemirror.min.js?{{ .cur_ver }}"></script>
@@ -413,11 +414,11 @@
   ];
 
   const outboundColumns = [
-    { title: "#", align: 'center', width: 20, scopedSlots: { customRender: 'action' } },
-    { title: '{{ i18n "pages.xray.outbound.tag"}}', dataIndex: 'tag', align: 'center', width: 50 },
-    { title: '{{ i18n "protocol"}}', align: 'center', width: 50, scopedSlots: { customRender: 'protocol' } },
-    { title: '{{ i18n "pages.xray.outbound.address"}}', align: 'center', width: 50, scopedSlots: { customRender: 'address' } },
-    { title: '{{ i18n "pages.inbounds.traffic" }}', align: 'center', width: 50, scopedSlots: { customRender: 'traffic' } },
+    { title: "#", align: 'center', width: 140, scopedSlots: { customRender: 'action' } },
+    { title: '{{ i18n "pages.xray.outbound.tag"}}', dataIndex: 'tag', align: 'center' },
+    { title: '{{ i18n "protocol"}}', align: 'center', scopedSlots: { customRender: 'protocol' } },
+    { title: '{{ i18n "pages.xray.outbound.address"}}', align: 'center', scopedSlots: { customRender: 'address' } },
+    { title: '{{ i18n "pages.inbounds.traffic" }}', align: 'center', scopedSlots: { customRender: 'traffic' } },
   ];
 
   const reverseColumns = [
@@ -800,6 +801,7 @@
       }
     },
     methods: {
+      outboundProbeLabel() { return DuiProbeI18n.get(LanguageManager.getLanguage()).viewProbe; },
       balancerStrategyLabel(strategy) {
         return duiBalancerStrategyLabel(strategy);
       },
@@ -1793,7 +1795,7 @@
               this.templateSettings.routing.rules.push(...validRules);
               duiCleanupHiddenBlacklistOutbounds(this.templateSettings);
               this.routingRuleSettings = JSON.stringify(this.templateSettings.routing.rules);
-              if (validRules.some(r => DuiStrategyProbes.probeable(this.templateSettings).includes(r.outboundTag)))
+              if (validRules.some(r => r.fallbackTag))
                 this.templateSettings = DuiStrategyProbes.enable(this.templateSettings, 'outbound');
             }
             ruleModal.close();
@@ -1818,7 +1820,7 @@
               this.templateSettings.routing.rules.splice(startIndex, physicalCount, ...validRules);
               duiCleanupHiddenBlacklistOutbounds(this.templateSettings);
               this.routingRuleSettings = JSON.stringify(this.templateSettings.routing.rules);
-              if (validRules.some(r => DuiStrategyProbes.probeable(this.templateSettings).includes(r.outboundTag)))
+              if (validRules.some(r => r.fallbackTag))
                 this.templateSettings = DuiStrategyProbes.enable(this.templateSettings, 'outbound');
             }
             ruleModal.close();

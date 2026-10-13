@@ -18,9 +18,38 @@ const DuiStrategyProbes = (() => {
     function enable(config, type) {
         if (!config.strategyObservatory?.[type]) {
             config.strategyObservatory = config.strategyObservatory || {};
-            config.strategyObservatory[type] = read(config, type);
+            config.strategyObservatory[type] = clone(config.duiDisabledProbes?.[type] || read(config, type));
+            if (config.duiDisabledProbes) {
+                delete config.duiDisabledProbes[type];
+                if (!Object.keys(config.duiDisabledProbes).length) delete config.duiDisabledProbes;
+            }
         }
         return syncSelectors(config);
+    }
+    const enabled = (config, type) => !!config.strategyObservatory?.[type];
+    const fallbackRequired = config => (config.routing?.rules || []).some(r => !!r.fallbackTag);
+    function setEnabled(config, on) {
+        const next = clone(config);
+        if (on) {
+            if (enabled(next,'outbound')) return next;
+            next.strategyObservatory = next.strategyObservatory || {};
+            next.strategyObservatory.outbound = clone(next.duiDisabledProbes?.outbound || read(next,'outbound'));
+            next.strategyObservatory.outbound.subjectSelector = selectors(next,'outbound');
+            if (next.duiDisabledProbes) {
+                delete next.duiDisabledProbes.outbound;
+                if (!Object.keys(next.duiDisabledProbes).length) delete next.duiDisabledProbes;
+            }
+            return next;
+        }
+        if (fallbackRequired(config)) throw new Error('fallback requires probes');
+        if (next.strategyObservatory?.outbound) {
+            // Panel-only metadata; excluded from the core's runtime Config.
+            next.duiDisabledProbes = next.duiDisabledProbes || {};
+            next.duiDisabledProbes.outbound = clone(next.strategyObservatory.outbound);
+            delete next.strategyObservatory.outbound;
+            if (!Object.keys(next.strategyObservatory).length) delete next.strategyObservatory;
+        }
+        return next;
     }
     function enablePriority(config) {
         for (const b of config.routing?.balancers || []) {
@@ -48,7 +77,7 @@ const DuiStrategyProbes = (() => {
             ? { subjectSelector: [], probeURL: 'http://www.google.com/gen_204', probeInterval: '1m', enableConcurrency: true }
             : { subjectSelector: [], pingConfig: { destination: 'http://www.google.com/gen_204', interval: '1m',
                 connectivity: 'http://connectivitycheck.platform.hicloud.com/generate_204', timeout: '10s', sampling: 2 } };
-        const explicit = config.strategyObservatory?.[type];
+        const explicit = config.strategyObservatory?.[type] || config.duiDisabledProbes?.[type];
         const legacy = type === 'outbound' ? null : config[type === 'leastPing' ? 'observatory' : 'burstObservatory'];
         const result = clone(explicit || legacy || fallback);
         // Fill omitted core defaults, not the panel's first-install defaults.
@@ -95,9 +124,10 @@ const DuiStrategyProbes = (() => {
         const error = validate(type, value);
         if (error) throw new Error(error);
         const next = clone(config);
-        next.strategyObservatory = next.strategyObservatory || {};
-        next.strategyObservatory[type] = clone(value);
-        next.strategyObservatory[type].subjectSelector = selectors(config, type);
+        const key = type === 'outbound' && !enabled(config, type) ? 'duiDisabledProbes' : 'strategyObservatory';
+        next[key] = next[key] || {};
+        next[key][type] = clone(value);
+        next[key][type].subjectSelector = selectors(config, type);
         return next;
     }
     function syncSelectors(config) {
@@ -106,6 +136,6 @@ const DuiStrategyProbes = (() => {
         }
         return config;
     }
-    return {types, balancingTypes, probeable, enable, enablePriority, balancerValue, clone, read, update, selectors, syncSelectors, validate, duration};
+    return {enabled, setEnabled, fallbackRequired, types, balancingTypes, probeable, enable, enablePriority, balancerValue, clone, read, update, selectors, syncSelectors, validate, duration};
 })();
 if (typeof module !== 'undefined') module.exports = DuiStrategyProbes;
