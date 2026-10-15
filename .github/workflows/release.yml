@@ -38,6 +38,7 @@ jobs:
           bash -n core/xray/prepare.sh core/xray/build.sh
       - name: User rate and TLS form round trips
         run: |
+          node scripts/test-inbound-search.cjs
           node scripts/test-user-rate.cjs
           node scripts/test-native-protocols.cjs
           node scripts/test-helper-protocols.cjs

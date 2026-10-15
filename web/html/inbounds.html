@@ -1867,25 +1867,32 @@
             searchInbounds(key) {
                 if (ObjectUtil.isEmpty(key)) {
                     this.searchedInbounds = this.dbInbounds.slice();
-                } else {
-                    this.searchedInbounds.splice(0, this.searchedInbounds.length);
-                    this.dbInbounds.forEach(inbound => {
-                        if (ObjectUtil.deepSearch(inbound, key)) {
-                            const newInbound = new DBInbound(inbound);
-                            const inboundSettings = JSON.parse(inbound.settings);
-                            if (inboundSettings.hasOwnProperty('clients')) {
-                                const searchedSettings = { "clients": [] };
-                                inboundSettings.clients.forEach(client => {
-                                    if (ObjectUtil.deepSearch(client, key)) {
-                                        searchedSettings.clients.push(client);
-                                    }
-                                });
-                                newInbound.settings = Inbound.Settings.fromJson(inbound.protocol, searchedSettings);
-                            }
-                            this.searchedInbounds.push(newInbound);
-                        }
-                    });
+                    return;
                 }
+                this.searchedInbounds.splice(0, this.searchedInbounds.length);
+                this.dbInbounds.forEach(inbound => {
+                    const settings = JSON.parse(inbound.settings || '{}');
+                    // A parent match (port, remark, protocol, etc.) keeps all its users.
+                    // Client data and traffic must not turn a user match into a parent match.
+                    const parent = { ...inbound, settings: { ...settings } };
+                    delete parent.settings.clients;
+                    delete parent.clientStats;
+                    if (ObjectUtil.deepSearch(parent, key)) {
+                        this.searchedInbounds.push(inbound);
+                        return;
+                    }
+                    if (!Array.isArray(settings.clients)) return;
+                    const stats = Array.isArray(inbound.clientStats) ? inbound.clientStats : [];
+                    const matchedEmails = new Set(stats.filter(stat => ObjectUtil.deepSearch(stat, key)).map(stat => stat.email));
+                    const clients = settings.clients.filter(client =>
+                        ObjectUtil.deepSearch(client, key) || matchedEmails.has(client.email));
+                    if (clients.length) {
+                        const result = new DBInbound(inbound);
+                        // Filter a display copy without resetting protocol-specific settings.
+                        result.settings = JSON.stringify({ ...settings, clients });
+                        this.searchedInbounds.push(result);
+                    }
+                });
             },
             filterInbounds() {
                 if (ObjectUtil.isEmpty(this.filterBy)) {
