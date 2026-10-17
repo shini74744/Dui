@@ -232,6 +232,14 @@
 "importInbound" = "Bir Gelen İçe Aktar"
 
 [pages.client]
+"routeRefs" = "İlgili rotalar"
+"routeShort" = "Rotalar"
+"routeRule" = "Kural"
+"routeRegexp" = "Düzenli ifade"
+"routeLoading" = "Rota başvuruları yükleniyor…"
+"routeReadError" = "Rota başvuruları yüklenemedi."
+"routeNoRefs" = "İlgili rota yok."
+"routeRenameWarning" = "Adı değiştirdikten sonra bu rotalardaki kullanıcı adlarını kontrol edin."
 "add" = "Müşteri Ekle"
 "edit" = "Müşteriyi Düzenle"
 "submitAdd" = "Müşteri Ekle"

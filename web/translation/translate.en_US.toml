@@ -255,6 +255,14 @@
 "lastReset" = "Last Reset"
 
 [pages.client]
+"routeRefs" = "Related routes"
+"routeShort" = "Routes"
+"routeRule" = "Rule"
+"routeRegexp" = "Regex"
+"routeLoading" = "Loading routing references…"
+"routeReadError" = "Unable to load routing references."
+"routeNoRefs" = "No related routes."
+"routeRenameWarning" = "After renaming, check the user names in these routes."
 "add" = "Add Client"
 "edit" = "Edit Client"
 "submitAdd" = "Add Client"

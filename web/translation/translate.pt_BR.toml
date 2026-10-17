@@ -232,6 +232,14 @@
 "importInbound" = "Importar um Inbound"
 
 [pages.client]
+"routeRefs" = "Rotas relacionadas"
+"routeShort" = "Rotas"
+"routeRule" = "Regra"
+"routeRegexp" = "Expressão regular"
+"routeLoading" = "Carregando referências…"
+"routeReadError" = "Não foi possível carregar as referências."
+"routeNoRefs" = "Nenhuma rota relacionada."
+"routeRenameWarning" = "Após renomear, confira os nomes de usuário nestas rotas."
 "add" = "Adicionar Cliente"
 "edit" = "Editar Cliente"
 "submitAdd" = "Adicionar Cliente"

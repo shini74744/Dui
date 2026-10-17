@@ -232,6 +232,14 @@
 "importInbound" = "استيراد إدخال"
 
 [pages.client]
+"routeRefs" = "المسارات المرتبطة"
+"routeShort" = "المسارات"
+"routeRule" = "القاعدة"
+"routeRegexp" = "تعبير نمطي"
+"routeLoading" = "جارٍ تحميل المراجع…"
+"routeReadError" = "تعذر تحميل مراجع التوجيه."
+"routeNoRefs" = "لا توجد مسارات مرتبطة."
+"routeRenameWarning" = "بعد تغيير الاسم، تحقق من أسماء المستخدمين في هذه المسارات."
 "add" = "أضف عميل"
 "edit" = "تعديل عميل"
 "submitAdd" = "أضف العميل"

@@ -27,6 +27,7 @@ func NewInboundController(g *gin.RouterGroup) *InboundController {
 
 func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.GET("/list", a.getInbounds)
+	g.GET("/clientRouteReferences", a.getClientRouteReferences)
 	g.GET("/get/:id", a.getInbound)
 	g.GET("/getClientTraffics/:email", a.getClientTraffics)
 	g.GET("/getClientTrafficsById/:id", a.getClientTrafficsById)
@@ -34,6 +35,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/add", a.addInbound)
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
+	g.POST("/updateRemark/:id", a.updateInboundRemark)
 	g.POST("/clientIps/:email", a.getClientIps)
 	g.POST("/clearClientIps/:email", a.clearClientIps)
 	g.POST("/addClient", a.addInboundClient)
@@ -65,6 +67,29 @@ func (a *InboundController) getInbounds(c *gin.Context) {
 		return
 	}
 	jsonObj(c, inbounds, nil)
+}
+
+func (a *InboundController) updateInboundRemark(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+		return
+	}
+	var data struct {
+		Remark *string `json:"remark" form:"remark"`
+	}
+	if err = c.ShouldBind(&data); err == nil && data.Remark == nil {
+		err = fmt.Errorf("remark is required")
+	}
+	if err == nil {
+		err = a.inboundService.UpdateInboundRemark(id, session.GetLoginUser(c).Id, *data.Remark)
+	}
+	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), err)
+}
+
+func (a *InboundController) getClientRouteReferences(c *gin.Context) {
+	refs, err := a.inboundService.GetClientRouteReferences(session.GetLoginUser(c).Id)
+	jsonObj(c, refs, err)
 }
 
 func (a *InboundController) getInbound(c *gin.Context) {

@@ -232,6 +232,14 @@
 "importInbound" = "افزودن یک ورودی"
 
 [pages.client]
+"routeRefs" = "مسیرهای مرتبط"
+"routeShort" = "مسیرها"
+"routeRule" = "قانون"
+"routeRegexp" = "عبارت منظم"
+"routeLoading" = "در حال خواندن ارجاع‌ها…"
+"routeReadError" = "خواندن ارجاع‌های مسیریابی ممکن نیست."
+"routeNoRefs" = "مسیر مرتبطی وجود ندارد."
+"routeRenameWarning" = "پس از تغییر نام، نام کاربری را در این مسیرها بررسی کنید."
 "add" = "کاربر جدید"
 "edit" = "ویرایش کاربر"
 "submitAdd" = "اضافه کردن"

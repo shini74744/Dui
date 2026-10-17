@@ -232,6 +232,14 @@
 "importInbound" = "Impor Masuk"
 
 [pages.client]
+"routeRefs" = "Rute terkait"
+"routeShort" = "Rute"
+"routeRule" = "Aturan"
+"routeRegexp" = "Ekspresi reguler"
+"routeLoading" = "Memuat referensi rute…"
+"routeReadError" = "Tidak dapat memuat referensi rute."
+"routeNoRefs" = "Tidak ada rute terkait."
+"routeRenameWarning" = "Setelah mengganti nama, periksa nama pengguna di rute ini."
 "add" = "Tambah Klien"
 "edit" = "Edit Klien"
 "submitAdd" = "Tambah Klien"

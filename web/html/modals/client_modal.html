@@ -104,6 +104,7 @@
         clientStats: [],
         oldClientId: "",
         originalEmail: "",
+        routeDetailsKey: 0,
         index: null,
         clientIps: null,
         delayedStart: false,
@@ -115,6 +116,7 @@
             }
         },
         show({ title = '', okText = '{{ i18n "sure" }}', index = null, dbInbound = null, confirm = () => { }, isEdit = false }) {
+            this.routeDetailsKey++;
             this.visible = true;
             this.title = title;
             this.okText = okText;
@@ -209,6 +211,10 @@
             },
             get isEdit() {
                 return this.clientModal.isEdit;
+            },
+            get clientRouteContext() {
+                if (!this.clientModal.isEdit || typeof app === 'undefined') return null;
+                return {...app.getClientRouteContext(this.clientModal.dbInbound.id, this.clientModal.originalEmail), viewKey: this.clientModal.routeDetailsKey};
             },
             get datepicker() {
                 return app.datepicker;
