@@ -200,6 +200,8 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
             browser_env.update(DUI_FIXTURE_BASE=base,DUI_FIXTURE_COOKIES=json.dumps(cookies))
             if not os.environ.get('DUI_SKIP_ROUTE_UI'):
                 subprocess.run(['node',str(Path(__file__).with_name('test-route-health-ui.cjs'))],env=browser_env,check=True,timeout=240)
+            if os.environ.get('DUI_METADATA_BROWSER'):
+                subprocess.run(['node',str(Path(__file__).with_name('test-inbound-metadata-ui.cjs'))],env=browser_env,check=True,timeout=240)
             if os.environ.get('DUI_INBOUND_SEARCH_BROWSER'):
                 subprocess.run(['node',str(Path(__file__).with_name('test-inbound-search-ui.cjs'))],env=browser_env,check=True,timeout=120)
             if os.environ.get('DUI_SPEED_BROWSER'):

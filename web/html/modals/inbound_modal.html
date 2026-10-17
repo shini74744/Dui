@@ -16,6 +16,16 @@
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
         helperCapabilities: {},
+        originalInbound: '',
+        originalMetadata: '',
+        metadataSnapshot() {
+            const row = this.dbInbound;
+            return JSON.stringify([row.id, row.total, row.enable, row.expiryTime, row.trafficReset, row.deviceLimit]);
+        },
+        remarkOnly() {
+            return this.isEdit && this.originalInbound === JSON.stringify(this.inbound.toJson())
+                && this.originalMetadata === this.metadataSnapshot();
+        },
         ok() {
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
@@ -32,6 +42,8 @@
             } else {
                 this.dbInbound = new DBInbound();
             }
+            this.originalInbound = JSON.stringify(this.inbound.toJson());
+            this.originalMetadata = this.metadataSnapshot();
             this.confirm = confirm;
             this.visible = true;
             this.isEdit = isEdit;
@@ -66,6 +78,7 @@
             get client() {
                 return inModal.inbound.clients[0];
             },
+            get clientRouteContext() { return null; },
             get datepicker() {
                 return app.datepicker;
             },

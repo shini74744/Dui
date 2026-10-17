@@ -46,7 +46,7 @@
   </a-popover>
 </template>
 <template slot="client" slot-scope="text, client">
-  <a-space direction="horizontal" :size="2">
+  <div class="client-identity-shell">
     <a-tooltip>
       <template slot="title">
         <template v-if="!isClientEnabled(record, client.email)">{{ i18n "depleted" }}</template>
@@ -55,8 +55,12 @@
       </template>
       <a-badge :class="isClientOnline(client.email)? 'online-animation' : ''" :color="client.enable ? statsExpColor(record, client.email) : themeSwitcher.isDarkTheme ? '#2c3950' : '#bcbcbc'"></a-badge>
     </a-tooltip>
-    <a-space direction="vertical" :size="2">
-      <span class="client-email">[[ client.email ]]</span>
+    <div class="client-identity-content">
+      <div class="client-identity">
+        <span class="client-email">[[ client.email ]]</span>
+        <client-route-references :context="getClientRouteContext(record.id, client.email)"
+            @refresh="loadClientRouteReferences()"></client-route-references>
+      </div>
       <template v-if="client.comment && client.comment.trim()">
         <a-tooltip v-if="client.comment.length > 50" :overlay-class-name="themeSwitcher.currentTheme">
           <template slot="title">
@@ -66,8 +70,8 @@
         </a-tooltip>
         <span v-else class="client-comment">[[ client.comment ]]</span>
       </template>
-    </a-space>
-  </a-space>
+    </div>
+  </div>
 </template>
 <template slot="activity" slot-scope="text, client">
   <button type="button" class="activity-badge activity-badge-button"

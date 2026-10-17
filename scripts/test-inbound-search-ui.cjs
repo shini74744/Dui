@@ -22,6 +22,7 @@ const fixtures=[inbound(4,43009,'Japan dedicated',clients),inbound(9,19000,'Othe
   await page.route('**/dui/api/inbounds/**',route=>{
    const pathname=new URL(route.request().url()).pathname;
    if(pathname.endsWith('/list'))return route.fulfill({json:{success:true,obj:fixtures}});
+   if(pathname.endsWith('/clientRouteReferences'))return route.fulfill({json:{success:true,obj:[]}});
    if(pathname.endsWith('/onlines'))return route.fulfill({json:{success:true,obj:[]}});
    if(pathname.endsWith('/lastOnline'))return route.fulfill({json:{success:true,obj:{}}});
    if(pathname.endsWith('/activity') && route.request().method()==='GET')return route.fulfill({json:{success:true,obj:{inbounds:{},clients:{}}}});

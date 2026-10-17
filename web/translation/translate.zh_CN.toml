@@ -260,6 +260,14 @@
 
 
 [pages.client]
+"routeRefs" = "关联路由"
+"routeShort" = "路由"
+"routeRule" = "规则"
+"routeRegexp" = "正则匹配"
+"routeLoading" = "正在读取路由引用…"
+"routeReadError" = "暂时无法读取路由引用，请重试。"
+"routeNoRefs" = "暂无关联路由。"
+"routeRenameWarning" = "改名后，请检查这些路由中的用户名。"
 "add" = "添加客户端"
 "edit" = "编辑客户端"
 "submitAdd" = "添加客户端"

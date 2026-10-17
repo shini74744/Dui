@@ -232,6 +232,14 @@
 "importInbound" = "Nhập inbound"
 
 [pages.client]
+"routeRefs" = "Định tuyến liên quan"
+"routeShort" = "Định tuyến"
+"routeRule" = "Quy tắc"
+"routeRegexp" = "Biểu thức chính quy"
+"routeLoading" = "Đang tải tham chiếu…"
+"routeReadError" = "Không thể tải tham chiếu định tuyến."
+"routeNoRefs" = "Không có định tuyến liên quan."
+"routeRenameWarning" = "Sau khi đổi tên, hãy kiểm tra tên người dùng trong các định tuyến này."
 "add" = "Thêm người dùng"
 "edit" = "Chỉnh sửa người dùng"
 "submitAdd" = "Thêm"

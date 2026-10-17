@@ -1203,6 +1203,7 @@
 {{template "component/aThemeSwitch" .}}
 {{template "component/aCustomStatistic" .}}
 {{template "component/aPersianDatepicker" .}}
+{{template "component/clientRouteReferences"}}
 {{template "modals/inboundModal"}}
 {{template "modals/promptModal"}}
 {{template "modals/qrcodeModal"}}
@@ -1299,7 +1300,7 @@
         { title: '{{ i18n "pages.inbounds.operate" }}', width: 65, scopedSlots: { customRender: 'actions' } },
         { title: '{{ i18n "pages.inbounds.enable" }}', width: 35, scopedSlots: { customRender: 'enable' } },
         { title: '{{ i18n "online" }}', width: 35, scopedSlots: { customRender: 'online' } },
-        { title: '{{ i18n "pages.inbounds.client" }}', width: 80, scopedSlots: { customRender: 'client' } },
+        { title: '{{ i18n "pages.inbounds.client" }}', width: 80, className: 'client-name-cell', scopedSlots: { customRender: 'client' } },
         { title: '{{ i18n "pages.inbounds.traffic" }}', width: 80, align: 'center', scopedSlots: { customRender: 'traffic' } },
         { title: '{{ i18n "pages.inbounds.allTimeTraffic" }}', width: 80, align: 'center', scopedSlots: { customRender: 'allTime' } },
         { title: '来源IP | 在线连接', width: 70, align: 'center', scopedSlots: { customRender: 'activity' } },
@@ -1318,7 +1319,7 @@
 
     const innerMobileColumns = [
         { title: '{{ i18n "pages.inbounds.operate" }}', width: 10, align: 'center', scopedSlots: { customRender: 'actionMenu' } },
-        { title: '{{ i18n "pages.inbounds.client" }}', width: 90, align: 'left', scopedSlots: { customRender: 'client' } },
+        { title: '{{ i18n "pages.inbounds.client" }}', width: 90, align: 'left', className: 'client-name-cell', scopedSlots: { customRender: 'client' } },
         { title: '{{ i18n "pages.inbounds.info" }}', width: 10, align: 'center', scopedSlots: { customRender: 'info' } },
     ];
 
@@ -1401,6 +1402,10 @@
                 subURI : '',
                 subJsonURI : '',
             },
+            clientRouteRefs: {},
+            clientRouteRefsLoaded: false,
+            clientRouteRefsError: false,
+            clientRouteRefsRequest: 0,
             remarkModel: '-ieo',
             datepicker: 'gregorian',
             tgBotEnable: false,
@@ -1479,6 +1484,29 @@
         },
 		
         methods: {
+            clientRouteKey(id, email) { return JSON.stringify([Number(id), email || '']); },
+            getClientRouteContext(id, email) {
+                return {email: email || '', rules: this.clientRouteRefs[this.clientRouteKey(id, email)] || [],
+                    loading: !this.clientRouteRefsLoaded, error: this.clientRouteRefsError};
+            },
+            async loadClientRouteReferences() {
+                const request = ++this.clientRouteRefsRequest;
+                try {
+                    const msg = await HttpUtil.get('/dui/api/inbounds/clientRouteReferences');
+                    if (request !== this.clientRouteRefsRequest) return;
+                    if (!msg.success || !Array.isArray(msg.obj)) throw new Error('route references unavailable');
+                    const refs = {};
+                    msg.obj.forEach(item => { refs[this.clientRouteKey(item.inboundId, item.email)] = item.rules || []; });
+                    this.clientRouteRefs = refs;
+                    this.clientRouteRefsError = false;
+                } catch (_) {
+                    if (request !== this.clientRouteRefsRequest) return;
+                    this.clientRouteRefs = {};
+                    this.clientRouteRefsError = true;
+                } finally {
+                    if (request === this.clientRouteRefsRequest) this.clientRouteRefsLoaded = true;
+                }
+            },
             loading(spinning = true) {
                 this.loadingStates.spinning = spinning;
             },
@@ -1741,6 +1769,7 @@
                 }
             },
             async getDBInbounds() {
+                this.loadClientRouteReferences();
                 this.refreshing = true;
                 try {
                     const [msg, lastOnlineMsg, onlineMsg] = await Promise.all([
@@ -3198,6 +3227,10 @@ async openPort(port) {
                 await this.submit('/dui/api/inbounds/add', data, inModal);
             },
             async updateInbound(inbound, dbInbound) {
+                if (inModal.dbInbound === dbInbound && inModal.remarkOnly()) {
+                    await this.submit(`/dui/api/inbounds/updateRemark/${dbInbound.id}`, {remark: dbInbound.remark}, inModal);
+                    return;
+                }
                 const data = {
                     up: dbInbound.up,
                     down: dbInbound.down,
@@ -3249,6 +3282,7 @@ async openPort(port) {
                 });
             },
             openEditClient(dbInboundId, client) {
+                this.loadClientRouteReferences();
                 dbInbound = this.dbInbounds.find(row => row.id === dbInboundId);
                 clients = this.getInboundClients(dbInbound);
                 index = this.findIndexOfClient(dbInbound.protocol, clients, client);

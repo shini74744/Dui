@@ -39,6 +39,7 @@ jobs:
       - name: User rate and TLS form round trips
         run: |
           node scripts/test-inbound-search.cjs
+          node scripts/test-inbound-metadata.cjs
           node scripts/test-user-rate.cjs
           node scripts/test-native-protocols.cjs
           node scripts/test-helper-protocols.cjs

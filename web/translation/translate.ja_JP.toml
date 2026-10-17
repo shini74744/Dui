@@ -232,6 +232,14 @@
 "importInbound" = "インバウンドルールをインポート"
 
 [pages.client]
+"routeRefs" = "関連ルート"
+"routeShort" = "ルート"
+"routeRule" = "ルール"
+"routeRegexp" = "正規表現"
+"routeLoading" = "ルート参照を読み込み中…"
+"routeReadError" = "ルート参照を取得できません。再試行してください。"
+"routeNoRefs" = "関連ルートはありません。"
+"routeRenameWarning" = "名前の変更後、これらのルートのユーザー名を確認してください。"
 "add" = "クライアント追加"
 "edit" = "クライアント編集"
 "submitAdd" = "クライアント追加"

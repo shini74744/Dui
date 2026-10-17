@@ -14,6 +14,8 @@
             </a-tooltip>
         </template>
         <a-input v-model.trim="client.email"></a-input>
+        <client-route-references v-if="clientRouteContext" :context="clientRouteContext" :email="client.email"
+            editor @refresh="app.loadClientRouteReferences()"></client-route-references>
     </a-form-item>
     <a-form-item v-if="inbound.protocol === Protocols.MTPROTO" label="FakeTLS secret"><a-input v-model.trim="client.secret"><a-icon slot="addonAfter" type="sync" @click="client.secret = Inbound.HelperClient.fakeTLSSecret()"></a-icon></a-input></a-form-item>
     <a-form-item v-if="inbound.protocol === Protocols.MTPROTO" label="广告标签（可选）"><a-input v-model.trim="client.adTag"></a-input></a-form-item>

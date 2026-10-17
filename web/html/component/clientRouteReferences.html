@@ -1,0 +1,111 @@
+{{define "component/clientRouteReferences"}}
+<style>
+.client-name-cell { max-width:0; }
+.client-identity-shell { display:flex; align-items:flex-start; gap:6px; width:100%; min-width:0; }
+.client-identity-shell > .ant-badge { flex:none; }
+.client-identity-content { flex:1; min-width:0; }
+.client-identity { display:flex; align-items:flex-start; gap:6px; width:100%; min-width:0; }
+.client-identity .client-email { min-width:0; overflow-wrap:anywhere; white-space:normal; }
+.client-identity-content .client-comment { display:block; overflow-wrap:anywhere; white-space:normal; }
+.client-route-button.ant-btn { flex:none; width:22px; height:22px; padding:0; line-height:20px; font-size:11px; border-radius:50%; }
+@media (max-width:768px) { .client-route-button.ant-btn { width:24px; height:24px; line-height:22px; } }
+.client-route-details { width:320px; max-width:calc(100vw - 64px); line-height:1.6; }
+.client-route-list { max-height:220px; overflow:auto; margin:6px 0; padding:0; list-style:none; }
+.client-route-item { padding:6px 0; overflow-wrap:anywhere; line-height:1.6; }
+.client-route-item + .client-route-item { border-top:1px solid var(--color-border, rgba(128,128,128,.2)); }
+.client-route-caption { font-size:12px; opacity:.72; line-height:1.6; }
+.client-route-target { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px; }
+.client-route-editor { margin-top:8px; line-height:1.6; }
+.client-route-editor .ant-alert { padding:8px 12px 8px 36px; }
+.client-route-editor .ant-alert-icon { top:11px; left:12px; font-size:14px; }
+.client-route-editor .ant-alert-description { font-size:12px; line-height:1.6; }
+.client-route-editor .ant-alert-message { font-size:12px; }
+.client-route-editor .client-route-list { max-height:180px; }
+.client-route-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; gap:8px; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:start; cursor:pointer; }
+.client-route-toggle:focus-visible { outline:2px solid currentColor; outline-offset:3px; border-radius:3px; }
+.client-route-toggle .anticon { flex:none; font-size:11px; transition:transform .24s ease; }
+.client-route-toggle .anticon.is-open { transform:rotate(180deg); }
+.client-route-notice .ant-alert-message { margin-bottom:0; }
+.client-route-expander { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows .24s ease, opacity .2s ease; }
+.client-route-expander.is-open { grid-template-rows:1fr; opacity:1; }
+.client-route-expander-inner { min-height:0; overflow:hidden; }
+.client-route-rename-warning { padding-top:6px; }
+@media (prefers-reduced-motion:reduce) {
+    .client-route-expander, .client-route-toggle .anticon { transition:none; }
+}
+</style>
+<script type="text/x-template" id="client-route-list-template">
+<ul class="client-route-list">
+    <li v-for="rule in rules" :key="rule.index" class="client-route-item">
+        <div><strong>{{ i18n "pages.client.routeRule" }} #[[ rule.index ]]</strong>
+            <span v-if="rule.ruleTag"> · [[ rule.ruleTag ]]</span>
+            <a-tag v-if="rule.regexp" color="purple" style="margin-left:6px">{{ i18n "pages.client.routeRegexp" }}</a-tag>
+        </div>
+        <div class="client-route-target">
+            <span class="client-route-caption">[[ rule.balancerTag ? '{{ i18n "pages.xray.rules.balancer" }}' : '{{ i18n "pages.xray.rules.outbound" }}' ]]</span>
+            <span>[[ rule.balancerTag || rule.outboundTag || '—' ]]</span>
+        </div>
+        <div v-if="rule.fallbackTag" class="client-route-target"><span class="client-route-caption">Fallback</span>[[ rule.fallbackTag ]]</div>
+    </li>
+</ul>
+</script>
+<script type="text/x-template" id="client-route-references-template">
+<div v-if="editor" class="client-route-editor">
+    <div v-if="context.loading" class="client-route-caption"><a-icon type="loading"></a-icon> {{ i18n "pages.client.routeLoading" }}</div>
+    <a-alert v-else-if="context.error" type="warning" show-icon>
+        <span slot="message">{{ i18n "pages.client.routeReadError" }}</span>
+        <a-button slot="description" size="small" icon="reload" @click="$emit('refresh')">{{ i18n "refresh" }}</a-button>
+    </a-alert>
+    <a-alert v-else-if="context.rules.length" class="client-route-notice" :type="renaming ? 'warning' : 'info'" show-icon>
+        <button slot="message" type="button" class="client-route-toggle" :aria-expanded="detailsOpen ? 'true' : 'false'"
+            :aria-controls="detailsId" @click="detailsOpen = !detailsOpen">
+            <span>{{ i18n "pages.client.routeRefs" }} · [[ context.rules.length ]]</span>
+            <a-icon type="down" :class="{'is-open': detailsOpen}"></a-icon>
+        </button>
+        <div slot="description">
+            <div :id="detailsId" class="client-route-expander" :class="{'is-open': detailsOpen}" :aria-hidden="!detailsOpen">
+                <div class="client-route-expander-inner">
+                    <client-route-reference-list :rules="context.rules"></client-route-reference-list>
+                </div>
+            </div>
+            <div v-if="renaming" class="client-route-rename-warning">{{ i18n "pages.client.routeRenameWarning" }}</div>
+        </div>
+    </a-alert>
+    <div v-else class="client-route-caption">{{ i18n "pages.client.routeNoRefs" }}</div>
+</div>
+<a-popover v-else-if="!context.loading && (context.rules.length || context.error)" trigger="click"
+    :overlay-class-name="themeSwitcher.currentTheme" placement="bottom">
+    <span slot="title">{{ i18n "pages.client.routeRefs" }}</span>
+    <div slot="content" class="client-route-details">
+        <template v-if="context.error">
+            <div>{{ i18n "pages.client.routeReadError" }}</div>
+            <a-button size="small" icon="reload" @click="$emit('refresh')">{{ i18n "refresh" }}</a-button>
+        </template>
+        <template v-else>
+            <client-route-reference-list :rules="context.rules"></client-route-reference-list>
+        </template>
+    </div>
+    <a-button class="client-route-button" size="small" :icon="context.error ? 'exclamation-circle' : 'branches'"
+        :title="routeLabel" :aria-label="routeLabel" @click.stop></a-button>
+</a-popover>
+</script>
+<script>
+Vue.component('client-route-reference-list', {
+    template: '#client-route-list-template', delimiters: ['[[', ']]'], props: {rules: {type: Array, required: true}},
+});
+Vue.component('client-route-references', {
+    template: '#client-route-references-template', delimiters: ['[[', ']]'],
+    props: {context: {type: Object, required: true}, email: {type: String, default: ''}, editor: Boolean},
+    data() { return {detailsOpen: false}; },
+    computed: {
+        routeLabel() { return this.context.error ? '{{ i18n "pages.client.routeReadError" }}' : '{{ i18n "pages.client.routeRefs" }} · ' + this.context.rules.length; },
+        renaming() { return this.editor && this.email !== this.context.email; },
+        detailsId() { return 'client-route-details-' + this._uid; },
+    },
+    watch: {
+        'context.viewKey'() { this.detailsOpen = false; },
+        'context.email'() { this.detailsOpen = false; },
+    },
+});
+</script>
+{{end}}
