@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='dui-native-panel-test-') as tmp:
    if row is not None and predicate(row):return row
    time.sleep(.5)
   raise AssertionError(message+': '+str(row))
- template={'log':{'loglevel':'none','access':'none','error':'none'},'api':{'tag':'api','services':['HandlerService','StatsService']},'stats':{},'inbounds':[{'tag':'api','listen':'127.0.0.1','port':ap,'protocol':'tunnel','settings':{'address':'127.0.0.1'}}],'outbounds':[{'tag':'direct','protocol':'freedom','settings':{'finalRules':[{'action':'allow','ip':['127.0.0.0/8']}]}}],'routing':{'rules':[{'type':'field','inboundTag':['api'],'outboundTag':'api'}]},'policy':{'levels':{'0':{'statsUserUplink':True,'statsUserDownlink':True}},'system':{'statsInboundUplink':True,'statsInboundDownlink':True}}}
+ template={'log':{'loglevel':'none','access':'none','error':'none'},'api':{'tag':'api','services':['HandlerService','StatsService','RoutingService']},'stats':{},'inbounds':[{'tag':'api','listen':'127.0.0.1','port':ap,'protocol':'tunnel','settings':{'address':'127.0.0.1'}}],'outbounds':[{'tag':'direct','protocol':'freedom','settings':{'finalRules':[{'action':'allow','ip':['127.0.0.0/8']}]}}],'routing':{'rules':[{'type':'field','inboundTag':['api'],'outboundTag':'api'}]},'policy':{'levels':{'0':{'statsUserUplink':True,'statsUserDownlink':True}},'system':{'statsInboundUplink':True,'statsInboundDownlink':True}}}
  with sqlite3.connect(db) as conn:conn.execute('INSERT INTO settings(key,value) VALUES(?,?)',('xrayTemplateConfig',json.dumps(template)))
  def waitport(p,number):
   for _ in range(100):
@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix='dui-native-panel-test-') as tmp:
  def api(path,data=None):
   r=request('/dui/api/'+path,data);assert r.get('success'), 'isolated API failed: '+path+' '+str(r.get('msg',''));return r.get('obj')
  def coreapi(args):
-  r=subprocess.run([str(root/'bin/xray-linux-amd64'),'api',*args,'--server=127.0.0.1:'+str(ap)],capture_output=True,text=True,timeout=12);assert r.returncode==0,'test core API failed';return r.stdout
+  r=subprocess.run([str(root/'bin/xray-linux-amd64'),'api',args[0],'--server=127.0.0.1:'+str(ap),*args[1:]],capture_output=True,text=True,timeout=12);assert r.returncode==0,'test core API failed: '+r.stderr+r.stdout;return r.stdout
  def http_probe(cp,auth=None,scheme='socks5h',expected=True):
   proxy=scheme+'://'+(('test:testpass@') if auth else '')+'127.0.0.1:'+str(cp)
   r=subprocess.run(['curl','--noproxy','','-sS','--max-time','3','--proxy',proxy,'http://127.0.0.1:'+str(httpd.server_port)+'/'],capture_output=True,timeout=5)
@@ -98,11 +98,53 @@ with tempfile.TemporaryDirectory(prefix='dui-native-panel-test-') as tmp:
   p=subprocess.Popen([str(root/'bin/xray-linux-amd64'),'run','-config',str(path)],cwd=root,env=env,preexec_fn=unprivileged,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);waitport(p,cp);return p,cp
  try:
   panel=start_panel();login()
+  if os.environ.get('DUI_HY2_BROWSER'):
+   browser_env=os.environ.copy();browser_env.update(DUI_FIXTURE_BASE='http://127.0.0.1:'+str(pp),DUI_TEST_USERNAME='dui-smoke',DUI_TEST_PASSWORD=password,DUI_TEST_CERT=str(root/'cert.pem'),DUI_TEST_KEY=str(root/'key.pem'),DUI_TEST_PORTS=json.dumps([port() for _ in range(4)]))
+   subprocess.run(['node',str(Path(__file__).with_name('test-hysteria-ui.cjs'))],env=browser_env,check=True,timeout=180)
   sp=port();auth='test:/?%'+uuid.uuid4().hex;email='dui-hy-test'
   settings={'version':2,'clients':[{'auth':auth,'email':email,'enable':True,'speedLimitMbps':3,'subId':'dui-hy-sub'}]}
   stream={'network':'hysteria','security':'tls','hysteriaSettings':{'version':2},'tlsSettings':{'serverName':'localhost','alpn':['h3'],'certificates':[{'certificateFile':str(root/'cert.pem'),'keyFile':str(root/'key.pem')}],'settings':{'allowInsecure':True}}}
   form={'listen':'127.0.0.1','port':sp,'protocol':'hysteria','enable':'true','remark':'isolated Hy2','settings':json.dumps(settings),'streamSettings':json.dumps(stream),'sniffing':'{}'}
+  # Serialize through the real browser submit handlers, including the fixed
+  # hidden HY2 transport, rather than testing a hand-crafted API payload only.
+  def browser_payload(form,edit=False):
+   js = r'''
+const fs=require('node:fs'),vm=require('node:vm');
+const ctx=vm.createContext({console,URL,URLSearchParams,location:{hostname:'localhost'},
+ window:{crypto:require('node:crypto').webcrypto,location:{protocol:'https:'}},
+ inModal:{dbInbound:null,remarkOnly:()=>false}});
+for(const f of ['util/index.js','model/inbound.js','model/dbinbound.js'])
+ vm.runInContext(fs.readFileSync('web/assets/js/'+f,'utf8'),ctx);
+const form=JSON.parse(fs.readFileSync(0,'utf8'));
+const data={...form,port:Number(form.port),enable:form.enable==='true'};
+const db=vm.runInContext('new DBInbound('+JSON.stringify(data)+')',ctx);
+const inbound=db.toInbound();
+const html=fs.readFileSync('web/html/inbounds.html','utf8');
+const start=html.indexOf('            async addInbound(inbound, dbInbound) {');
+const end=html.indexOf('            openAddClient(',start);
+if(start<0||end<=start)throw Error('submit handlers missing');
+const app=vm.runInContext('({'+html.slice(start,end)+'})',ctx);
+app.submit=async(url,data)=>process.stdout.write(JSON.stringify(data));
+app[process.argv[1]==='edit'?'updateInbound':'addInbound'](inbound,db).catch(e=>{console.error(e);process.exitCode=1});
+'''
+   result=subprocess.run(['node','-e',js,'edit' if edit else 'add'],cwd=Path(__file__).resolve().parent.parent,input=json.dumps(form),capture_output=True,text=True,timeout=15)
+   assert result.returncode==0,result.stderr
+   result=json.loads(result.stdout)
+   for key in ('enable',):
+    if isinstance(result.get(key),bool):result[key]=str(result[key]).lower()
+   stream_payload=json.loads(result['streamSettings'])
+   assert stream_payload['network']=='hysteria' and stream_payload['security']=='tls'
+   return result
+  form=browser_payload(form)
   created=api('inbounds/add',form);hid=created['id'];htag=created['tag']
+  edited=dict(form);edited['id']=hid
+  edited_stream=json.loads(edited['streamSettings']);edited_stream['hysteriaSettings']['udpIdleTimeout']=123
+  edited['streamSettings']=json.dumps(edited_stream);edited=browser_payload(edited,True)
+  api('inbounds/update/'+str(hid),edited)
+  saved=api('inbounds/get/'+str(hid))
+  assert json.loads(saved['streamSettings'])['hysteriaSettings']['udpIdleTimeout']==123
+  form=edited
+  print(json.dumps({'real_frontend_HY2_add_update_payload_and_backend_save':True}),flush=True)
   probe_proc,cp=hy_client(sp,auth);http_probe(cp);udp_probe(cp)
   raw=coreapi(['inbounduser','-tag='+htag,'-email='+email]);assert json.loads(raw)['users'][0]['level']==(1<<31)|375000
   print(json.dumps({'hysteria_panel_save_hot_add_TCP_UDP':True,'hot_rate_preserved':True}),flush=True)
@@ -152,6 +194,43 @@ with tempfile.TemporaryDirectory(prefix='dui-native-panel-test-') as tmp:
   panel=start_panel();login();probe_proc,cp=hy_client(sp,auth);http_probe(cp);udp_probe(cp)
   saved=api('inbounds/get/'+str(hid));assert json.loads(saved['settings'])['clients'][0]['auth']==auth
   print(json.dumps({'hysteria_add_delete_enable_restart_TCP_UDP':True}),flush=True)
+  # Both inbound-tag and per-user rules must reach a second proxy hop.
+  # A scoped blackhole catch-all proves that a missing match cannot go direct.
+  relay=None
+  try:
+   rp=port()
+   relay_cfg={'log':{'loglevel':'none'},'inbounds':[{'tag':'chain-relay','listen':'127.0.0.1','port':rp,'protocol':'socks','settings':{'auth':'noauth','udp':True,'ip':'127.0.0.1'}}],
+    'outbounds':[{'protocol':'freedom','settings':{'finalRules':[{'action':'allow','ip':['127.0.0.0/8']}]}}]}
+   relay_path=root/'chain-relay.json';relay_path.write_text(json.dumps(relay_cfg));os.chown(relay_path,TEST_UID,TEST_GID)
+   relay=subprocess.Popen([str(root/'bin/xray-linux-amd64'),'run','-config',str(relay_path)],cwd=root,preexec_fn=unprivileged,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+   waitport(relay,rp)
+   outbound_path=root/'chain-outbounds.json'
+   outbound_path.write_text(json.dumps({'outbounds':[{'tag':'chain-hop','protocol':'socks','settings':{'servers':[{'address':'127.0.0.1','port':rp}]}},{'tag':'chain-denied','protocol':'blackhole'}]}))
+   coreapi(['ado',str(outbound_path)])
+   def set_rules(matching_user):
+    allow={'type':'field','inboundTag':[htag],'outboundTag':'chain-hop'}
+    if matching_user is not None:allow['user']=[matching_user]
+    rules=template['routing']['rules']+[allow,{'type':'field','inboundTag':[htag],'outboundTag':'chain-denied'}]
+    file=root/'chain-rules.json';file.write_text(json.dumps({'routing':{'rules':rules}}))
+    coreapi(['adrules',str(file)])
+   for matching_user in (None,email):
+    set_rules(matching_user)
+    stop(probe_proc);probe_proc=None;probe_proc,cp=hy_client(sp,auth)
+    http_probe(cp);udp_probe(cp)
+   set_rules('different-user')
+   stop(probe_proc);probe_proc=None;probe_proc,cp=hy_client(sp,auth)
+   http_probe(cp,expected=False)
+   try:udp_probe(cp)
+   except (TimeoutError,socket.timeout):pass
+   else:raise AssertionError('unmatched user bypassed scoped reject rule for UDP')
+   set_rules(email)
+   stop(probe_proc);probe_proc=None;probe_proc,cp=hy_client(sp,auth)
+   http_probe(cp);udp_probe(cp)
+   stop(relay);relay=None
+   http_probe(cp,expected=False)
+   print(json.dumps({'HY2_inbound_tag_and_user_chain_TCP_UDP':True,'unmatched_user_rejected_TCP_UDP':True,'failed_chain_no_direct_bypass':True}),flush=True)
+  finally:stop(relay)
+
   # Optional helper suite, using only files explicitly supplied by the caller.
   if os.environ.get('DUI_TEST_HELPER_BIN'):
    hb=Path(os.environ['DUI_TEST_HELPER_BIN'])
