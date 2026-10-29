@@ -3217,7 +3217,7 @@ async openPort(port) {
                     protocol: inbound.protocol,
                     settings: inbound.settings.toString(),
                 };
-                if (inbound.canEnableStream()){
+                if (inbound.canEnableStream() || inbound.protocol === Protocols.HYSTERIA){
                   data.streamSettings = inbound.stream.toString();
                 } else if (inbound.stream?.sockopt) {
                   data.streamSettings = JSON.stringify({ sockopt: inbound.stream.sockopt.toJson() }, null, 2);
@@ -3249,7 +3249,7 @@ async openPort(port) {
                     protocol: inbound.protocol,
                     settings: inbound.settings.toString(),
                 };
-                if (inbound.canEnableStream()){
+                if (inbound.canEnableStream() || inbound.protocol === Protocols.HYSTERIA){
                   data.streamSettings = inbound.stream.toString();
                 } else if (inbound.stream?.sockopt) {
                   data.streamSettings = JSON.stringify({ sockopt: inbound.stream.sockopt.toJson() }, null, 2);

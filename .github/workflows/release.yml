@@ -42,6 +42,7 @@ jobs:
           node scripts/test-inbound-metadata.cjs
           node scripts/test-user-rate.cjs
           node scripts/test-native-protocols.cjs
+          node scripts/test-inbound-submit.cjs
           node scripts/test-helper-protocols.cjs
           node scripts/test-close-wait.cjs
           node scripts/test-outbound-references.cjs
