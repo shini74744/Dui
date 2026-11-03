@@ -38,7 +38,7 @@ func (s *InboundService) SetTelegramService(tgService TelegramService) {
 func (s *InboundService) GetInbounds(userId int) ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Preload("ClientStats").Where("user_id = ?", userId).Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Preload("ClientStats").Where("user_id = ?", userId).Order(inboundDisplayOrder).Find(&inbounds).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
 	}
@@ -321,6 +321,10 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	}()
 
 	// 中文注释：保存入站信息到数据库 (此时 inbound 对象已包含我们手动设置的 ID)
+	inbound.SortOrder, err = nextInboundSortOrder(tx, inbound.UserId)
+	if err != nil {
+		return inbound, false, err
+	}
 	err = tx.Save(inbound).Error
 	if err == nil {
 		if len(inbound.ClientStats) == 0 {

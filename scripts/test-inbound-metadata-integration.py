@@ -1,4 +1,4 @@
-"""Exercise metadata updates against an isolated panel/core and a live VLESS stream."""
+"""Exercise metadata updates and optional browser ordering with an isolated live VLESS stream."""
 import http.cookiejar,json,os,shutil,socket,sqlite3,subprocess,tempfile,time,urllib.parse,urllib.request,uuid,threading,hashlib,signal
 from pathlib import Path
 def port():
@@ -129,6 +129,47 @@ with tempfile.TemporaryDirectory(prefix='dui-metadata-') as tmp:
   res=request('/dui/api/inbounds/update/'+str(inbound_id),changed);assert res['success'],res
   with connect_vless(new_port) as c:ping(c,'port-change-applied')
   assert listener_inode(inbound_port) is None
+  if os.environ.get('DUI_INBOUND_ORDER_BROWSER'):
+   # Keep a real VLESS stream open throughout browser-driven sorting.
+   stream=connect_vless(new_port)
+   for index in range(25):
+    extra=dict(row);extra['enable']='false';extra['port']=port()
+    extra['remark']=('Order group A ' if index%2==0 else 'Order group B ')+str(index)
+    extra['settings']=json.dumps({'clients':[{**client,'id':str(uuid.uuid4()),'email':'order-user-'+str(index)}],'decryption':'none'})
+    result=request('/dui/api/inbounds/add',extra);assert result['success'],result
+   rows_before=request('/dui/api/inbounds/list')['obj'];ids_before=[r['id'] for r in rows_before]
+   identity=core_identity();inode=listener_inode(new_port)
+   runtime_before=(root/'bin/config.json').read_bytes()
+   browser_env=os.environ.copy();browser_env.update(DUI_FIXTURE_BASE=base,DUI_FIXTURE_COOKIES=json.dumps([{'name':c.name,'value':c.value,'url':base+'/'} for c in jar]))
+   subprocess.run(['node',str(Path(__file__).with_name('test-inbound-order-ui.cjs'))],env=browser_env,check=True,timeout=300)
+   ping(stream,'stream-after-browser-sorting')
+   assert core_identity()==identity and listener_inode(new_port)==inode,'sorting restarted core or inbound'
+   assert (root/'bin/config.json').read_bytes()==runtime_before,'sorting changed runtime configuration'
+   rows_after=request('/dui/api/inbounds/list')['obj']
+   def stable(rows):
+    return sorted([{k:v for k,v in r.items() if k not in ('up','down','allTime','clientStats')} for r in rows],key=lambda r:r['id'])
+   assert stable(rows_before)==stable(rows_after),'sorting changed node settings'
+   current=[r['id'] for r in rows_after]
+   for invalid in (current[:-1],current[:-1]+[current[0]],current[:-1]+[999999]):
+    assert not request('/dui/api/inbounds/reorder',{'baseIds':json.dumps(current),'ids':json.dumps(invalid)})['success']
+   assert [r['id'] for r in request('/dui/api/inbounds/list')['obj']]==current
+   # Ordinary edits do not replace the display rank.
+   extra_saved=next(r for r in rows_after if not r['enable']);extra_id=extra_saved['id']
+   edit={k:v for k,v in extra_saved.items() if k not in ('clientStats','tag')};edit['enable']='false';edit['remark']='edited after sorting'
+   assert request('/dui/api/inbounds/update/'+str(extra_id),edit)['success']
+   assert [r['id'] for r in request('/dui/api/inbounds/list')['obj']]==current
+   assert request('/dui/api/inbounds/del/'+str(extra_id),{})['success']
+   extra['port']=port();extra['settings']=json.dumps({'clients':[{**client,'id':str(uuid.uuid4()),'email':'order-reused'}],'decryption':'none'})
+   added=request('/dui/api/inbounds/add',extra);assert added['success']
+   ordered=[r['id'] for r in request('/dui/api/inbounds/list')['obj']]
+   assert ordered==[i for i in current if i!=extra_id]+[added['obj']['id']],'new or reused ID did not append'
+   # Helper protocols use a separate create path; reused IDs must append there too.
+   assert request('/dui/api/inbounds/del/'+str(extra_id),{})['success']
+   helper={**extra,'protocol':'mtproto','port':port(),'remark':'disabled helper order test','settings':json.dumps({'clients':[{'email':'order-helper','enable':True,'secret':'ee'+'11'*16+'example.com'.encode().hex()}]})}
+   helper_added=request('/dui/api/inbounds/add',helper);assert helper_added['success'],helper_added
+   assert [r['id'] for r in request('/dui/api/inbounds/list')['obj']]==[i for i in ordered if i!=extra_id]+[helper_added['obj']['id']]
+   ping(stream,'stream-after-order-validation');stream.close()
+   print(json.dumps({'order_API_validation':True,'sort_preserves_existing_stream_core_listener_and_config':True,'edit_preserves_rank':True,'new_reused_ID_appends':True}),flush=True)
   if os.environ.get('DUI_METADATA_BROWSER'):
    browser_env=os.environ.copy();browser_env.update(DUI_FIXTURE_BASE=base,DUI_FIXTURE_COOKIES=json.dumps([{'name':c.name,'value':c.value,'url':base+'/'} for c in jar]))
    subprocess.run(['node',str(Path(__file__).with_name('test-inbound-metadata-ui.cjs'))],env=browser_env,check=True,timeout=240)

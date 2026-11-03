@@ -32,6 +32,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.GET("/getClientTraffics/:email", a.getClientTraffics)
 	g.GET("/getClientTrafficsById/:id", a.getClientTrafficsById)
 
+	g.POST("/reorder", a.reorderInbounds)
 	g.POST("/add", a.addInbound)
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
@@ -67,6 +68,29 @@ func (a *InboundController) getInbounds(c *gin.Context) {
 		return
 	}
 	jsonObj(c, inbounds, nil)
+}
+
+func (a *InboundController) reorderInbounds(c *gin.Context) {
+	var data struct {
+		IDs     string `json:"ids" form:"ids"`
+		BaseIDs string `json:"baseIds" form:"baseIds"`
+	}
+	var ids, base []int
+	err := c.ShouldBind(&data)
+	if err == nil {
+		err = json.Unmarshal([]byte(data.IDs), &ids)
+	}
+	if err == nil {
+		err = json.Unmarshal([]byte(data.BaseIDs), &base)
+	}
+	if err == nil {
+		err = a.inboundService.ReorderInbounds(session.GetLoginUser(c).Id, base, ids)
+	}
+	if err != nil {
+		jsonMsg(c, "排序保存失败", err)
+		return
+	}
+	jsonMsg(c, "排序已保存", nil)
 }
 
 func (a *InboundController) updateInboundRemark(c *gin.Context) {
