@@ -6,13 +6,19 @@ for(const [before,after] of [[[1,1],[1,1]],[[1,4],[4,99]],[[4,1],[1,4]],[[99],[9
 const base=process.env.DUI_FIXTURE_BASE,out=process.env.DUI_PROBE_TEST_OUTPUT||'/tmp';
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH,args:['--no-sandbox']});
- const cases=[],errors=[];
+ const cases=[],errors=[],saveResponses=[];let activePage;
  try{
  for(const [width,theme] of JSON.parse(process.env.DUI_ORDER_CASES || '[[390,"dark"],[390,"light"],[1440,"ultra"],[1440,"light"],[320,"ultra"]]')){
   const context=await browser.newContext({viewport:{width,height:950},hasTouch:width<768,isMobile:width<768});
   await context.addCookies([...JSON.parse(process.env.DUI_FIXTURE_COOKIES),{name:'lang',value:'zh-CN',url:base+'/'}]);
   await context.addInitScript(theme=>{localStorage.setItem('dark-mode',String(theme!=='light'));localStorage.setItem('isUltraDarkThemeEnabled',String(theme==='ultra'));localStorage.setItem('isRefreshEnabled','false')},theme);
-  const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
+  const page=await context.newPage();activePage=page;
+  page.on('response',async response=>{
+   if(response.url().endsWith('/inbounds/reorder')){
+    try{saveResponses.push({width,theme,status:response.status(),body:await response.json()});}catch(_e){}
+   }
+  });
+  page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
   await page.goto(base+'/dui/inbounds');
   await page.waitForFunction(()=>typeof app!=='undefined'&&app.loadingStates.fetched&&app.dbInbounds.length>8);
   await page.evaluate(()=>{app.pageSize=5;});
@@ -106,7 +112,7 @@ const base=process.env.DUI_FIXTURE_BASE,out=process.env.DUI_PROBE_TEST_OUTPUT||'
  // Long touch drag scrolls the page; cancelling leaves no reorder or stuck state.
  const context=await browser.newContext({viewport:{width:390,height:700},hasTouch:true,isMobile:true});
  await context.addCookies(JSON.parse(process.env.DUI_FIXTURE_COOKIES));
- const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+ const page=await context.newPage();activePage=page;page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base+'/dui/inbounds');await page.waitForFunction(()=>typeof app!=='undefined'&&app.loadingStates.fetched);
  await page.evaluate(()=>{app.pageSize=0;});const allBefore=await page.evaluate(()=>app.dbInbounds.map(r=>r.id));
  const handle=page.locator('.dui-inbound-sort-handle').first();await handle.scrollIntoViewIfNeeded();
@@ -122,5 +128,9 @@ const base=process.env.DUI_FIXTURE_BASE,out=process.env.DUI_PROBE_TEST_OUTPUT||'
  await context.close();
  assert.deepEqual(errors,[]);
  const report={passed:true,cases,autoscroll:true,errors};fs.writeFileSync(out+'/inbound-order-browser.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+ }catch(error){
+  console.error('Recent ordering responses:',JSON.stringify(saveResponses.slice(-12)));
+  if(activePage&&!activePage.isClosed())await activePage.screenshot({path:out+'/inbound-order-failure.png',fullPage:true}).catch(()=>{});
+  throw error;
  }finally{await browser.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1});
