@@ -28,6 +28,8 @@ const base=process.env.DUI_FIXTURE_BASE,out=process.env.DUI_PROBE_TEST_OUTPUT||'
   const shown=()=>handles().evaluateAll(els=>els.map(el=>Number(el.dataset.inboundId)));
   const idle=()=>page.waitForFunction(()=>!app.inboundOrderSaving&&!app.refreshing&&!app.inboundOrderDragging);
   async function drag(from,to,{cancel=false,outside=false,paused=false}={}){
+   // Keep fixed-target assertions away from the auto-scroll edge; test edge scrolling separately below.
+   await rows().nth(to).evaluate(el=>el.scrollIntoView({block:'center',behavior:'instant'}));
    await handles().nth(from).scrollIntoViewIfNeeded();
    const s=await handles().nth(from).boundingBox(),t=await rows().nth(to).boundingBox();
    const a={x:s.x+s.width/2,y:s.y+s.height/2},b={x:a.x,y:outside?10:t.y+t.height/2};
