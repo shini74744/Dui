@@ -36,6 +36,8 @@ type User struct {
 }
 
 type Inbound struct {
+	// Display metadata; stale configuration saves must not overwrite ordering.
+	SortOrder            int64  `json:"-" form:"-" gorm:"not null;default:0;<-:create"`
 	Id                   int    `json:"id" form:"id" gorm:"primaryKey"`
 	UserId               int    `json:"-"`
 	Up                   int64  `json:"up" form:"up"`

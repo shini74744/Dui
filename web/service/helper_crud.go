@@ -148,6 +148,12 @@ func (s *InboundService) saveHelperInbound(ib *model.Inbound, create bool) (*mod
 		return ib, false, tx.Error
 	}
 	defer tx.Rollback()
+	if create {
+		ib.SortOrder, err = nextInboundSortOrder(tx, ib.UserId)
+		if err != nil {
+			return ib, false, err
+		}
+	}
 	if err = tx.Omit("ClientStats").Save(ib).Error; err != nil {
 		return ib, false, err
 	}

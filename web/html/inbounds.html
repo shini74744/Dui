@@ -1,5 +1,15 @@
 {{ template "page/head_start" .}}
 <style>
+  .dui-inbound-table .inbound-id-cell { position: relative; white-space: nowrap; min-width: 92px; padding-left: 42px !important; }
+  .dui-inbound-sort-handle { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: inherit; opacity: .65; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .dui-inbound-sort-handle:hover, .dui-inbound-sort-handle:focus-visible { opacity: 1; color: var(--color-primary, #009e8d); background: rgba(0,158,141,.12); outline: 2px solid rgba(0,158,141,.4); }
+  .dui-inbound-sort-handle:active { cursor: grabbing; }
+  .dui-inbound-sort-handle:disabled { opacity: .25; cursor: default; }
+  .dui-inbound-drag-source > td { background: rgba(0,158,141,.12) !important; }
+  .dui-inbound-drop-before > td { box-shadow: inset 0 2px #009e8d; }
+  .dui-inbound-drop-after > td { box-shadow: inset 0 -2px #009e8d; }
+  @media (pointer: coarse) { .dui-inbound-sort-handle { width: 36px; height: 40px; left: 2px; } }
+
   .ant-table:not(.ant-table-expanded-row .ant-table) {
     outline: 1px solid #f0f0f0;
     outline-offset: -1px;
@@ -470,7 +480,7 @@
                       <a-radio-button value="online">{{ i18n "online" }}</a-radio-button>
                     </a-radio-group>
                   </div>
-                  <a-table :columns="isMobile ? mobileColumns : columns" :row-key="dbInbound => dbInbound.id"
+                  <a-table class="dui-inbound-table" :columns="isMobile ? mobileColumns : columns" :row-key="dbInbound => dbInbound.id"
                       :data-source="searchedInbounds"
                       :scroll="isMobile ? {} : { x: 1000 }"
                       :pagination=pagination(searchedInbounds)
@@ -481,6 +491,12 @@
                       :row-class-name="dbInbound => (dbInbound.isMultiUser() ? '' : 'hideExpandIcon')"
                       :style="{ marginTop: '10px' }"
                       :locale='{ filterConfirm: `{{ i18n "confirm" }}`, filterReset: `{{ i18n "reset" }}`, emptyText: `{{ i18n "noData" }}` }'>
+                    <template slot="inboundId" slot-scope="text, dbInbound">
+                      <dui-inbound-sort-handle :inbound-id="dbInbound.id" :items="searchedInbounds" :disabled="inboundOrderSaving"
+                        :label="`{{ i18n "pages.xray.outbound.dragSort" }}` + ' · ' + dbInbound.id"
+                        @dragging="inboundOrderDragChanged" @reorder="saveInboundOrder"></dui-inbound-sort-handle>
+                      <span>[[ dbInbound.id ]]</span>
+                    </template>
                     <template slot="action" slot-scope="text, dbInbound">
                       <a-dropdown :trigger="['click']">
                         <a-icon @click="e => e.preventDefault()" type="more" :style="{ fontSize: '20px', textDecoration: 'solid' }"></a-icon>
@@ -1199,6 +1215,7 @@
 <script src="{{ .base_path }}assets/uri/URI.min.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/model/inbound.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/model/dbinbound.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/util/inbound-order.js?{{ .cur_ver }}"></script>
 {{template "component/aSidebar" .}}
 {{template "component/aThemeSwitch" .}}
 {{template "component/aCustomStatistic" .}}
@@ -1216,7 +1233,9 @@
         title: "ID",
         align: 'center',
         dataIndex: "id",
-        width: 40,
+        width: 52,
+        className: 'inbound-id-cell',
+        scopedSlots: { customRender: 'inboundId' },
         responsive: ["xs"],
     }, {
         title: '{{ i18n "pages.inbounds.operate" }}',
@@ -1277,7 +1296,9 @@
         title: "ID",
         align: 'right',
         dataIndex: "id",
-        width: 10,
+        width: 92,
+        className: 'inbound-id-cell',
+        scopedSlots: { customRender: 'inboundId' },
         responsive: ["s"],
     }, {
         title: '{{ i18n "pages.inbounds.operate" }}',
@@ -1287,7 +1308,6 @@
     }, {
         title: '{{ i18n "pages.inbounds.remark" }}',
         align: 'left',
-        width: 70,
         dataIndex: "remark",
     }, {
         title: '{{ i18n "pages.inbounds.info" }}',
@@ -1340,6 +1360,9 @@
             enableFilter: false,
             filterBy: '',
             searchedInbounds: [],
+            inboundOrderSaving: false,
+            inboundOrderDragging: false,
+            inboundListRequest: 0,
             expireDiff: 0,
             trafficDiff: 0,
             defaultCert: '',
@@ -1484,6 +1507,34 @@
         },
 		
         methods: {
+            inboundOrderDragChanged(active) {
+                this.inboundOrderDragging = active;
+                if (active) ++this.inboundListRequest;
+            },
+            async saveInboundOrder(change) {
+                if (this.inboundOrderSaving) return;
+                const base = this.dbInbounds.map(row => row.id);
+                const ids = DuiInboundOrder.merge(base, change.before, change.after);
+                if (!ids || JSON.stringify(base) === JSON.stringify(ids)) return;
+                this.inboundOrderSaving = true;
+                ++this.inboundListRequest;
+                try {
+                    const msg = await HttpUtil.post('/dui/api/inbounds/reorder', {baseIds: JSON.stringify(base), ids: JSON.stringify(ids)});
+                    if (msg.success) {
+                        const rows = new Map(this.dbInbounds.map(row => [row.id, row]));
+                        this.setInbounds(ids.map(id => rows.get(id)));
+                    }
+                } finally {
+                    this.inboundOrderSaving = false;
+                    await this.getDBInbounds();
+                    if (Number.isInteger(change.focusId)) {
+                        await this.$nextTick();
+                        if (document.activeElement === document.body) {
+                            document.querySelector('.dui-inbound-sort-handle[data-inbound-id="' + change.focusId + '"]')?.focus({preventScroll: true});
+                        }
+                    }
+                }
+            },
             clientRouteKey(id, email) { return JSON.stringify([Number(id), email || '']); },
             getClientRouteContext(id, email) {
                 return {email: email || '', rules: this.clientRouteRefs[this.clientRouteKey(id, email)] || [],
@@ -1769,6 +1820,8 @@
                 }
             },
             async getDBInbounds() {
+                if (this.inboundOrderDragging || this.inboundOrderSaving) return;
+                const request = ++this.inboundListRequest;
                 this.loadClientRouteReferences();
                 this.refreshing = true;
                 try {
@@ -1777,7 +1830,7 @@
                         HttpUtil.post('/dui/api/inbounds/lastOnline'),
                         HttpUtil.post('dui/api/inbounds/onlines'),
                     ]);
-                    if (!msg.success) return;
+                    if (request !== this.inboundListRequest || this.inboundOrderDragging || this.inboundOrderSaving || !msg.success) return;
                     if (lastOnlineMsg.success && lastOnlineMsg.obj) {
                         this.lastOnlineMap = lastOnlineMsg.obj || {};
                     }
