@@ -12,7 +12,7 @@ func dbClientStats(inbound *model.Inbound) error {
 }
 
 func (s *InboundService) validateNativeInbound(inbound *model.Inbound) error {
-	if !inbound.Protocol.IsNativeExtension() {
+	if !inbound.Enable && !inbound.Protocol.IsNativeExtension() {
 		return nil
 	}
 	if err := inbound.ValidateNativeProtocol(); err != nil {
@@ -32,6 +32,7 @@ func (s *InboundService) validateNativeInbound(inbound *model.Inbound) error {
 			return fmt.Errorf("TUN 接口名已被其他入站使用")
 		}
 	}
+	// Ordinary protocols need the same preflight before removing a live listener.
 	cfg := &xray.Config{InboundConfigs: []xray.InboundConfig{*inbound.GenXrayInboundConfig()}}
 	return xray.ValidateConfig(cfg)
 }

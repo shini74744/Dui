@@ -1,0 +1,163 @@
+--- a/proxy/wireguard/client.go
++++ b/proxy/wireguard/client.go
+@@ -62,7 +62,14 @@
+ 	p := v.GetFeature(policy.ManagerType()).(policy.Manager)
+ 	d := v.GetFeature(dns.ClientType()).(dns.Client)
+ 
+-	streamSettings := session.StreamSettingsFromContext(ctx).(*internet.MemoryStreamConfig)
++	streamSettings, ok := session.StreamSettingsFromContext(ctx).(*internet.MemoryStreamConfig)
++	if !ok || streamSettings == nil {
++		var err error
++		streamSettings, err = internet.ToMemoryStreamConfig(nil)
++		if err != nil {
++			return nil, errors.New("failed to initialize WireGuard transport").Base(err)
++		}
++	}
+ 	tag := session.FullHandlerFromContext(ctx).Tag()
+ 	var uplinkCounter stats.Counter
+ 	var downlinkCounter stats.Counter
+--- a/testing/scenarios/wireguard_test.go
++++ b/testing/scenarios/wireguard_test.go
+@@ -1,14 +1,17 @@
+ package scenarios
+ 
+ import (
++	"encoding/hex"
++	"golang.org/x/crypto/curve25519"
+ 	"testing"
+-	//"time"
++	"time"
+ 
+ 	"github.com/xtls/xray-core/app/log"
+ 	"github.com/xtls/xray-core/app/proxyman"
+ 	"github.com/xtls/xray-core/common"
+ 	clog "github.com/xtls/xray-core/common/log"
+ 	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/protocol"
+ 	"github.com/xtls/xray-core/common/serial"
+ 	core "github.com/xtls/xray-core/core"
+ 	"github.com/xtls/xray-core/infra/conf"
+@@ -17,7 +20,6 @@
+ 	"github.com/xtls/xray-core/proxy/wireguard"
+ 	"github.com/xtls/xray-core/testing/servers/tcp"
+ 	"github.com/xtls/xray-core/testing/servers/udp"
+-	//"golang.org/x/sync/errgroup"
+ )
+ 
+ func TestWireguard(t *testing.T) {
+@@ -29,9 +31,15 @@
+ 	defer tcpServer.Close()
+ 
+ 	serverPrivate, _ := conf.ParseWireGuardKey("EGs4lTSJPmgELx6YiJAmPR2meWi6bY+e9rTdCipSj10=")
+-	serverPublic, _ := conf.ParseWireGuardKey("osAMIyil18HeZXGGBDC9KpZoM+L2iGyXWVSYivuM9B0=")
++	serverKey := common.Must2(wireguard.ParseKey(serverPrivate))
++	var serverPub [32]byte
++	curve25519.ScalarBaseMult(&serverPub, serverKey)
++	serverPublic := hex.EncodeToString(serverPub[:])
+ 	clientPrivate, _ := conf.ParseWireGuardKey("CPQSpgxgdQRZa5SUbT3HLv+mmDVHLW5YR/rQlzum/2I=")
+-	clientPublic, _ := conf.ParseWireGuardKey("MmLJ5iHFVVBp7VsB0hxfpQ0wEzAbT2KQnpQpj0+RtBw=")
++	clientKey := common.Must2(wireguard.ParseKey(clientPrivate))
++	var clientPub [32]byte
++	curve25519.ScalarBaseMult(&clientPub, clientKey)
++	clientPublic := hex.EncodeToString(clientPub[:])
+ 
+ 	serverPort := udp.PickPort()
+ 	serverConfig := &core.Config{
+@@ -49,21 +57,22 @@
+ 				}),
+ 				ProxySettings: serial.ToTypedMessage(&wireguard.DeviceConfig{
+ 					IsClient:    false,
+-					NoKernelTun: false,
++					NoKernelTun: true,
+ 					Endpoint:    []string{"10.0.0.1"},
+ 					Mtu:         1420,
+ 					SecretKey:   serverPrivate,
+-					Peers: []*wireguard.PeerConfig{{
+-						PublicKey:  serverPublic,
+-						AllowedIps: []string{"0.0.0.0/0", "::0/0"},
+-					}},
++					Users: []*protocol.User{{Account: serial.ToTypedMessage(&wireguard.PeerConfig{
++						PublicKey:  clientPublic,
++						AllowedIps: []string{"0.0.0.0/0", "::/0"},
++					})}},
+ 				}),
+ 			},
+ 		},
+ 		Outbound: []*core.OutboundHandlerConfig{
+ 			{
+ 				ProxySettings: serial.ToTypedMessage(&freedom.Config{
+-					FinalRules: []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
++					FinalRules:          []*freedom.FinalRuleConfig{{Action: freedom.RuleAction_Allow}},
++					DestinationOverride: &freedom.DestinationOverride{Server: &protocol.ServerEndpoint{Address: net.NewIPOrDomain(net.LocalHostIP)}},
+ 				}),
+ 			},
+ 		},
+@@ -84,7 +93,7 @@
+ 					Listen:   net.NewIPOrDomain(net.LocalHostIP),
+ 				}),
+ 				ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
+-					RewriteAddress:  net.NewIPOrDomain(dest.Address),
++					RewriteAddress:  net.NewIPOrDomain(net.IPAddress([]byte{198, 18, 0, 1})),
+ 					RewritePort:     uint32(dest.Port),
+ 					AllowedNetworks: []net.Network{net.Network_TCP},
+ 				}),
+@@ -94,13 +103,13 @@
+ 			{
+ 				ProxySettings: serial.ToTypedMessage(&wireguard.DeviceConfig{
+ 					IsClient:    true,
+-					NoKernelTun: false,
++					NoKernelTun: true,
+ 					Endpoint:    []string{"10.0.0.2"},
+ 					Mtu:         1420,
+ 					SecretKey:   clientPrivate,
+ 					Peers: []*wireguard.PeerConfig{{
+ 						Endpoint:   "127.0.0.1:" + serverPort.String(),
+-						PublicKey:  clientPublic,
++						PublicKey:  serverPublic,
+ 						AllowedIps: []string{"0.0.0.0/0", "::0/0"},
+ 					}},
+ 				}),
+@@ -108,17 +117,34 @@
+ 		},
+ 	}
+ 
++	udpServer := udp.Server{MsgProcessor: xor}
++	udpDest, err := udpServer.Start()
++	common.Must(err)
++	defer udpServer.Close()
++	clientUDPPort := udp.PickPort()
++	clientConfig.Inbound = append(clientConfig.Inbound, &core.InboundHandlerConfig{
++		ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
++			PortList: &net.PortList{Range: []*net.PortRange{net.SinglePortRange(clientUDPPort)}},
++			Listen:   net.NewIPOrDomain(net.LocalHostIP),
++		}),
++		ProxySettings: serial.ToTypedMessage(&dokodemo.Config{
++			RewriteAddress:  net.NewIPOrDomain(net.IPAddress([]byte{198, 18, 0, 1})),
++			RewritePort:     uint32(udpDest.Port),
++			AllowedNetworks: []net.Network{net.Network_UDP},
++		}),
++	})
+ 	servers, err := InitializeServerConfigs(serverConfig, clientConfig)
+ 	common.Must(err)
+ 	defer CloseAllServers(servers)
+ 
+-	// FIXME: for some reason wg server does not receive
+-
+-	// var errg errgroup.Group
+-	// for i := 0; i < 1; i++ {
+-	// 	errg.Go(testTCPConn(clientPort, 1024, time.Second*2))
+-	// }
+-	// if err := errg.Wait(); err != nil {
+-	// 	t.Error(err)
+-	// }
++	// Exercise the protobuf path without SenderSettings. A crashed child must
++	// fail the test instead of being hidden by successful process creation.
++	for range 3 {
++		if err := testTCPConn(clientPort, 1024, 10*time.Second)(); err != nil {
++			t.Fatal(err)
++		}
++		if err := testUDPConn(clientUDPPort, 1024, 10*time.Second)(); err != nil {
++			t.Fatal(err)
++		}
++	}
+ }

@@ -228,6 +228,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	assetsBasePath := basePath + "assets/"
 
 	store := cookie.NewStore(secret)
+	engine.Use(middleware.DatabaseGuard())
 	engine.Use(sessions.Sessions("Dui", store))
 	engine.Use(func(c *gin.Context) {
 		c.Set("base_path", basePath)
@@ -270,6 +271,8 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		engine.SetHTMLTemplate(template)
 		engine.StaticFS(basePath+"assets", http.FS(&wrapAssetsFS{FS: assetsFS}))
 	}
+
+	engine.HTMLRender = locale.LocalizedHTMLRenderer(engine.HTMLRender)
 
 	// Apply the legacy /xui alias to the new /dui route.
 	engine.Use(middleware.RedirectMiddleware(basePath))

@@ -1,8 +1,10 @@
 package session
 
 import (
+	"crypto/subtle"
 	"encoding/gob"
 
+	"x-ui/database"
 	"x-ui/database/model"
 
 	"github.com/gin-contrib/sessions"
@@ -47,7 +49,15 @@ func GetLoginUser(c *gin.Context) *model.User {
 		s.Delete(loginUserKey)
 		return nil
 	}
-	return &user
+	// Credential changes revoke existing cookies, while upgrades preserve valid sessions.
+	db := database.GetDB()
+	var current model.User
+	if db == nil || db.First(&current, user.Id).Error != nil ||
+		current.Username != user.Username ||
+		subtle.ConstantTimeCompare([]byte(current.Password), []byte(user.Password)) != 1 {
+		return nil
+	}
+	return &current
 }
 
 func IsLogin(c *gin.Context) bool {

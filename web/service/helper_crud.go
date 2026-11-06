@@ -30,6 +30,8 @@ func helperClientID(p model.Protocol, c model.Client) string {
 }
 
 func (s *InboundService) saveHelperInbound(ib *model.Inbound, create bool) (*model.Inbound, bool, error) {
+	inboundMutationMu.Lock()
+	defer inboundMutationMu.Unlock()
 	helperMu.Lock()
 	defer helperMu.Unlock()
 	if err := validateHelperInbound(ib); err != nil {
@@ -115,6 +117,9 @@ func (s *InboundService) saveHelperInbound(ib *model.Inbound, create bool) (*mod
 	if ib.Listen != "" && ib.Listen != "0.0.0.0" && ib.Listen != "::" {
 		ib.Tag = fmt.Sprintf("inbound-%s:%d", ib.Listen, ib.Port)
 	}
+	if previous != nil {
+		ib.Tag = previous.Tag
+	}
 	oldByID := map[string]model.Client{}
 	oldByEmail := map[string]model.Client{}
 	if previous != nil {
@@ -154,7 +159,12 @@ func (s *InboundService) saveHelperInbound(ib *model.Inbound, create bool) (*mod
 			return ib, false, err
 		}
 	}
-	if err = tx.Omit("ClientStats").Save(ib).Error; err != nil {
+	if create {
+		err = tx.Omit("ClientStats").Create(ib).Error
+	} else {
+		err = tx.Omit("ClientStats").Save(ib).Error
+	}
+	if err != nil {
 		return ib, false, err
 	}
 	keep := map[string]bool{}

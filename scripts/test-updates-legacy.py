@@ -81,7 +81,12 @@ for old in os.environ['DUI_TEST_OLD_PANELS'].split(':'):
                 return proc
             try:
                 proc=start()
-                time.sleep(.6)
+                if not broken:
+                    deadline=time.monotonic()+25
+                    while not (root/'bin/config.json').exists() and time.monotonic()<deadline:
+                        assert proc.poll() is None,'old panel exited before core startup'
+                        time.sleep(.1)
+                else:time.sleep(1)
                 assert (root/'bin/config.json').exists()!=broken,'old-core failure scenario not reproduced'
                 stop(proc)
                 shutil.copy2(os.environ['DUI_TEST_PANEL'],root/'panel')

@@ -1190,29 +1190,12 @@ func (j *CheckClientIpJob) getInboundClientIps(clientEmail string) (*model.Inbou
 }
 
 func (j *CheckClientIpJob) addInboundClientIps(clientEmail string, ips []string) error {
-	inboundClientIps := &model.InboundClientIps{}
 	jsonIps, err := json.Marshal(ips)
-	j.checkError(err)
-
-	inboundClientIps.ClientEmail = clientEmail
-	inboundClientIps.Ips = string(jsonIps)
-
-	db := database.GetDB()
-	tx := db.Begin()
-
-	defer func() {
-		if err == nil {
-			tx.Commit()
-		} else {
-			tx.Rollback()
-		}
-	}()
-
-	err = tx.Save(inboundClientIps).Error
 	if err != nil {
 		return err
 	}
-	return nil
+	inboundClientIps := &model.InboundClientIps{ClientEmail: clientEmail, Ips: string(jsonIps)}
+	return database.GetDB().Save(inboundClientIps).Error
 }
 
 func (j *CheckClientIpJob) updateInboundClientIps(inboundClientIps *model.InboundClientIps, clientEmail string, ips []string) bool {

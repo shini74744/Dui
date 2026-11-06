@@ -14,11 +14,10 @@ import (
 )
 
 var (
-	p                 *xray.Process
+	p                 = &xrayProcessSlot{}
 	lock              sync.Mutex
 	isNeedXrayRestart atomic.Bool // Indicates that restart was requested for Xray
 	isManuallyStopped atomic.Bool // Indicates that Xray was stopped manually from the panel
-	result            string
 )
 
 type XrayService struct {
@@ -60,9 +59,6 @@ func (s *XrayService) GetXrayErr() error {
 }
 
 func (s *XrayService) GetXrayResult() string {
-	if result != "" {
-		return result
-	}
 	if s.IsXrayRunning() {
 		return ""
 	}
@@ -70,7 +66,7 @@ func (s *XrayService) GetXrayResult() string {
 		return ""
 	}
 
-	result = p.GetResult()
+	result := p.GetResult()
 
 	if runtime.GOOS == "windows" && result == "exit status 1" {
 		// exit status 1 on Windows means that Xray process was killed
@@ -403,13 +399,15 @@ func (s *XrayService) RestartXray(isForce bool) error {
 		}
 	}
 
-	p = xray.NewProcess(xrayConfig)
-	result = ""
-	err = p.Start()
+	next := xray.NewProcess(xrayConfig)
+	err = next.Start()
+	p.Store(next)
 	if err != nil {
 		if previous != nil {
-			p = xray.NewProcess(previous)
-			if restoreErr := p.Start(); restoreErr != nil {
+			restored := xray.NewProcess(previous)
+			restoreErr := restored.Start()
+			p.Store(restored)
+			if restoreErr != nil {
 				return errors.Join(err, restoreErr)
 			}
 		}

@@ -78,6 +78,7 @@ func html(c *gin.Context, name string, title string, data gin.H) {
 	data["host"] = host
 	data["request_uri"] = c.Request.RequestURI
 	data["base_path"] = c.GetString("base_path")
+	data["dui_locale"] = c.GetString("dui_locale")
 	c.HTML(http.StatusOK, name, getContext(data))
 }
 

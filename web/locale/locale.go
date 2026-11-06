@@ -4,6 +4,8 @@ import (
 	"embed"
 	"io/fs"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"x-ui/logger"
 
@@ -16,7 +18,9 @@ import (
 var (
 	i18nBundle   *i18n.Bundle
 	LocalizerWeb *i18n.Localizer
-	LocalizerBot *i18n.Localizer
+	botLocalizer atomic.Pointer[i18n.Localizer]
+	bundleOnce   sync.Once
+	bundleErr    error
 )
 
 type I18nType string
@@ -31,13 +35,17 @@ type SettingService interface {
 }
 
 func InitLocalizer(i18nFS embed.FS, settingService SettingService) error {
-	// set default bundle to english
-	i18nBundle = i18n.NewBundle(language.MustParse("en-US"))
-	i18nBundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
-
-	// parse files
-	if err := parseTranslationFiles(i18nFS, i18nBundle); err != nil {
-		return err
+	bundleOnce.Do(func() {
+		bundle := i18n.NewBundle(language.MustParse("en-US"))
+		bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
+		if bundleErr = parseTranslationFiles(i18nFS, bundle); bundleErr != nil {
+			return
+		}
+		i18nBundle = bundle
+		LocalizerWeb = i18n.NewLocalizer(bundle, "en-US")
+	})
+	if bundleErr != nil {
+		return bundleErr
 	}
 
 	// setup bot locale
@@ -68,7 +76,7 @@ func I18n(i18nType I18nType, key string, params ...string) string {
 
 	switch i18nType {
 	case "bot":
-		localizer = LocalizerBot
+		localizer = botLocalizer.Load()
 	case "web":
 		localizer = LocalizerWeb
 	default:
@@ -76,6 +84,9 @@ func I18n(i18nType I18nType, key string, params ...string) string {
 		return ""
 	}
 
+	if localizer == nil {
+		return key
+	}
 	templateData := createTemplateData(params)
 
 	msg, err := localizer.Localize(&i18n.LocalizeConfig{
@@ -96,7 +107,7 @@ func initTGBotLocalizer(settingService SettingService) error {
 		return err
 	}
 
-	LocalizerBot = i18n.NewLocalizer(i18nBundle, botLang)
+	botLocalizer.Store(i18n.NewLocalizer(i18nBundle, botLang))
 	return nil
 }
 
@@ -110,10 +121,20 @@ func LocalizerMiddleware() gin.HandlerFunc {
 			lang = c.GetHeader("Accept-Language")
 		}
 
-		LocalizerWeb = i18n.NewLocalizer(i18nBundle, lang)
-
-		c.Set("localizer", LocalizerWeb)
-		c.Set("I18n", I18n)
+		localizer := i18n.NewLocalizer(i18nBundle, lang)
+		c.Set("dui_locale", canonicalLanguage(lang))
+		c.Set("localizer", localizer)
+		c.Set("I18n", func(kind I18nType, key string, params ...string) string {
+			if kind != Web {
+				return I18n(kind, key, params...)
+			}
+			msg, err := localizer.Localize(&i18n.LocalizeConfig{MessageID: key, TemplateData: createTemplateData(params)})
+			if err != nil {
+				logger.Errorf("Failed to localize message: %v", err)
+				return ""
+			}
+			return msg
+		})
 		c.Next()
 	}
 }
