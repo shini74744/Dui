@@ -2,13 +2,17 @@ package service
 
 import (
 	"errors"
+	"sync"
 	"sync/atomic"
 	"x-ui/xray"
 )
 
 // The slot is stable for the lifetime of the panel. Only fully initialized
 // processes are published; concurrent status/traffic readers retain safe access.
-type xrayProcessSlot struct{ atomic.Pointer[xray.Process] }
+type xrayProcessSlot struct {
+	atomic.Pointer[xray.Process]
+	publication sync.RWMutex
+}
 
 func (s *xrayProcessSlot) IsRunning() bool { p := s.Load(); return p != nil && p.IsRunning() }
 func (s *xrayProcessSlot) GetAPIPort() int {
@@ -64,4 +68,19 @@ func (s *xrayProcessSlot) SetOnlineClients(clients []string) {
 	if p := s.Load(); p != nil {
 		p.SetOnlineClients(clients)
 	}
+}
+
+// Readers wait for startup to publish its process. Otherwise a just-opened API
+// listener could accept panel CRUD before the panel can hot-apply that change.
+func (s *xrayProcessSlot) Load() *xray.Process {
+	s.publication.RLock()
+	defer s.publication.RUnlock()
+	return s.Pointer.Load()
+}
+func (s *xrayProcessSlot) start(next *xray.Process) error {
+	s.publication.Lock()
+	defer s.publication.Unlock()
+	err := next.Start()
+	s.Pointer.Store(next)
+	return err
 }

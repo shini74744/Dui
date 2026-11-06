@@ -400,13 +400,11 @@ func (s *XrayService) RestartXray(isForce bool) error {
 	}
 
 	next := xray.NewProcess(xrayConfig)
-	err = next.Start()
-	p.Store(next)
+	err = p.start(next)
 	if err != nil {
 		if previous != nil {
 			restored := xray.NewProcess(previous)
-			restoreErr := restored.Start()
-			p.Store(restored)
+			restoreErr := p.start(restored)
 			if restoreErr != nil {
 				return errors.Join(err, restoreErr)
 			}
