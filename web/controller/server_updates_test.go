@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"x-ui/database"
 	"x-ui/database/model"
 	"x-ui/web/session"
 
@@ -15,13 +17,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func updateTestRouter(loggedIn bool) *gin.Engine {
+func updateTestRouter(t *testing.T, loggedIn bool) *gin.Engine {
+	t.Helper()
+	if err := database.InitDB(filepath.Join(t.TempDir(), "test.db")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.CloseDB() })
+	var user model.User
+	if err := database.GetDB().First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(sessions.Sessions("dui-test", cookie.NewStore([]byte("updater-test-session-key-32-bytes!"))))
 	r.Use(func(c *gin.Context) {
 		if loggedIn {
-			session.SetLoginUser(c, &model.User{})
+			session.SetLoginUser(c, &user)
 		}
 		c.Next()
 	})
@@ -40,7 +51,7 @@ func TestUpdaterStartAcceptsPageFormAndJSON(t *testing.T) {
 			req.Header.Set("Content-Type", tc.contentType)
 			req.Header.Set("Origin", "http://example.com")
 			res := httptest.NewRecorder()
-			updateTestRouter(true).ServeHTTP(res, req)
+			updateTestRouter(t, true).ServeHTTP(res, req)
 			var result struct {
 				Success bool
 				Msg     string
@@ -75,7 +86,7 @@ func TestUpdaterStartPreservesRequestGuards(t *testing.T) {
 			req.Header.Set("Origin", tc.origin)
 			req.Header.Set("Sec-Fetch-Site", tc.fetchSite)
 			res := httptest.NewRecorder()
-			updateTestRouter(tc.loggedIn).ServeHTTP(res, req)
+			updateTestRouter(t, tc.loggedIn).ServeHTTP(res, req)
 			if res.Code != tc.status {
 				t.Fatalf("got %d, want %d", res.Code, tc.status)
 			}

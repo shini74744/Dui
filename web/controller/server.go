@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sync"
 	"time"
 
 	"x-ui/web/global"
@@ -24,6 +25,8 @@ type ServerController struct {
 
 	lastStatus        *service.Status
 	lastGetStatusTime time.Time
+	statusMu          sync.Mutex
+	refreshMu         sync.Mutex
 
 	lastVersions        []string
 	lastGetVersionsTime time.Time
@@ -48,6 +51,8 @@ type swapApplyForm struct {
 }
 
 func (a *ServerController) initRouter(g *gin.RouterGroup) {
+	// Protect the API and legacy aliases without attaching auth to public routes.
+	g = g.Group("", a.checkLogin)
 	g.GET("/helperCapabilities", func(c *gin.Context) { jsonObj(c, service.GetHelperCapabilities(), nil) })
 	g.GET("/status", a.status)
 	g.GET("/updates", a.checkLogin, func(c *gin.Context) { jsonObj(c, a.serverService.UpdateStatus(false), nil) })
@@ -93,7 +98,15 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 }
 
 func (a *ServerController) refreshStatus() {
-	a.lastStatus = a.serverService.GetStatus(a.lastStatus)
+	a.refreshMu.Lock()
+	defer a.refreshMu.Unlock()
+	a.statusMu.Lock()
+	previous := a.lastStatus
+	a.statusMu.Unlock()
+	snapshot := a.serverService.GetStatus(previous)
+	a.statusMu.Lock()
+	a.lastStatus = snapshot
+	a.statusMu.Unlock()
 }
 
 func (a *ServerController) startTask() {
@@ -101,7 +114,10 @@ func (a *ServerController) startTask() {
 	c := webServer.GetCron()
 	c.AddFunc("@every 2s", func() {
 		now := time.Now()
-		if now.Sub(a.lastGetStatusTime) > time.Minute*3 {
+		a.statusMu.Lock()
+		idle := now.Sub(a.lastGetStatusTime) > time.Minute*3
+		a.statusMu.Unlock()
+		if idle {
 			return
 		}
 		a.refreshStatus()
@@ -109,9 +125,11 @@ func (a *ServerController) startTask() {
 }
 
 func (a *ServerController) status(c *gin.Context) {
+	a.statusMu.Lock()
 	a.lastGetStatusTime = time.Now()
-
-	jsonObj(c, a.lastStatus, nil)
+	snapshot := a.lastStatus
+	a.statusMu.Unlock()
+	jsonObj(c, snapshot, nil)
 }
 
 func (a *ServerController) getSwapStatus(c *gin.Context) {
@@ -278,10 +296,10 @@ func (a *ServerController) importDB(c *gin.Context) {
 		return
 	}
 	defer file.Close()
-	// Always restart Xray before return
-	defer a.serverService.RestartXrayService()
 	defer func() {
+		a.statusMu.Lock()
 		a.lastGetStatusTime = time.Now()
+		a.statusMu.Unlock()
 	}()
 	// Import it
 	err = a.serverService.ImportDB(file)

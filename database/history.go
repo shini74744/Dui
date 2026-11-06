@@ -1,16 +1,16 @@
 package database
 
 import (
-	"time"
 	"gorm.io/gorm" // 【中文注释】: 确保 gorm 被导入，以便在函数签名中使用
+	"time"
 )
 
 // LinkHistory GORM aodel for link_history table
 type LinkHistory struct {
-	Id         int       `gorm:"primaryKey"`
-	Type       string    `gorm:"type:varchar(255);not null"`
-	Link       string    `gorm:"type:text;not null"`
-	CreatedAt  time.Time `gorm:"not null"`
+	Id        int       `gorm:"primaryKey"`
+	Type      string    `gorm:"type:varchar(255);not null"`
+	Link      string    `gorm:"type:text;not null"`
+	CreatedAt time.Time `gorm:"not null"`
 }
 
 // AddLinkHistory 在一个事务中添加新链接记录并修剪旧记录。
@@ -18,7 +18,7 @@ type LinkHistory struct {
 func AddLinkHistory(record *LinkHistory) error {
 	// 【核心修正】: 使用 GORM 的事务功能来包装所有的数据库写入和删除操作。
 	// 这样可以确保数据的一致性。
-	return db.Transaction(func(tx *gorm.DB) error {
+	return GetDB().Transaction(func(tx *gorm.DB) error {
 		// 1. 添加新记录
 		// 【重要】: 在事务内部，必须使用 tx 变量，而不是全局的 db 变量。
 		if err := tx.Create(record).Error; err != nil {
@@ -53,11 +53,10 @@ func AddLinkHistory(record *LinkHistory) error {
 	})
 }
 
-
 // GetLinkHistory retrieves the 10 most recent link records
 func GetLinkHistory() ([]*LinkHistory, error) {
 	var histories []*LinkHistory
-	err := db.Order("created_at desc").Limit(10).Find(&histories).Error
+	err := GetDB().Order("created_at desc").Limit(10).Find(&histories).Error
 	if err != nil {
 		return nil, err
 	}

@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -191,12 +190,14 @@ func (s *InboundService) checkEmailExistForInbound(inbound *model.Inbound) (stri
 }
 
 // AddInbound adds a new inbound to db
-func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, bool, error) {
+func (s *InboundService) AddInbound(inbound *model.Inbound) (saved *model.Inbound, restart bool, resultErr error) {
 	var api xray.XrayAPI
 	defer api.Close()
 	if inbound.Protocol.IsHelperProtocol() {
 		return s.saveHelperInbound(inbound, true)
 	}
+	inboundMutationMu.Lock()
+	defer inboundMutationMu.Unlock()
 	if err := s.validateNativeInbound(inbound); err != nil {
 		return inbound, false, err
 	}
@@ -306,26 +307,29 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	// 中文注释：开始数据库事务
 	db := database.GetDB()
 	tx := db.Begin()
-	defer func() {
-		if err == nil {
-			// 中文注释：如果没有错误，提交事务
-			tx.Commit()
-		} else {
-			// 中文注释：如果出现错误，回滚事务
-			tx.Rollback()
+	if tx.Error != nil {
+		return inbound, false, tx.Error
+	}
+	runtimeChanged := false
+	defer finishInboundTransaction(tx, &resultErr, func() error {
+		if runtimeChanged {
+			return restoreInboundRuntime(&api, inbound, nil)
 		}
-	}()
+		return nil
+	})
 
 	// 中文注释：保存入站信息到数据库 (此时 inbound 对象已包含我们手动设置的 ID)
 	inbound.SortOrder, err = nextInboundSortOrder(tx, inbound.UserId)
 	if err != nil {
 		return inbound, false, err
 	}
-	err = tx.Save(inbound).Error
+	err = tx.Create(inbound).Error
 	if err == nil {
 		if len(inbound.ClientStats) == 0 {
 			for _, client := range clients {
-				s.AddClientStat(tx, inbound.Id, &client)
+				if err = s.AddClientStat(tx, inbound.Id, &client); err != nil {
+					return inbound, false, err
+				}
 			}
 		}
 	} else {
@@ -338,23 +342,15 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 		api.Init(p.GetAPIPort())
 		inboundJson, err1 := json.MarshalIndent(inbound.GenXrayInboundConfig(), "", "  ")
 		if err1 != nil {
-			logger.Debug("Unable to marshal inbound config:", err1)
+			return inbound, false, err1
 		}
-
+		runtimeChanged = true
 		err1 = api.AddInbound(inboundJson)
 		if err1 == nil {
 			logger.Debug("New inbound added by api:", inbound.Tag)
 		} else {
-			// 中文注释：如果 API 调用失败，则标记需要重启面板以应用更改
-			logger.Debug("Unable to add inbound by api:", err1)
-			if inbound.Protocol.IsNativeExtension() {
-				api.Close()
-				err = fmt.Errorf("新入站启动失败，未保存配置：%w", err1)
-				return inbound, false, err
-			}
-			needRestart = true
+			return inbound, false, fmt.Errorf("新入站启动失败，未保存配置：%w", err1)
 		}
-		api.Close()
 	}
 
 	// 中文注释：返回创建好的入站对象、是否需要重启以及错误信息
@@ -422,12 +418,14 @@ func (s *InboundService) GetInbound(id int) (*model.Inbound, error) {
 	return inbound, nil
 }
 
-func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, bool, error) {
+func (s *InboundService) UpdateInbound(inbound *model.Inbound) (saved *model.Inbound, restart bool, resultErr error) {
 	var api xray.XrayAPI
 	defer api.Close()
 	if inbound.Protocol.IsHelperProtocol() {
 		return s.saveHelperInbound(inbound, false)
 	}
+	inboundMutationMu.Lock()
+	defer inboundMutationMu.Unlock()
 	if old, err := s.GetInbound(inbound.Id); err == nil && old.Protocol.IsHelperProtocol() {
 		return inbound, false, fmt.Errorf("请新建入站切换协议类型")
 	}
@@ -458,14 +456,16 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 
 	db := database.GetDB()
 	tx := db.Begin()
-
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
+	if tx.Error != nil {
+		return inbound, false, tx.Error
+	}
+	runtimeChanged := false
+	defer finishInboundTransaction(tx, &resultErr, func() error {
+		if runtimeChanged {
+			return restoreInboundRuntime(&api, oldInbound, &previous)
 		}
-	}()
+		return nil
+	})
 
 	err = s.updateClientTraffics(tx, oldInbound, inbound)
 	if err != nil {
@@ -547,11 +547,8 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	oldInbound.Settings = inbound.Settings
 	oldInbound.StreamSettings = inbound.StreamSettings
 	oldInbound.Sniffing = inbound.Sniffing
-	if inbound.Listen == "" || inbound.Listen == "0.0.0.0" || inbound.Listen == "::" || inbound.Listen == "::0" {
-		oldInbound.Tag = fmt.Sprintf("inbound-%v", inbound.Port)
-	} else {
-		oldInbound.Tag = fmt.Sprintf("inbound-%v:%v", inbound.Listen, inbound.Port)
-	}
+	// A tag is a stable routing identity, independent of the listening address.
+	oldInbound.Tag = previous.Tag
 
 	if oldInbound.Protocol == model.TUN {
 		oldInbound.Tag = inbound.Tag
@@ -562,38 +559,22 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	}
 	needRestart := false
 	api.Init(p.GetAPIPort())
-	if api.DelInbound(tag) == nil {
-		logger.Debug("Old inbound deleted by api:", tag)
+	if previous.Enable {
+		if err = api.DelInbound(tag); err != nil {
+			return inbound, false, fmt.Errorf("无法更新原入站，未保存配置：%w", err)
+		}
+		runtimeChanged = true
 	}
 	if inbound.Enable {
 		inboundJson, err2 := json.MarshalIndent(oldInbound.GenXrayInboundConfig(), "", "  ")
 		if err2 != nil {
-			logger.Debug("Unable to marshal updated inbound config:", err2)
-			needRestart = true
-		} else {
-			err2 = api.AddInbound(inboundJson)
-			if err2 == nil {
-				logger.Debug("Updated inbound added by api:", oldInbound.Tag)
-			} else {
-				logger.Debug("Unable to update inbound by api:", err2)
-				if inbound.Protocol.IsNativeExtension() {
-					if previous.Enable {
-						oldJSON, _ := json.Marshal(previous.GenXrayInboundConfig())
-						if restoreErr := api.AddInbound(oldJSON); restoreErr != nil {
-							api.Close()
-							err = fmt.Errorf("入站更新失败，数据库旧配置保留，但运行时恢复失败；请重启核心恢复：%w", errors.Join(err2, restoreErr))
-							return inbound, false, err
-						}
-					}
-					api.Close()
-					err = fmt.Errorf("入站更新失败，已保留旧配置：%w", err2)
-					return inbound, false, err
-				}
-				needRestart = true
-			}
+			return inbound, false, err2
+		}
+		runtimeChanged = true
+		if err2 = api.AddInbound(inboundJson); err2 != nil {
+			return inbound, false, fmt.Errorf("入站更新失败，已保留旧配置：%w", err2)
 		}
 	}
-	api.Close()
 
 	err = tx.Save(oldInbound).Error
 	return inbound, needRestart, err
@@ -644,7 +625,7 @@ func (s *InboundService) updateClientTraffics(tx *gorm.DB, oldInbound *model.Inb
 	return nil
 }
 
-func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
+func (s *InboundService) AddInboundClient(data *model.Inbound) (restart bool, resultErr error) {
 	var api xray.XrayAPI
 	defer api.Close()
 	if old, err := s.GetInbound(data.Id); err == nil && old.Protocol.IsHelperProtocol() {
@@ -741,13 +722,21 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 	db := database.GetDB()
 	tx := db.Begin()
 
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
+	if tx.Error != nil {
+		return false, tx.Error
+	}
+	defer finishInboundTransaction(tx, &resultErr, func() error {
+		if p == nil || !p.IsRunning() || !oldInbound.Enable {
+			return nil
 		}
-	}()
+		api.Init(p.GetAPIPort())
+		for _, client := range clients {
+			if client.Enable && client.Email != "" {
+				_ = api.RemoveUser(oldInbound.Tag, client.Email)
+			}
+		}
+		return nil
+	})
 
 	needRestart := false
 	live := p != nil && p.IsRunning() && oldInbound.Enable
@@ -884,7 +873,7 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 	return needRestart, db.Save(oldInbound).Error
 }
 
-func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId string) (bool, error) {
+func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId string) (restart bool, resultErr error) {
 	var api xray.XrayAPI
 	defer api.Close()
 	if old, err := s.GetInbound(data.Id); err == nil && old.Protocol.IsHelperProtocol() {
@@ -1003,13 +992,26 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 	db := database.GetDB()
 	tx := db.Begin()
 
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
+	if tx.Error != nil {
+		return false, tx.Error
+	}
+	defer finishInboundTransaction(tx, &resultErr, func() error {
+		if p == nil || !p.IsRunning() || !oldInbound.Enable {
+			return nil
 		}
-	}()
+		api.Init(p.GetAPIPort())
+		if clients[0].Email != "" {
+			_ = api.RemoveUser(oldInbound.Tag, clients[0].Email)
+		}
+		previous := oldClients[clientIndex]
+		if previous.Enable && previous.Email != "" {
+			// Remove any old copy first, including when the update failed before hot apply.
+			_ = api.RemoveUser(oldInbound.Tag, previous.Email)
+			cipher, _ := oldSettings["method"].(string)
+			return api.AddUser(string(oldInbound.Protocol), oldInbound.Tag, previous.XrayAPIUser(cipher))
+		}
+		return nil
+	})
 
 	if len(clients[0].Email) > 0 {
 		if len(oldEmail) > 0 {
@@ -1084,17 +1086,21 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 	return live && (needRestart || oldClients[clientIndex].UserRateLevel() != clients[0].UserRateLevel()), err
 }
 
-func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraffics []*xray.ClientTraffic) (error, bool) {
+func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraffics []*xray.ClientTraffic) (resultErr error, restart bool) {
 	var err error
 	var renewedHelperEmails []string
 	db := database.GetDB()
 	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error, false
+	}
 
 	defer func() {
-		if err != nil {
+		if resultErr != nil {
 			tx.Rollback()
 		} else {
-			if tx.Commit().Error == nil && len(renewedHelperEmails) > 0 {
+			resultErr = tx.Commit().Error
+			if resultErr == nil && len(renewedHelperEmails) > 0 {
 				if resetErr := s.resetHelperQuotas(-1, renewedHelperEmails); resetErr != nil {
 					logger.Warning("helper renewal: ", resetErr)
 				}
@@ -1113,6 +1119,7 @@ func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraff
 	needRestart0, count, err := s.autoRenewClients(tx, &renewedHelperEmails)
 	if err != nil {
 		logger.Warning("Error in renew clients:", err)
+		return err, false
 	} else if count > 0 {
 		logger.Debugf("%v clients renewed", count)
 	}
@@ -1120,6 +1127,7 @@ func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraff
 	needRestart1, count, err := s.disableInvalidClients(tx)
 	if err != nil {
 		logger.Warning("Error in disabling invalid clients:", err)
+		return err, false
 	} else if count > 0 {
 		logger.Debugf("%v clients disabled", count)
 	}
@@ -1127,6 +1135,7 @@ func (s *InboundService) AddTraffic(inboundTraffics []*xray.Traffic, clientTraff
 	needRestart2, count, err := s.disableInvalidInbounds(tx)
 	if err != nil {
 		logger.Warning("Error in disabling invalid inbounds:", err)
+		return err, false
 	} else if count > 0 {
 		logger.Debugf("%v inbounds disabled", count)
 	}
@@ -2163,13 +2172,10 @@ func (s *InboundService) DelDepletedClients(id int) (err error) {
 	}
 	db := database.GetDB()
 	tx := db.Begin()
-	defer func() {
-		if err == nil {
-			tx.Commit()
-		} else {
-			tx.Rollback()
-		}
-	}()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer finishInboundTransaction(tx, &err, nil)
 
 	whereText := "reset = 0 and inbound_id "
 	if id < 0 {
@@ -2415,17 +2421,14 @@ func (s *InboundService) SearchInbounds(query string) ([]*model.Inbound, error) 
 	return inbounds, nil
 }
 
-func (s *InboundService) MigrationRequirements() {
+func (s *InboundService) MigrationRequirements() (resultErr error) {
 	db := database.GetDB()
 	tx := db.Begin()
 	var err error
-	defer func() {
-		if err == nil {
-			tx.Commit()
-		} else {
-			tx.Rollback()
-		}
-	}()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer finishInboundTransaction(tx, &resultErr, nil)
 
 	// Calculate and backfill all_time from up+down for inbounds and clients
 	err = tx.Exec(`
@@ -2434,7 +2437,7 @@ func (s *InboundService) MigrationRequirements() {
 		WHERE IFNULL(all_time, 0) = 0 AND (IFNULL(up, 0) + IFNULL(down, 0)) > 0
 	`).Error
 	if err != nil {
-		return
+		return err
 	}
 	err = tx.Exec(`
 		UPDATE client_traffics
@@ -2443,14 +2446,14 @@ func (s *InboundService) MigrationRequirements() {
 	`).Error
 
 	if err != nil {
-		return
+		return err
 	}
 
 	// Fix inbounds based problems
 	var inbounds []*model.Inbound
 	err = tx.Model(model.Inbound{}).Where("protocol IN (?)", []string{"vmess", "vless", "trojan"}).Find(&inbounds).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return
+		return err
 	}
 	for inbound_index := range inbounds {
 		settings := map[string]any{}
@@ -2500,7 +2503,7 @@ func (s *InboundService) MigrationRequirements() {
 			settings["clients"] = newClients
 			modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
 			if err != nil {
-				return
+				return err
 			}
 
 			inbounds[inbound_index].Settings = string(modifiedSettings)
@@ -2509,7 +2512,7 @@ func (s *InboundService) MigrationRequirements() {
 		// Add client traffic row for all clients which has email
 		modelClients, err := s.GetClients(inbounds[inbound_index])
 		if err != nil {
-			return
+			return err
 		}
 		for _, modelClient := range modelClients {
 			if len(modelClient.Email) > 0 {
@@ -2538,7 +2541,7 @@ func (s *InboundService) MigrationRequirements() {
 	  AND json_extract(stream_settings, '$.security') = 'tls'
 	  AND json_extract(stream_settings, '$.tlsSettings.settings.domains') IS NOT NULL`).Scan(&externalProxy).Error
 	if err != nil || len(externalProxy) == 0 {
-		return
+		return err
 	}
 
 	for _, ep := range externalProxy {
@@ -2570,8 +2573,9 @@ func (s *InboundService) MigrationRequirements() {
 	SET tag = REPLACE(tag, '0.0.0.0:', '')
 	WHERE INSTR(tag, '0.0.0.0:') > 0;`).Error
 	if err != nil {
-		return
+		return err
 	}
+	return err
 }
 
 func (s *InboundService) MigrateDB() {

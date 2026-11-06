@@ -1,6 +1,7 @@
 package job
 
 import (
+	"sync"
 	"x-ui/logger"
 	"x-ui/web/service"
 )
@@ -9,6 +10,7 @@ type CheckXrayRunningJob struct {
 	xrayService service.XrayService
 
 	checkTime int
+	mu        sync.Mutex
 }
 
 func NewCheckXrayRunningJob() *CheckXrayRunningJob {
@@ -16,6 +18,10 @@ func NewCheckXrayRunningJob() *CheckXrayRunningJob {
 }
 
 func (j *CheckXrayRunningJob) Run() {
+	if !j.mu.TryLock() {
+		return
+	}
+	defer j.mu.Unlock()
 	if !j.xrayService.DidXrayCrash() {
 		j.checkTime = 0
 	} else {

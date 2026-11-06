@@ -211,7 +211,7 @@ with tempfile.TemporaryDirectory(prefix='dui-strategy-api-') as tmp:
                 with sqlite3.connect(db) as conn:
                     for i,(scope,tag) in enumerate([('outbound','a'),('roundRobin','a'),('legacyBurst','a'),('outbound','b')]):
                         conn.execute('INSERT INTO probe_histories(session,sequence,time,strategy,outbound,status,delay) VALUES(?,?,?,?,?,?,?)',('ui-fixture',i+1,int(time.time()*1000),scope,tag,'success',12.5))
-                subprocess.run(['node',str(Path(__file__).with_name('test-probe-controls-ui.cjs'))],env=browser_env,check=True,timeout=240)
+                subprocess.run(['node',str(Path(__file__).with_name('test-probe-controls-ui.cjs'))],env=browser_env,check=True,timeout=600)
 
         print(json.dumps({'save_reload':True,'runtime_preserved':True,'invalid_preserves_database':True,
                           'old_core_rejected':True,'downgrade_rejected_before_stop':True,

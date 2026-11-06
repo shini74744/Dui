@@ -81,7 +81,7 @@ const base=process.env.DUI_FIXTURE_BASE,out=process.env.DUI_PROBE_TEST_OUTPUT||'
   assert.deepEqual(now.strategyObservatory.roundRobin,old.strategyObservatory.roundRobin);
   const restored=await page.evaluate(async original=>await HttpUtil.post('/dui/xray/update',{xraySetting:original}),original);
   assert(restored.success,'failed restoring isolated fixture');
-  results.push({width,theme,passed:true});await context.close();
+  results.push({width,theme,passed:true});console.log(JSON.stringify({width,theme,passed:true}));await context.close();
  }
  assert.deepEqual(errors,[]);
  fs.writeFileSync(out+'/probe-controls-browser.json',JSON.stringify({passed:true,results,errors},null,2));

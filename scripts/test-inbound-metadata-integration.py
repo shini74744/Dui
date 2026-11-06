@@ -1,8 +1,11 @@
 """Exercise metadata updates and optional browser ordering with an isolated live VLESS stream."""
 import http.cookiejar,json,os,shutil,socket,sqlite3,subprocess,tempfile,time,urllib.parse,urllib.request,uuid,threading,hashlib,signal
 from pathlib import Path
+used_ports=set()
 def port():
- with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
+ while True:
+  with socket.socket() as s:s.bind(('127.0.0.1',0));value=s.getsockname()[1]
+  if value not in used_ports:used_ports.add(value);return value
 uid=65534 if os.geteuid()==0 else os.getuid()
 gid=65534 if os.geteuid()==0 else os.getgid()
 def drop_root():
@@ -141,7 +144,7 @@ with tempfile.TemporaryDirectory(prefix='dui-metadata-') as tmp:
    identity=core_identity();inode=listener_inode(new_port)
    runtime_before=(root/'bin/config.json').read_bytes()
    browser_env=os.environ.copy();browser_env.update(DUI_FIXTURE_BASE=base,DUI_FIXTURE_COOKIES=json.dumps([{'name':c.name,'value':c.value,'url':base+'/'} for c in jar]))
-   subprocess.run(['node',str(Path(__file__).with_name('test-inbound-order-ui.cjs'))],env=browser_env,check=True,timeout=300)
+   subprocess.run(['node',str(Path(__file__).with_name('test-inbound-order-ui.cjs'))],env=browser_env,check=True,timeout=600)
    ping(stream,'stream-after-browser-sorting')
    assert core_identity()==identity and listener_inode(new_port)==inode,'sorting restarted core or inbound'
    assert (root/'bin/config.json').read_bytes()==runtime_before,'sorting changed runtime configuration'

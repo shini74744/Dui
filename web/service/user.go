@@ -95,6 +95,30 @@ func (s *UserService) UpdateUser(id int, username string, password string) error
 		Error
 }
 
+// ChangeCredentials rejects a concurrent change authorized with stale credentials.
+// Keep the existing two-factor configuration when updating the account password.
+func (s *UserService) ChangeCredentials(current *model.User, username, password string) (*model.User, error) {
+	if current == nil || username == "" || password == "" {
+		return nil, errors.New("invalid credentials")
+	}
+	hash, err := crypto.HashPasswordAsBcrypt(password)
+	if err != nil {
+		return nil, err
+	}
+	result := database.GetDB().Model(&model.User{}).
+		Where("id = ? AND username = ? AND password = ?", current.Id, current.Username, current.Password).
+		Updates(map[string]any{"username": username, "password": hash})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, errors.New("credentials changed; please sign in again")
+	}
+	updated := *current
+	updated.Username, updated.Password = username, hash
+	return &updated, nil
+}
+
 func (s *UserService) UpdateFirstUser(username string, password string) error {
 	if username == "" {
 		return errors.New("username can not be empty")
