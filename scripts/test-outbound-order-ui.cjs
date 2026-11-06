@@ -27,18 +27,19 @@ const translate = raw => raw.replace(/\{\{\s*i18n\s+"([^"]+)"\s*\}\}/g,(_,key)=>
 }[key]||key));
 function html(width,theme) {
  const css=['web/assets/ant-design-vue/antd.min.css','web/assets/css/custom.min.css'].map(p=>'<style>'+read(p)+'</style>').join('');
- const libs=['web/assets/vue/vue.min.js','web/assets/ant-design-vue/antd.min.js','web/assets/js/util/outbound-references.js','web/assets/js/util/outbound-order.js','web/assets/js/util/outbound-speedtest-i18n.js'].map(p=>'<script>'+read(p)+'</script>').join('');
+ const libs=['web/assets/vue/vue.min.js','web/assets/ant-design-vue/antd.min.js','web/assets/js/util/outbound-references.js','web/assets/js/util/outbound-order.js','web/assets/js/util/outbound-speedtest-i18n.js','web/assets/js/util/strategy-probes-i18n.js','web/assets/js/util/strategy-probes.js'].map(p=>'<script>'+read(p)+'</script>').join('');
  const speedComponent=read('web/html/settings/xray/outbound_speedtest.html').replace(/\{\{define[^}]*\}\}|\{\{end\}\}/g,'');
+ const probeComponent=read('web/html/settings/xray/outbound_probe.html').replace(/\{\{define[^}]*\}\}|\{\{end\}\}/g,'');
  const speedMocks='<script>const LanguageManager={getLanguage:()=>"zh-CN"};const HttpUtil={async get(url){return {success:true,obj:url.endsWith("catalog")?[{tag:"A",protocol:"freedom"},{tag:"B-new",protocol:"freedom"}]:{state:"idle",rows:[]}}}};</script>';
  const tpl=translate(read('web/html/settings/xray/outbounds.html').replace(/\{\{define[^}]*\}\}|\{\{end\}\}/g,''));
  const columns=translate(between('  const outboundColumns = [','  const reverseColumns = ['));
  const methods=translate(between('      editOutbound(index) {','      addReverse() {'));
  const computed=between('      templateSettings: {','      inboundSettings: {')+between('      outboundData: {','      reverseData: {');
- return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'+css+'<style>body.dark{background:#101114;color:#ddd}main{padding:12px}.ant-table-wrapper{max-width:100%}</style></head><body class="'+theme+'">'+libs+speedMocks+speedComponent+
+ return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'+css+'<style>body.dark{background:#101114;color:#ddd}main{padding:12px}.ant-table-wrapper{max-width:100%}</style></head><body class="'+theme+'">'+libs+speedMocks+speedComponent+probeComponent+
  '<script>const duiIsHiddenBlacklistTag=t=>String(t||"").startsWith("__dui_blacklist_");const themeSwitcher={currentTheme:"'+theme+'",isDarkTheme:'+JSON.stringify(theme==='dark')+'};const Protocols={};const outModal={show:o=>window.edited=o,close(){}};'+columns+'</script>'+
  '<main id="app"><button id="save" @click="saved=xraySetting">保存</button><button id="reload" @click="xraySetting=saved">重新打开</button>'+tpl+'</main>'+
  '<script>window.app=new Vue({el:"#app",delimiters:["[[","]]"],data:{xraySetting:'+JSON.stringify(JSON.stringify(base))+',saved:'+JSON.stringify(JSON.stringify(base))+',pendingOutboundRenames:[{tag:"B-new",previousTags:["B-old"]}],routeSourceMap:{keep:[1]},saveBtnDisable:true,speedTestLabel:"测速",refreshing:false,isMobile:'+(width<768)+',outboundColumns},computed:{'+computed+'},methods:{'+methods+
- 'findOutboundAddress(){return []},findOutboundTraffic(o){return o.tag+" traffic"},addOutbound(){},showWarp(){},refreshOutboundTraffic(){},resetOutboundTraffic(){}}});</script></body></html>';
+ 'outboundProbeLabel(){return DuiProbeI18n.get(LanguageManager.getLanguage()).viewProbe},findOutboundAddress(){return []},findOutboundTraffic(o){return o.tag+" traffic"},addOutbound(){},showWarp(){},refreshOutboundTraffic(){},resetOutboundTraffic(){}}});</script></body></html>';
 }
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH,args:['--no-sandbox']});
@@ -46,13 +47,14 @@ function html(width,theme) {
  try{
  for(const width of [390,1100])for(const theme of ['','dark']){
   const page=await browser.newPage({viewport:{width,height:850},hasTouch:width<768,isMobile:width<768});
-  page.on('pageerror',e=>errors.push(e.message));await page.setContent(html(width,theme));
+  page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER:',e.message)});await page.setContent(html(width,theme));
   const rows=page.locator('.dui-outbound-table tr.ant-table-row'), handles=page.locator('.dui-outbound-sort-handle');
   await handles.first().waitFor();
-  await page.getByRole('button',{name:'下载测速',exact:true}).click();
+  await page.getByRole('button',{name:'出口测速',exact:true}).click();
   assert(await page.getByRole('button',{name:'开始测速',exact:true}).isDisabled());
   assert(!(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)), 'speed panel overflow');
-  await page.getByRole('button',{name:'下载测速',exact:true}).click();
+  await page.getByRole('button',{name:'关闭',exact:true}).click();
+  await page.waitForSelector('.dui-speed-modal .ant-modal',{state:'hidden'});
   const tags=()=>page.evaluate(()=>app.templateSettings.outbounds.filter(o=>!o.tag.startsWith('__dui_blacklist_')).map(o=>o.tag));
   async function drag(from,to,cancel=false,outside=false){
    const source=await handles.nth(from).boundingBox(),target=await rows.nth(to).boundingBox();
@@ -91,7 +93,7 @@ function html(width,theme) {
  }
  // Long list scrolls while holding the handle; cancellation and data changes leave no stale gesture.
  const page=await browser.newPage({viewport:{width:1100,height:650}});
- page.on('pageerror',e=>errors.push(e.message));await page.setContent(html(1100,'dark'));
+ page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER:',e.message)});await page.setContent(html(1100,'dark'));
  await page.evaluate(()=>{app.$el.style.cssText='height:650px;overflow:auto';const c=app.templateSettings;for(let i=0;i<25;i++)c.outbounds.push({tag:'extra-'+i,protocol:'freedom'});app.templateSettings=c;});
  const h=await page.locator('.dui-outbound-sort-handle').first().boundingBox();
  await page.mouse.move(h.x+10,h.y+10);await page.mouse.down();await page.mouse.move(h.x+10,630,{steps:12});

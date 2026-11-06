@@ -108,11 +108,6 @@ type activityGeoCacheEntry struct {
 	Expires time.Time
 }
 
-var activityGeoCache = struct {
-	sync.Mutex
-	Items map[string]activityGeoCacheEntry
-}{Items: map[string]activityGeoCacheEntry{}}
-
 var activityDetailLineRegex = regexp.MustCompile(`^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?) from (?:(tcp|udp):)?(\[[^\]]+\]|[^ :]+):(\d+) accepted (?:(tcp|udp):)?(.+):(\d+) \[([^\]]+)\](?: email: ([^ ]+))?`)
 
 // ClientStatus 中文注释: 用于跟踪每个用户的状态（是否因为设备超限而被禁用）
@@ -124,8 +119,6 @@ var clientStatusLock sync.RWMutex
 type CheckDeviceLimitJob struct {
 	inboundService service.InboundService
 	xrayService    *service.XrayService
-	// 中文注释: 新增 xrayApi 字段，用于持有 Xray API 客户端实例
-	xrayApi xray.XrayAPI
 	// lastPosition 中文注释: 用于记录上次读取 access.log 的位置，避免重复读取
 	lastPosition int64
 	// 〔中文注释〕: 注入 Telegram 服务用于发送通知，确保此行存在。
@@ -146,8 +139,6 @@ func RandomUUID() string {
 func NewCheckDeviceLimitJob(xrayService *service.XrayService, telegramService service.TelegramService) *CheckDeviceLimitJob {
 	return &CheckDeviceLimitJob{
 		xrayService: xrayService,
-		// 中文注释: 初始化 xrayApi 字段
-		xrayApi: xray.XrayAPI{},
 		// 〔中文注释〕: 将传入的 telegramService 赋值给结构体实例。
 		telegramService: telegramService,
 	}
@@ -155,6 +146,7 @@ func NewCheckDeviceLimitJob(xrayService *service.XrayService, telegramService se
 
 // Run 中文注释: 定时任务的主函数，每次定时器触发时执行
 func (j *CheckDeviceLimitJob) Run() {
+	activityGeoCache.prune(time.Now())
 	// 中文注释: 检查 xray 是否正在运行，如果xray没运行，则无需执行此任务
 	if !j.xrayService.IsXrayRunning() {
 		return
@@ -291,12 +283,9 @@ func activityGeoForIP(ip string) activityGeoCacheEntry {
 	}
 
 	now := time.Now()
-	activityGeoCache.Lock()
-	if cached, ok := activityGeoCache.Items[ip]; ok && now.Before(cached.Expires) {
-		activityGeoCache.Unlock()
+	if cached, ok := activityGeoCache.get(ip, now); ok {
 		return cached
 	}
-	activityGeoCache.Unlock()
 
 	entry := activityGeoCacheEntry{Expires: now.Add(10 * time.Minute)}
 	client := &http.Client{Timeout: 4 * time.Second}
@@ -308,16 +297,12 @@ func activityGeoForIP(ip string) activityGeoCacheEntry {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		activityGeoCache.Lock()
-		activityGeoCache.Items[ip] = entry
-		activityGeoCache.Unlock()
+		activityGeoCache.put(ip, entry, time.Now())
 		return entry
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		activityGeoCache.Lock()
-		activityGeoCache.Items[ip] = entry
-		activityGeoCache.Unlock()
+		activityGeoCache.put(ip, entry, time.Now())
 		return entry
 	}
 
@@ -344,9 +329,7 @@ func activityGeoForIP(ip string) activityGeoCacheEntry {
 		entry.Expires = now.Add(24 * time.Hour)
 	}
 
-	activityGeoCache.Lock()
-	activityGeoCache.Items[ip] = entry
-	activityGeoCache.Unlock()
+	activityGeoCache.put(ip, entry, time.Now())
 	return entry
 }
 
@@ -793,8 +776,12 @@ func (j *CheckDeviceLimitJob) checkAllClientsLimit() {
 		return
 	}
 	// 中文注释: 使用获取到的端口号初始化 API 客户端
-	j.xrayApi.Init(apiPort)
-	defer j.xrayApi.Close()
+	var api xray.XrayAPI
+	if err := api.Init(apiPort); err != nil {
+		logger.Warning("Cannot initialize device-limit API: ", err)
+		return
+	}
+	defer api.Close()
 
 	// 中文注释: 优化 - 在一次循环中同时获取 tag 和 protocol
 	inboundInfoMap := make(map[int]struct {
@@ -841,13 +828,13 @@ func (j *CheckDeviceLimitJob) checkAllClientsLimit() {
 		// 调用封禁函数
 		if activeIPCount > info.Limit && !isBanned {
 			// 中文注释: 调用封禁函数时，传入当前的IP数用于记录日志
-			j.banUser(email, activeIPCount, &info)
+			j.banUser(&api, email, activeIPCount, &info)
 		}
 
 		// 调用解封函数
 		if activeIPCount <= info.Limit && isBanned {
 			// 中文注释: 调用解封函数时，传入当前的IP数用于记录日志
-			j.unbanUser(email, activeIPCount, &info)
+			j.unbanUser(&api, email, activeIPCount, &info)
 		}
 	}
 
@@ -868,7 +855,7 @@ func (j *CheckDeviceLimitJob) checkAllClientsLimit() {
 			logger.Infof("已封禁用户 %s 已完全下线，执行解封操作。", email)
 
 			// 调用解封函数，这种情况下：活跃IP数为0，我们直接传入0用于记录日志
-			j.unbanUser(email, 0, &info)
+			j.unbanUser(&api, email, 0, &info)
 		}
 	}
 }
@@ -904,7 +891,7 @@ func deviceLimitAPIUser(client model.Client, cipher string, banned bool) (map[st
 }
 
 // banUser 中文注释: 封装的封禁用户函数；IP数量超限，且用户当前未被封禁 -> 执行封禁 (UUID 替换)
-func (j *CheckDeviceLimitJob) banUser(email string, activeIPCount int, info *struct {
+func (j *CheckDeviceLimitJob) banUser(api *xray.XrayAPI, email string, activeIPCount int, info *struct {
 	Limit    int
 	Tag      string
 	Protocol model.Protocol
@@ -954,7 +941,7 @@ func (j *CheckDeviceLimitJob) banUser(email string, activeIPCount int, info *str
 	}()
 
 	// 中文注释: 步骤一：先从 Xray-Core 中删除该用户。
-	j.xrayApi.RemoveUser(info.Tag, email)
+	api.RemoveUser(info.Tag, email)
 
 	// =================================================================
 	// 中文注释: 增加 5000 毫秒延时，解决竞态条件问题
@@ -963,7 +950,7 @@ func (j *CheckDeviceLimitJob) banUser(email string, activeIPCount int, info *str
 
 	// 中文注释: 步骤二：将这个带有错误UUID/Password的临时用户添加回去。
 	// 客户端持有的还是旧的UUID，自然就无法通过验证，从而达到了“封禁”的效果。
-	err = j.xrayApi.AddUser(string(info.Protocol), info.Tag, clientMap)
+	err = api.AddUser(string(info.Protocol), info.Tag, clientMap)
 	if err != nil {
 		logger.Warningf("通过API封禁用户 %s 失败: %v", email, err)
 	} else {
@@ -973,7 +960,7 @@ func (j *CheckDeviceLimitJob) banUser(email string, activeIPCount int, info *str
 }
 
 // unbanUser 中文注释: 封装的解封用户函数；IP数量已恢复正常，但用户处于封禁状态 -> 执行解封 (恢复原始 UUID)
-func (j *CheckDeviceLimitJob) unbanUser(email string, activeIPCount int, info *struct {
+func (j *CheckDeviceLimitJob) unbanUser(api *xray.XrayAPI, email string, activeIPCount int, info *struct {
 	Limit    int
 	Tag      string
 	Protocol model.Protocol
@@ -992,7 +979,7 @@ func (j *CheckDeviceLimitJob) unbanUser(email string, activeIPCount int, info *s
 	logger.Infof("〔设备数量〕已恢复：用户 %s. 限制: %d, 当前活跃: %d. 执行解封/恢复用户。", email, info.Limit, activeIPCount)
 
 	// 中文注释: 步骤一：先从 Xray-Core 中删除用于“封禁”的那个临时用户。
-	j.xrayApi.RemoveUser(info.Tag, email)
+	api.RemoveUser(info.Tag, email)
 
 	// =================================================================
 	// 中文注释: 同样增加 5000 毫秒延时，确保解封操作的稳定性
@@ -1000,7 +987,7 @@ func (j *CheckDeviceLimitJob) unbanUser(email string, activeIPCount int, info *s
 	// =================================================================
 
 	// 中文注释: 步骤二：将数据库中原始的、正确的用户信息重新添加回 Xray-Core，从而实现“解封”。
-	err = j.xrayApi.AddUser(string(info.Protocol), info.Tag, clientMap)
+	err = api.AddUser(string(info.Protocol), info.Tag, clientMap)
 	if err != nil {
 		logger.Warningf("通过API恢复用户 %s 失败: %v", email, err)
 	} else {

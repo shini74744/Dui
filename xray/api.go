@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
+// XrayAPI belongs to one operation; do not share its lifecycle across requests.
 type XrayAPI struct {
 	HandlerServiceClient *command.HandlerServiceClient
 	StatsServiceClient   *statsService.StatsServiceClient
@@ -45,6 +46,7 @@ func (x *XrayAPI) Init(apiPort int) error {
 		return fmt.Errorf("failed to connect to Xray API: %w", err)
 	}
 
+	x.Close()
 	x.grpcClient = conn
 	x.isConnected = true
 	x.apiPort = apiPort
@@ -61,6 +63,7 @@ func (x *XrayAPI) Init(apiPort int) error {
 func (x *XrayAPI) Close() {
 	if x.grpcClient != nil {
 		x.grpcClient.Close()
+		x.grpcClient = nil
 	}
 	x.HandlerServiceClient = nil
 	x.StatsServiceClient = nil
@@ -96,8 +99,13 @@ func (x *XrayAPI) AddInbound(inbound []byte) error {
 }
 
 func (x *XrayAPI) DelInbound(tag string) error {
+	if x.HandlerServiceClient == nil {
+		return fmt.Errorf("Xray API is not initialized")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	client := *x.HandlerServiceClient
-	_, err := client.RemoveInbound(context.Background(), &command.RemoveInboundRequest{
+	_, err := client.RemoveInbound(ctx, &command.RemoveInboundRequest{
 		Tag: tag,
 	})
 	return err
@@ -203,6 +211,9 @@ func (x *XrayAPI) AddUser(Protocol string, inboundTag string, user map[string]an
 }
 
 func (x *XrayAPI) RemoveUser(inboundTag, email string) error {
+	if x.HandlerServiceClient == nil {
+		return fmt.Errorf("Xray API is not initialized")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

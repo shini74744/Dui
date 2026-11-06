@@ -186,6 +186,7 @@ type Client struct {
 	ID       string `json:"id"`
 	Security string `json:"security"`
 	Password string `json:"password"`
+	Method   string `json:"method,omitempty"`
 
 	// 中文注释: 新增“限速”字段，单位 KB/s，0 表示不限速。
 	SpeedLimit     int      `json:"speedLimit" form:"speedLimit"` // legacy KiB/s

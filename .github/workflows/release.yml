@@ -68,6 +68,7 @@ jobs:
         run: go test ./...
       - name: Verified updater race checks
         run: |
+          go test -race ./web/job ./xray -run "Test(ActivityGeo|XrayAPI)" -count=1 -timeout=90s
           go test -race ./internal/update
           go test -race ./web/service -run "^Test(Speed|InboundOrder)" -count=1 -timeout=90s
       - name: Privileged WireGuard validation isolation
@@ -79,6 +80,7 @@ jobs:
           /tmp/dui-updater-ui/node_modules/.bin/playwright install --with-deps chromium
           PLAYWRIGHT_MODULE=/tmp/dui-updater-ui/node_modules/playwright node scripts/test-updates-ui.cjs
           PLAYWRIGHT_MODULE=/tmp/dui-updater-ui/node_modules/playwright node scripts/test-outbound-speedtest-ui.cjs
+          PLAYWRIGHT_MODULE=/tmp/dui-updater-ui/node_modules/playwright node scripts/test-outbound-order-ui.cjs
 
   test-docker:
     name: Docker amd64 smoke test
