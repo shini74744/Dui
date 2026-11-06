@@ -104,6 +104,7 @@ const longTag='测试出口-very-long-outbound-name-for-mobile-layout-'.repeat(3
    await page.waitForFunction(()=>typeof app!=='undefined'&&app.loadingStates.fetched);
    assert.equal(await page.evaluate(()=>app.activePage),'tpl-basic');
    results.push({width,theme,refresh:true,priority:true,fallback:true,layout:true});
+   console.log(JSON.stringify(results.at(-1)));
    await context.close();
   }
   assert.deepEqual(errors,[]);

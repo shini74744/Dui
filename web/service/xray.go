@@ -24,12 +24,6 @@ var (
 type XrayService struct {
 	inboundService InboundService
 	settingService SettingService
-	xrayAPI        xray.XrayAPI
-}
-
-// SetXrayAPI 用于从外部注入 XrayAPI 实例
-func (s *XrayService) SetXrayAPI(api xray.XrayAPI) {
-	s.xrayAPI = api
 }
 
 // IsXrayRunning 检查 Xray 是否正在运行
@@ -363,10 +357,13 @@ func (s *XrayService) GetXrayTraffic() ([]*xray.Traffic, []*xray.ClientTraffic, 
 		return nil, nil, err
 	}
 	apiPort := p.GetAPIPort()
-	s.xrayAPI.Init(apiPort)
-	defer s.xrayAPI.Close()
+	var api xray.XrayAPI
+	if err := api.Init(apiPort); err != nil {
+		return nil, nil, err
+	}
+	defer api.Close()
 
-	traffic, clientTraffic, err := s.xrayAPI.GetTraffic(true)
+	traffic, clientTraffic, err := api.GetTraffic(true)
 	if err != nil {
 		logger.Debug("Failed to fetch Xray traffic:", err)
 		return nil, nil, err

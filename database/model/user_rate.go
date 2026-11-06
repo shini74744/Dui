@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -67,6 +68,9 @@ const MaxUserRateMbps = 10000
 
 // XrayAPIUser preserves authentication, flow and user rate when restoring a user.
 func (c Client) XrayAPIUser(cipher string) map[string]any {
+	if c.Method != "" && !strings.HasPrefix(cipher, "2022-") {
+		cipher = c.Method
+	}
 	return map[string]any{"email": c.Email, "id": c.ID, "security": c.Security,
 		"auth": c.Auth, "flow": c.Flow, "password": c.Password, "cipher": cipher, "level": c.UserRateLevel()}
 }

@@ -58,3 +58,32 @@ func TestDUIHotInboundRateLevelsPreserveKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestDUIShadowsocksClientMethodPreserved(t *testing.T) {
+	var client Client
+	if err := json.Unmarshal([]byte(`{"email":"ss-test","method":"chacha20-poly1305","password":"test-key","enable":true,"speedLimitMbps":3}`), &client); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved map[string]any
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved["method"] != "chacha20-poly1305" {
+		t.Fatal("saving client discarded its cipher")
+	}
+	restored := client.XrayAPIUser("aes-128-gcm")
+	if restored["cipher"] != "chacha20-poly1305" || restored["password"] != "test-key" || restored["level"] != client.UserRateLevel() {
+		t.Fatal("hot user restore lost cipher, authentication or rate")
+	}
+	client.Method = ""
+	if client.XrayAPIUser("2022-blake3-aes-128-gcm")["cipher"] != "2022-blake3-aes-128-gcm" {
+		t.Fatal("SS2022 server cipher changed")
+	}
+	if client.XrayAPIUser("aes-256-gcm")["cipher"] != "aes-256-gcm" {
+		t.Fatal("legacy server cipher fallback changed")
+	}
+}

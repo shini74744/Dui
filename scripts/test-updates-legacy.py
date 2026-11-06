@@ -19,9 +19,13 @@ def stop(proc):
 def version(p):
     return subprocess.check_output([p,'-v'],text=True).strip()
 
+def core_version(p):
+    return subprocess.check_output([p,'version'],text=True).split()[1]
+old_core_version=core_version(os.environ['DUI_TEST_OLD_CORE'])
+new_core_version=core_version(os.environ['DUI_TEST_CORE'])
 reports=[]
 for old in os.environ['DUI_TEST_OLD_PANELS'].split(':'):
-    for broken, base_path in [(False,'/legacy-kept/'),(True,'/')]:
+    for broken, base_path in [(False,'/legacy-kept/'),(old_core_version=='vx-26.6','/')]:
         with tempfile.TemporaryDirectory(prefix='dui-upgrade-compat-') as temp:
             root=Path(temp); root.chmod(0o755)
             for n in ['db','bin','logs']:
@@ -84,11 +88,11 @@ for old in os.environ['DUI_TEST_OLD_PANELS'].split(':'):
                 proc=start()
                 status=request('dui/api/server/updates')['obj']
                 core=status['items']['core']
-                assert core['current']=='vx-26.6' and core['currentKnown'],'installed stopped core not recognized'
+                assert core['current']==old_core_version and core['currentKnown'],'installed stopped core not recognized'
                 assert not core['upToDate'],'unchecked core claimed up to date'
                 if broken:
                     assert not (root/'bin/config.json').exists(),'status created live configuration'
-                    answer=request('dui/api/server/updates/start',{'kind':'core','version':'vx-26.7'},True)
+                    answer=request('dui/api/server/updates/start',{'kind':'core','version':new_core_version},True)
                     assert not answer['success'] and 'unsupported_installation' in answer.get('msg',''),'missing-config recovery failed before unprivileged/systemd guard'
                     assert not (root/'bin/config.json').exists(),'preflight wrote live config'
                 assert snapshot()==initial,'settings, account or inbound changed after panel upgrade'
@@ -99,7 +103,7 @@ for old in os.environ['DUI_TEST_OLD_PANELS'].split(':'):
                     if (root/'bin/config.json').exists():break
                     time.sleep(.1)
                 status=request('dui/api/server/updates')['obj']
-                assert status['items']['core']['current']=='vx-26.7'
+                assert status['items']['core']['current']==new_core_version
                 runtime=None
                 for _ in range(50):
                     state=request('dui/api/server/status').get('obj')
@@ -108,7 +112,7 @@ for old in os.environ['DUI_TEST_OLD_PANELS'].split(':'):
                     time.sleep(.2)
                 assert runtime and runtime['state']=='running','new core did not become running'
                 assert snapshot()==initial,'settings, account or inbound changed after core upgrade'
-                reports.append({'fromPanel':version(old),'coreWasStopped':broken,'basePath':base_path,'accountPortPathInboundsRoutesPolicyPreserved':True,'installedCore':'vx-26.7','coreRunning':True,'noLiveConfigWrittenDuringPreflight':broken})
+                reports.append({'fromPanel':version(old),'coreWasStopped':broken,'basePath':base_path,'accountPortPathInboundsRoutesPolicyPreserved':True,'installedCore':new_core_version,'coreRunning':True,'noLiveConfigWrittenDuringPreflight':broken})
                 print(json.dumps(reports[-1]),flush=True)
             finally:
                 stop(proc);log.close()

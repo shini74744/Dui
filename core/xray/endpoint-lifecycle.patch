@@ -1,0 +1,270 @@
+--- a/common/buf/override.go
++++ b/common/buf/override.go
+@@ -1,6 +1,7 @@
+ package buf
+ 
+ import (
++	"github.com/xtls/xray-core/common"
+ 	"github.com/xtls/xray-core/common/net"
+ )
+ 
+@@ -36,3 +37,17 @@
+ 	}
+ 	return w.Writer.WriteMultiBuffer(mb)
+ }
++
++// Interrupt must reach the underlying pipe so cancelled outbound tasks can exit.
++func (r *EndpointOverrideReader) Interrupt() {
++	common.Interrupt(r.Reader)
++}
++
++// Close preserves buffered responses and forwards EOF to the underlying writer.
++func (w *EndpointOverrideWriter) Close() error {
++	return common.Close(w.Writer)
++}
++
++func (w *EndpointOverrideWriter) Interrupt() {
++	common.Interrupt(w.Writer)
++}
+--- /dev/null
++++ b/common/buf/override_dui_test.go
+@@ -0,0 +1,112 @@
++package buf_test
++
++import (
++	"bytes"
++	"errors"
++	"io"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/buf"
++	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/transport/pipe"
++)
++
++func TestDUIEndpointOverrideReaderInterrupt(t *testing.T) {
++	const count = 256
++	done := make(chan error, count)
++	readers := make([]*pipe.Reader, count)
++	var ready sync.WaitGroup
++	ready.Add(count)
++	for i := range readers {
++		reader, _ := pipe.New()
++		readers[i] = reader
++		wrapped := &buf.EndpointOverrideReader{Reader: reader}
++		go func() { ready.Done(); _, err := wrapped.ReadMultiBuffer(); done <- err }()
++	}
++	t.Cleanup(func() {
++		for _, r := range readers {
++			r.Interrupt()
++		}
++	})
++	ready.Wait()
++	for _, r := range readers {
++		common.Interrupt(&buf.EndpointOverrideReader{Reader: r})
++	}
++	timer := time.NewTimer(2 * time.Second)
++	defer timer.Stop()
++	for range count {
++		select {
++		case err := <-done:
++			if err == nil {
++				t.Fatal("interrupted read succeeded")
++			}
++		case <-timer.C:
++			t.Fatal("wrapped readers remained blocked")
++		}
++	}
++}
++
++func TestDUIEndpointOverrideWriterLifecycle(t *testing.T) {
++	for _, interrupt := range []bool{false, true} {
++		t.Run(map[bool]string{false: "close_drains", true: "interrupt_discards"}[interrupt], func(t *testing.T) {
++			reader, writer := pipe.New()
++			defer reader.Interrupt()
++			original := net.DomainAddress("original.test")
++			target := net.IPAddress([]byte{127, 0, 0, 1})
++			wrapped := &buf.EndpointOverrideWriter{Writer: writer, Dest: target, OriginalDest: original}
++			b := buf.New()
++			b.Write([]byte("response"))
++			b.UDP = &net.Destination{Network: net.Network_UDP, Address: target, Port: 53}
++			if err := wrapped.WriteMultiBuffer(buf.MultiBuffer{b}); err != nil {
++				t.Fatal(err)
++			}
++			if interrupt {
++				common.Interrupt(wrapped)
++			} else if err := common.Close(wrapped); err != nil {
++				t.Fatal(err)
++			}
++			mb, err := reader.ReadMultiBufferTimeout(time.Second)
++			defer buf.ReleaseMulti(mb)
++			if interrupt {
++				if err == nil || len(mb) != 0 {
++					t.Fatal("interrupt retained buffered response")
++				}
++			} else {
++				if err != nil || len(mb) != 1 || !bytes.Equal(mb[0].Bytes(), []byte("response")) || mb[0].UDP.Address != original {
++					t.Fatal("close lost response or endpoint")
++				}
++				_, err = reader.ReadMultiBufferTimeout(time.Second)
++				if !errors.Is(err, io.EOF) {
++					t.Fatalf("close did not propagate EOF: %v", err)
++				}
++			}
++		})
++	}
++}
++
++func TestDUIEndpointOverrideReaderPreservesData(t *testing.T) {
++	reader, writer := pipe.New()
++	defer reader.Interrupt()
++	original := net.DomainAddress("original.test")
++	target := net.IPAddress([]byte{127, 0, 0, 1})
++	wrapped := &buf.EndpointOverrideReader{Reader: reader, Dest: target, OriginalDest: original}
++	b := buf.New()
++	b.Write([]byte("request"))
++	b.UDP = &net.Destination{Network: net.Network_UDP, Address: original, Port: 53}
++	if err := writer.WriteMultiBuffer(buf.MultiBuffer{b}); err != nil {
++		t.Fatal(err)
++	}
++	writer.Close()
++	mb, err := wrapped.ReadMultiBuffer()
++	defer buf.ReleaseMulti(mb)
++	if err != nil || len(mb) != 1 || !bytes.Equal(mb[0].Bytes(), []byte("request")) || mb[0].UDP.Address != target {
++		t.Fatal("request endpoint rewrite failed")
++	}
++	_, err = wrapped.ReadMultiBuffer()
++	if !errors.Is(err, io.EOF) {
++		t.Fatalf("EOF lost: %v", err)
++	}
++}
+--- /dev/null
++++ b/testing/dui/endpoint_lifecycle_test.go
+@@ -0,0 +1,124 @@
++package dui_test
++
++import (
++	"context"
++	"encoding/json"
++	"net"
++	"runtime"
++	"testing"
++	"time"
++
++	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/buf"
++	xnet "github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/session"
++	"github.com/xtls/xray-core/core"
++	"github.com/xtls/xray-core/features/outbound"
++	"github.com/xtls/xray-core/transport"
++	"github.com/xtls/xray-core/transport/pipe"
++)
++
++func TestDUIEndpointOverrideDispatchLifecycle(t *testing.T) {
++	for _, mode := range []string{"cancel", "idle_timeout", "response_error"} {
++		t.Run(mode, func(t *testing.T) {
++			echo, err := net.ListenPacket("udp", "127.0.0.1:0")
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer echo.Close()
++			go func() {
++				b := make([]byte, 2048)
++				for {
++					n, a, err := echo.ReadFrom(b)
++					if err != nil {
++						return
++					}
++					echo.WriteTo(b[:n], a)
++				}
++			}()
++			cfg := map[string]any{
++				"log":       map[string]any{"loglevel": "none"},
++				"policy":    map[string]any{"levels": map[string]any{"0": map[string]any{"connIdle": 1, "uplinkOnly": 0, "downlinkOnly": 0}}},
++				"outbounds": []any{map[string]any{"tag": "direct", "protocol": "freedom", "settings": map[string]any{"finalRules": []any{map[string]any{"action": "allow"}}}}},
++			}
++			raw, _ := json.Marshal(cfg)
++			instance, err := core.StartInstance("json", raw)
++			if err != nil {
++				t.Fatal(err)
++			}
++			defer instance.Close()
++			handler := instance.GetFeature(outbound.ManagerType()).(outbound.Manager).GetHandler("direct")
++			if handler == nil {
++				t.Fatal("missing direct handler")
++			}
++			iterations := 8
++			if mode == "cancel" {
++				iterations = 1024
++			}
++			runtime.GC()
++			baselineGoroutines := runtime.NumGoroutine()
++			var baseline runtime.MemStats
++			runtime.ReadMemStats(&baseline)
++			for attempt := 0; attempt < iterations; attempt++ {
++				ctx, cancel := context.WithCancel(context.WithValue(context.Background(), core.XrayKey(1), instance))
++				port := xnet.Port(echo.LocalAddr().(*net.UDPAddr).Port)
++				original := xnet.UDPDestination(xnet.DomainAddress("original.test"), port)
++				target := xnet.UDPDestination(xnet.IPAddress([]byte{127, 0, 0, 1}), port)
++				ctx = session.ContextWithOutbounds(ctx, []*session.Outbound{{OriginalTarget: original, Target: target}})
++				upR, upW := pipe.New()
++				downR, downW := pipe.New()
++				done := make(chan struct{})
++				go func() { handler.Dispatch(ctx, &transport.Link{Reader: upR, Writer: downW}); close(done) }()
++				b := buf.New()
++				b.Write([]byte("endpoint-lifecycle"))
++				b.UDP = &original
++				if err := upW.WriteMultiBuffer(buf.MultiBuffer{b}); err != nil {
++					t.Fatal(err)
++				}
++				reply, err := downR.ReadMultiBufferTimeout(2 * time.Second)
++				if err != nil || len(reply) != 1 || string(reply[0].Bytes()) != "endpoint-lifecycle" {
++					t.Fatalf("UDP forwarding failed: %v", err)
++				}
++				buf.ReleaseMulti(reply)
++				switch mode {
++				case "cancel":
++					cancel()
++				case "response_error":
++					downR.Interrupt()
++					b = buf.New()
++					b.Write([]byte("fail-response"))
++					b.UDP = &original
++					_ = upW.WriteMultiBuffer(buf.MultiBuffer{b})
++				}
++				select {
++				case <-done:
++				case <-time.After(3 * time.Second):
++					cancel()
++					upR.Interrupt()
++					downR.Interrupt()
++					t.Fatal("dispatch did not end")
++				}
++				// The outbound must release the underlying pipe even after endpoint wrapping.
++				_, readErr := upR.ReadMultiBufferTimeout(200 * time.Millisecond)
++				cancel()
++				common.Interrupt(upR)
++				common.Interrupt(downR)
++				if mode == "cancel" && (attempt+1)%256 == 0 {
++					time.Sleep(50 * time.Millisecond)
++					runtime.GC()
++					var current runtime.MemStats
++					runtime.ReadMemStats(&current)
++					growth := int64(current.HeapAlloc) - int64(baseline.HeapAlloc)
++					goroutines := runtime.NumGoroutine() - baselineGoroutines
++					t.Logf("closed UDP sessions=%d goroutine_delta=%d heap_delta=%d", attempt+1, goroutines, growth)
++					if goroutines > 16 || growth > 16<<20 {
++						t.Fatalf("UDP tasks retained after cancellation: goroutines=%d heap=%d", goroutines, growth)
++					}
++				}
++				if readErr == nil || readErr == buf.ErrReadTimeout {
++					t.Fatalf("underlying request reader not released: %v", readErr)
++				}
++			}
++		})
++	}
++}

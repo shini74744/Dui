@@ -1,6 +1,8 @@
-# DUI Xray vx-26.10
+# DUI Xray vx-26.11
 
 Based on official XTLS/Xray-core v26.9.9. Complete reproducible modified source, platform binaries and SHA256 checksums are published together.
+
+- vx-26.11 forwards UDP endpoint-override close and interrupt operations to the underlying pipes, allowing cancelled or timed-out forwarding tasks to exit. Regression tests cover cancellation, idle timeout, response errors, response draining and endpoint metadata. Existing routes, probe intervals and user settings remain unchanged.
 
 - vx-26.10 adds route fallbackTag backed by exact-tag strategyObservatory.outbound probes, and priority balancing with ordered settings.levels. A level uses an exact selector list and one existing strategy. Only known healthy candidates are eligible; all unavailable returns the fail-closed routing error. Direct must be an explicit level. Recovery affects subsequent connections, not existing flows. New panel probe defaults and the omitted least-ping core interval are one minute; explicit configured intervals remain unchanged.
 

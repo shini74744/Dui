@@ -30,12 +30,13 @@ jobs:
       - name: Close and half-close regression tests
         working-directory: ${{ runner.temp }}/xray/source
         run: |
+          go test -race ./common/buf -run TestDUIEndpointOverride -count=1 -timeout=60s
           go test -race ./common/duiprobehistory ./app/stats/command ./app/observatory ./app/observatory/strategy ./app/router -run TestDUI -count=1 -timeout=120s
           go test -race ./common/duiclosewait ./transport/internet ./proxy/hysteria/account ./transport/internet/hysteria ./common/duilimit ./common/singbridge ./transport/pipe ./app/dispatcher ./app/policy -count=1 -timeout=180s
           # Upstream Vision uses uintptr reflection (vless/outbound.go:286), which trips checkptr under -race.
           # Run complete protocol integration with the same compiler flags as production binaries.
           go test ./core ./testing/dui -count=1 -timeout=180s
-          go test -race ./testing/dui -run 'TestDUIFourIndependentProbeRuntimes|TestDUIBalancerLiveProbeFailoverAndRecovery' -count=1 -timeout=120s
+          go test -race ./testing/dui -run 'TestDUIFourIndependentProbeRuntimes|TestDUIBalancerLiveProbeFailoverAndRecovery|TestDUIEndpointOverrideDispatchLifecycle' -count=1 -timeout=120s
           go test ./infra/conf ./transport/internet/tls -run TestDUI -count=1 -timeout=120s
           go test -race ./proxy/wireguard -run TestDUI -count=1 -timeout=120s
       - name: Verify panel hot-add preserves core settings
@@ -51,6 +52,7 @@ jobs:
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-strategy-probes-integration.py
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-route-health-integration.py
           DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-probe-history-integration.py
+          DUI_TEST_CORE="$RUNNER_TEMP/xray-hot-add" DUI_TEST_PANEL="$RUNNER_TEMP/dui-closewait-panel" python3 scripts/test-protocol-routing-integration.py
       - name: Package complete modified source
         run: |
           mkdir -p source-assets
